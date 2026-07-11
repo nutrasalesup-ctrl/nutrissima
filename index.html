@@ -172,7 +172,7 @@ async function tPainel(){
     ${(balde.data||[]).length?`<div class="card" style="margin-top:12px"><b>Baldes com saldo</b>${balde.data.map(b=>`<div class="item-row"><span>${b.produtos.nome}</span><span class="saldo mono">${fmt(b.quantidade_kg)} kg</span></div>`).join('')}</div>`:''}
     <div class="card" style="margin-top:12px"><b>Atividade da fábrica</b><small style="color:#7A6A57;display:block;margin-bottom:10px">tudo que aconteceu, com quem fez e o lote</small>
       <div class="feed">${(ativ.data&&ativ.data.length)?ativ.data.map(a=>{
-        const ic={recebimento:'📦',pesagem:'⚖️',refino:'🌀',envase:'🫙',compra:'🛒'}[a.tipo]||'•';
+        const ic={recebimento:'📦',pesagem:'⚖️',refino:'🌀',envase:'🫙',compra:'🛒',ajuste:'✏️'}[a.tipo]||'•';
         const d=new Date(a.criado_em);
         return `<div><span class="hora mono">${d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})} ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span><br>${ic} ${a.descricao} <span class="mono" style="font-size:12px;color:#7A6A57">${a.lote?'· '+a.lote:''} ${a.responsavel?'· '+a.responsavel:''}</span></div>`
       }).join(''):'<div class="center">Nenhuma atividade registrada ainda — ela aparece aqui conforme a equipe usa o app.</div>'}</div>
@@ -182,28 +182,75 @@ async function tPainel(){
 
 /* ================= ESTOQUE ================= */
 async function tEstoque(){
-  const {data:itens}=await sb.from('itens').select('nome,categoria,unidade,saldo_atual,estoque_minimo').order('ordem');
-  EST.cache.itens=itens||[];
+  document.getElementById('app').innerHTML=trilha('Estoque')+topo('Estoque','carregando…')+'<main><div class="center">Carregando…</div></main>';
+  const [itens,pa,balde]=await Promise.all([
+    sb.from('itens').select('id,nome,categoria,unidade,saldo_atual,estoque_minimo').order('ordem'),
+    sb.from('produto_acabado').select('id,nome,linha,saldo_potes').eq('ativo',true).order('linha').order('nome'),
+    sb.from('estoque_balde').select('produto_id,quantidade_kg,produtos(nome)').order('quantidade_kg',{ascending:false})
+  ]);
+  EST.cache.itens=itens.data||[];EST.cache.paEst=pa.data||[];EST.cache.baldeEst=balde.data||[];
   document.getElementById('app').innerHTML=`
-  ${trilha('Estoque')}${topo('Estoque','matéria-prima e embalagens')}
+  ${trilha('Estoque')}${topo('Estoque','matéria-prima · baldes · potes')}
   <main>
-    <input id="busca" placeholder="🔍 Buscar item…" oninput="fEstoque()">
-    <div class="chips" style="margin:10px 0"><button class="sel" data-f="materia_prima" onclick="fCat(this)">Matéria-prima</button><button data-f="embalagem" onclick="fCat(this)">Embalagens</button><button data-f="todos" onclick="fCat(this)">Tudo</button><button data-f="alerta" onclick="fCat(this)">🔴 Abaixo do mín.</button></div>
+    <input id="busca" placeholder="🔍 Buscar…" oninput="fEstoque()">
+    <div class="chips" style="margin:10px 0">
+      <button class="sel" data-f="materia_prima" onclick="fCat(this)">Matéria-prima</button>
+      <button data-f="embalagem" onclick="fCat(this)">Embalagens</button>
+      <button data-f="pa" onclick="fCat(this)">🫙 Potes</button>
+      <button data-f="balde" onclick="fCat(this)">🪣 Baldes</button>
+      <button data-f="alerta" onclick="fCat(this)">🔴 Abaixo do mín.</button>
+    </div>
+    <p style="font-size:12.5px;color:#8A7A64;margin-bottom:6px">Toque em ✏️ para ajustar um saldo pela contagem física (pede motivo e fica registrado).</p>
     <div id="lista"></div>
   </main>`;
   EST.fcat='materia_prima';fEstoque();
 }
 function fCat(b){document.querySelectorAll('[data-f]').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');EST.fcat=b.dataset.f;fEstoque()}
+function linhaEst(tipo,id,nome,saldo,un,baixo){
+  return `<div class="item-row ${baixo?'baixo':''}"><span>${baixo?'⬤ ':''}${nome}</span>`+
+    `<span style="display:flex;align-items:center;gap:10px"><span class="saldo mono">${fmt(saldo)} ${un}</span>`+
+    `<button data-t="${tipo}" data-i="${id}" data-s="${saldo}" data-u="${un}" onclick="ajuste(this)" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer;font-size:15px" title="Ajustar saldo">✏️</button></span></div>`;
+}
 function fEstoque(){
   const q=(document.getElementById('busca').value||'').toLowerCase();
-  let L=EST.cache.itens;
-  if(EST.fcat==='alerta')L=L.filter(i=>i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo));
-  else if(EST.fcat!=='todos')L=L.filter(i=>i.categoria===EST.fcat);
-  if(q)L=L.filter(i=>i.nome.toLowerCase().includes(q));
-  document.getElementById('lista').innerHTML=L.map(i=>{
-    const baixo=i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo);
-    return `<div class="item-row ${baixo?'baixo':''}"><span>${baixo?'⬤ ':''}${i.nome}</span><span class="saldo mono">${fmt(i.saldo_atual)} ${i.unidade}</span></div>`
-  }).join('')||'<div class="center">Nada encontrado.</div>';
+  let html='';
+  if(EST.fcat==='pa'){
+    let L=EST.cache.paEst; if(q)L=L.filter(p=>(p.linha+' '+p.nome).toLowerCase().includes(q));
+    let linhaAtual='';
+    html=L.map(p=>{
+      const cab=p.linha!==linhaAtual?`<p class="pergunta" style="margin-top:14px">${p.linha||'Sem linha'}</p>`:'';
+      linhaAtual=p.linha;
+      return cab+linhaEst('pa',p.id,p.nome,p.saldo_potes,'potes',false);
+    }).join('');
+  }else if(EST.fcat==='balde'){
+    let L=EST.cache.baldeEst; if(q)L=L.filter(b=>b.produtos.nome.toLowerCase().includes(q));
+    html=L.map(b=>linhaEst('balde',b.produto_id,'🪣 '+b.produtos.nome,b.quantidade_kg,'kg',false)).join('');
+  }else{
+    let L=EST.cache.itens;
+    if(EST.fcat==='alerta')L=L.filter(i=>i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo));
+    else L=L.filter(i=>i.categoria===EST.fcat);
+    if(q)L=L.filter(i=>i.nome.toLowerCase().includes(q));
+    html=L.map(i=>{
+      const baixo=i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo);
+      return linhaEst('item',i.id,i.nome,i.saldo_atual,i.unidade,baixo);
+    }).join('');
+  }
+  document.getElementById('lista').innerHTML=html||'<div class="center">Nada encontrado.</div>';
+}
+async function ajuste(btn){
+  if(precisaOperador())return;
+  const t=btn.dataset.t, id=btn.dataset.i, atual=btn.dataset.s, un=btn.dataset.u;
+  const nome=btn.closest('.item-row').querySelector('span').textContent.replace('⬤ ','').replace('🪣 ','');
+  const real=prompt('Ajuste de estoque — '+nome+'\nSaldo no sistema: '+fmt(atual)+' '+un+'\n\nQual é o saldo REAL contado?',atual);
+  if(real==null)return;
+  const n=Number(String(real).replace(',','.'));
+  if(isNaN(n)||n<0)return msg('Valor inválido',true);
+  const motivo=prompt('Motivo do ajuste (obrigatório):\nex.: contagem física, perda, vencimento, erro de lançamento');
+  if(motivo==null)return; if(!motivo.trim())return msg('O motivo é obrigatório',true);
+  const {error}=await sb.rpc('ajustar_estoque',{p_tipo:t,p_id:id,p_saldo_real:n,p_motivo:motivo.trim(),p_responsavel:EST.operador});
+  if(error)return msg(error.message,true);
+  msg('✅ Ajustado: '+fmt(atual)+' → '+fmt(n)+' '+un);
+  tela('estoque');
 }
 
 /* ================= RECEBER ================= */
@@ -367,8 +414,8 @@ async function tPesagem(progId){
       <input id="wLote" class="mono campoG" style="font-size:22px!important" value="${loteSugestao((count||0)+1)}"></div>
     ${baldes.length?`<div class="card"><b>② Retirar dos baldes</b><small style="color:#7A6A57;display:block">bases prontas que entram nesta mistura</small>
       ${baldes.map(b=>`<div class="item-row"><span>🪣 ${prodBy[b.balde_produto_id]||'?'}</span><span class="saldo mono">${fmt(b.balde_kg)} kg</span></div>`).join('')}</div>`:''}
-    <div class="card"><b>${baldes.length?'③':'②'} Pese e marque cada insumo</b><small style="color:#7A6A57;display:block;margin-bottom:10px">quantidades já incluem a perda de ${perda}%</small>
-      <div id="wChecks">${insumos.map((i,ix)=>`<label class="check" id="ck${ix}"><input type="checkbox" onchange="this.parentElement.classList.toggle('ok',this.checked);verPesagem()"> ${EST.cache.itensById[i.item_id]?.nome||'?'}<span class="qtd mono">${fmt(i.kg,2)} kg</span></label>`).join('')}</div>
+    <div class="card"><b>${baldes.length?'③':'②'} Pese e marque cada insumo</b><small style="color:#7A6A57;display:block;margin-bottom:10px">quantidades já incluem a perda de ${perda}%. Anote o lote da matéria-prima usada (se usar 2 lotes, separe com /)</small>
+      <div id="wChecks">${insumos.map((i,ix)=>`<div class="ck-wrap" data-item="${i.item_id}"><label class="check" id="ck${ix}" style="margin-bottom:4px"><input type="checkbox" onchange="this.parentElement.classList.toggle('ok',this.checked);verPesagem()"> ${EST.cache.itensById[i.item_id]?.nome||'?'}<span class="qtd mono">${fmt(i.kg,2)} kg</span></label><input class="mono ck-lote" placeholder="Lote(s) da MP — ex.: L123 / L456" style="font-size:14px;padding:9px 12px;margin-bottom:10px"></div>`).join('')}</div>
     </div>
     <button class="btnP" id="wBtn" disabled onclick="confPesagem('${progId}')">Faltam insumos para concluir</button>
   </main>`;
@@ -379,7 +426,8 @@ async function confPesagem(progId){
   if(precisaOperador())return;
   const lote=document.getElementById('wLote').value.trim();
   if(!lote)return msg('Informe o lote',true);
-  const {error}=await sb.rpc('confirmar_pesagem',{p_prog:progId,p_responsavel:EST.operador,p_lote:lote});
+  const lotesMP=[...document.querySelectorAll('.ck-wrap')].map(w=>({item_id:w.dataset.item,lotes:(w.querySelector('.ck-lote').value||'').trim()})).filter(x=>x.lotes);
+  const {error}=await sb.rpc('confirmar_pesagem',{p_prog:progId,p_responsavel:EST.operador,p_lote:lote,p_lotes:lotesMP});
   if(error)return msg(error.message,true);
   msg('✅ Pesagem concluída — estoque baixado · lote '+lote);tela('programacao');
 }
