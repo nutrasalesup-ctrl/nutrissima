@@ -444,19 +444,31 @@ async function confPesagem(progId){
 
 /* ================= ENVASE ================= */
 async function tEnvase(){
-  const [balde,pa]=await Promise.all([
-    sb.from('estoque_balde').select('produto_id,quantidade_kg,produtos(nome)').gt('quantidade_kg',0),
-    sb.from('produto_acabado').select('id,nome,linha,peso_pote_kg,saldo_potes').eq('ativo',true).order('linha').order('nome')
+  const [balde,pa,rec,prods]=await Promise.all([
+    sb.from('estoque_balde').select('produto_id,quantidade_kg,produtos(nome)'),
+    sb.from('produto_acabado').select('id,nome,linha,peso_pote_kg,saldo_potes,produto_id').eq('ativo',true).order('linha').order('nome'),
+    sb.from('receita_itens').select('produto_id,componente_produto_id,qtd_por_100kg').eq('componente_tipo','produto'),
+    sb.from('produtos').select('id,nome,estocavel_balde')
   ]);
-  EST.cache.balde=balde.data||[];EST.cache.pa=pa.data||[];
-  if(!EST.cache.balde.length){document.getElementById('app').innerHTML=trilha('Envase')+topo('Envasar','')+'<main><div class="center">Nenhum balde com saldo. Conclua um refino primeiro.</div></main>';return}
+  EST.cache.balde=(balde.data||[]);EST.cache.pa=pa.data||[];
+  const estoc=Object.fromEntries((prods.data||[]).map(p=>[p.id,p]));
+  // mapa: produto (blend de envase) -> componentes estocáveis em balde
+  EST.cache.mistura={};
+  (rec.data||[]).forEach(r=>{
+    if(estoc[r.componente_produto_id]?.estocavel_balde){
+      (EST.cache.mistura[r.produto_id]=EST.cache.mistura[r.produto_id]||[]).push({pid:r.componente_produto_id,nome:estoc[r.componente_produto_id].nome,pct:Number(r.qtd_por_100kg)});
+    }
+  });
+  EST.cache.saldoBalde=Object.fromEntries(EST.cache.balde.map(b=>[b.produto_id,Number(b.quantidade_kg)]));
+  const comSaldo=EST.cache.balde.filter(b=>Number(b.quantidade_kg)>0);
   document.getElementById('app').innerHTML=`
   ${trilha('Envase')}${topo('Envasar','do balde para os potes')}
   <main>
-    <div class="card"><label style="margin-top:0">① De qual balde?</label>
-      <select id="eBalde" onchange="eResumo()">${EST.cache.balde.map(b=>`<option value="${b.produto_id}">${b.produtos.nome} — ${fmt(b.quantidade_kg)} kg</option>`).join('')}</select>
-      <label>② Para qual produto?</label>
+    <div class="card">
+      <label style="margin-top:0">① Para qual produto?</label>
       <select id="ePa" onchange="ePeso();eResumo()">${EST.cache.pa.map(p=>`<option value="${p.id}">${p.linha?p.linha+' · ':''}${p.nome}</option>`).join('')}</select>
+      <div id="eBaldeBox"><label>② De qual balde?</label>
+      <select id="eBalde" onchange="eResumo()">${comSaldo.map(b=>`<option value="${b.produto_id}">${b.produtos.nome} — ${fmt(b.quantidade_kg)} kg</option>`).join('')||'<option value="">(nenhum balde com saldo)</option>'}</select></div>
       <div id="ePesoBox"></div>
       <label>③ Quantos potes saíram?</label>
       <input class="campoG" id="ePotes" inputmode="numeric" oninput="eResumo()" placeholder="0">
@@ -467,21 +479,35 @@ async function tEnvase(){
   </main>`;
   ePeso();eResumo();
 }
+function eMistura(){const p=EST.cache.pa.find(x=>x.id===ePa.value);return p&&p.produto_id?EST.cache.mistura[p.produto_id]:null}
 function ePeso(){
   const p=EST.cache.pa.find(x=>x.id===ePa.value);
+  document.getElementById('eBaldeBox').style.display=eMistura()?'none':'block';
   document.getElementById('ePesoBox').innerHTML=p&&p.peso_pote_kg==null
-    ?`<label style="color:var(--morango)">⚠️ Peso do pote não cadastrado — informe (kg por pote)</label><input id="ePeso" inputmode="decimal" placeholder="ex.: 1.01">`
+    ?`<label style="color:var(--morango)">⚠️ Peso do pote não cadastrado — informe (kg por pote)</label><input id="ePeso" inputmode="decimal" placeholder="ex.: 1.01" oninput="eResumo()">`
     :(p?`<p style="font-size:13.5px;color:#7A6A57;margin-top:6px">peso do pote: <b class="mono">${p.peso_pote_kg} kg</b> · em estoque hoje: ${fmt(p.saldo_potes,0)} potes</p>`:'');
 }
 function eResumo(){
-  const b=EST.cache.balde.find(x=>x.produto_id===eBalde.value);
   const p=EST.cache.pa.find(x=>x.id===ePa.value);
   const peso=p?.peso_pote_kg??Number((document.getElementById('ePeso')?.value||'').replace(',','.'));
   const n=Number(ePotes.value)||0;
   const kg=peso?n*peso:0;
-  document.getElementById('eRes').innerHTML=(n&&peso)
-    ?`Sai <b>${fmt(kg)} kg</b> do balde <b>${b.produtos.nome}</b><br><span style="color:var(--pistache);font-weight:900">→</span> entram <b>${n} potes</b> de <b>${p.nome}</b><br><span class="mono" style="font-size:13px">${eLote.value} · por ${EST.operador||'—'}</span>${kg>Number(b.quantidade_kg)?'<br><b style="color:var(--morango)">⚠️ maior que o saldo do balde!</b>':''}`
-    :'Preencha acima…';
+  const mix=eMistura();
+  let html='Preencha acima…';
+  if(n&&peso){
+    if(mix){
+      html=`<b>Mistura por receita</b> — ${n} potes de <b>${p.nome}</b> = ${fmt(kg)} kg:<br>`+
+        mix.map(c=>{
+          const need=kg*c.pct/100, tem=EST.cache.saldoBalde[c.pid]||0;
+          return `<span style="color:var(--pistache);font-weight:900">→</span> ${c.pct}% ${c.nome}: <b class="mono">${fmt(need)} kg</b>${need>tem?` <b style="color:var(--morango)">⚠️ balde tem só ${fmt(tem)}</b>`:''}`;
+        }).join('<br>')+
+        `<br><span class="mono" style="font-size:13px">${eLote.value} · por ${EST.operador||'—'}</span>`;
+    }else{
+      const b=EST.cache.balde.find(x=>x.produto_id===eBalde.value);
+      html=b?`Sai <b>${fmt(kg)} kg</b> do balde <b>${b.produtos.nome}</b><br><span style="color:var(--pistache);font-weight:900">→</span> entram <b>${n} potes</b> de <b>${p.nome}</b><br><span class="mono" style="font-size:13px">${eLote.value} · por ${EST.operador||'—'}</span>${kg>Number(b.quantidade_kg)?'<br><b style="color:var(--morango)">⚠️ maior que o saldo do balde!</b>':''}`:'Nenhum balde com saldo.';
+    }
+  }
+  document.getElementById('eRes').innerHTML=html;
 }
 async function confEnvase(){
   if(precisaOperador())return;
@@ -492,8 +518,10 @@ async function confEnvase(){
     if(!peso||peso<=0)return msg('Informe o peso do pote',true);
     const {error:e1}=await sb.from('produto_acabado').update({peso_pote_kg:peso}).eq('id',p.id);
     if(e1)return msg(e1.message,true);
+    p.peso_pote_kg=peso;
   }
-  const {error}=await sb.rpc('envasar',{p_produto:eBalde.value,p_pa:p.id,p_potes:n,p_responsavel:EST.operador,p_lote:eLote.value.trim()||null});
+  const mix=eMistura();
+  const {error}=await sb.rpc('envasar',{p_produto:mix?null:eBalde.value,p_pa:p.id,p_potes:n,p_responsavel:EST.operador,p_lote:eLote.value.trim()||null});
   if(error)return msg(error.message,true);
   msg('✅ Envase gravado — '+n+' potes');tela('envase');
 }
