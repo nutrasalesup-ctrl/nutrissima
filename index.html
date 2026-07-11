@@ -142,7 +142,17 @@ async function tInicio(){
     <button class="btnSec" style="margin-top:20px" onclick="sb.auth.signOut().then(boot)">Sair da conta</button>
   </main>`;
 }
-function setOp(n){EST.operador=n;localStorage.setItem('nf_operador',n);document.querySelectorAll('#ops button').forEach(b=>b.classList.toggle('sel',b.textContent===n))}
+async function setOp(n){
+  if(n===EST.operador)return;
+  const pin=prompt('PIN de '+n+' (4 dígitos):');
+  if(pin==null)return;
+  const {data:ok,error}=await sb.rpc('verificar_pin',{p_nome:n,p_pin:String(pin).trim()});
+  if(error)return msg(error.message,true);
+  if(!ok)return msg('PIN incorreto para '+n,true);
+  EST.operador=n;localStorage.setItem('nf_operador',n);
+  document.querySelectorAll('#ops button').forEach(b=>b.classList.toggle('sel',b.textContent===n));
+  msg('👤 Operador: '+n);
+}
 
 /* ================= PAINEL ================= */
 async function tPainel(){
