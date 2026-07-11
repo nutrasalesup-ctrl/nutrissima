@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nutríssima Fábrica</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+:root{--cacau:#33200F;--leite:#FFFDF9;--casca:#EFE7DC;--pistache:#3E7C45;--pistache-esc:#2E5F34;--morango:#C63A3A;--mel:#B8862B;--linha:#DCD2C4;--raio:14px}
+*{box-sizing:border-box;margin:0}
+body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--leite);color:var(--cacau);min-height:100vh}
+.mono{font-family:ui-monospace,Menlo,monospace}
+.app{max-width:520px;margin:0 auto;min-height:100vh;padding-bottom:100px}
+.trilha{display:flex;gap:4px;overflow-x:auto;padding:10px 16px;background:var(--cacau)}
+.trilha span{flex:none;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#B9A896;padding:5px 10px;border-radius:99px;border:1px solid #5A4630}
+.trilha span.atual{background:var(--pistache);border-color:var(--pistache);color:#fff}
+.topo{padding:16px;display:flex;align-items:center;gap:12px}
+.topo .voltar{width:46px;height:46px;border-radius:12px;border:1.5px solid var(--linha);background:#fff;font-size:20px;cursor:pointer}
+.topo h1{font-size:24px;font-weight:900}
+.topo p{font-size:13.5px;color:#7A6A57}
+main{padding:4px 16px}
+.card{background:#fff;border:1.5px solid var(--linha);border-radius:var(--raio);padding:16px;margin-bottom:12px}
+.pergunta{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#8A7A64;margin:12px 0 8px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chips button{padding:12px 18px;border-radius:99px;border:1.5px solid var(--linha);background:#fff;font-size:16px;font-weight:700;cursor:pointer;min-height:48px}
+.chips button.sel{background:var(--cacau);color:#fff;border-color:var(--cacau)}
+.acoes{display:grid;gap:12px;margin-top:8px}
+.acoes button{display:flex;align-items:center;gap:14px;padding:18px;border-radius:var(--raio);border:1.5px solid var(--linha);background:#fff;cursor:pointer;text-align:left;min-height:72px;font-family:inherit}
+.acoes .ico{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-size:22px;flex:none}
+.acoes b{font-size:18px;display:block;color:var(--cacau)}
+.acoes small{font-size:13px;color:#7A6A57}
+.btnP{width:100%;min-height:58px;font-size:18px;font-weight:900;border:none;border-radius:16px;background:var(--pistache);color:#fff;cursor:pointer;font-family:inherit;margin-top:8px}
+.btnP:disabled{background:#C8C0B4}
+.btnSec{width:100%;min-height:50px;font-size:16px;font-weight:700;border:1.5px solid var(--linha);border-radius:14px;background:#fff;cursor:pointer;font-family:inherit;margin-top:8px;color:var(--cacau)}
+input,select{width:100%;padding:13px 14px;font-size:17px;border:1.5px solid var(--linha);border-radius:12px;font-family:inherit;background:#fff;color:var(--cacau)}
+input:focus,select:focus{outline:none;border-color:var(--pistache)}
+label{display:block;font-size:13px;font-weight:700;color:#7A6A57;margin:12px 0 5px}
+.campoG{font-size:32px!important;font-weight:900;text-align:center;font-variant-numeric:tabular-nums}
+.item-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:13px 2px;border-bottom:1px solid var(--linha);font-size:16px}
+.item-row .saldo{font-weight:900;font-variant-numeric:tabular-nums;font-size:17px;white-space:nowrap}
+.item-row.baixo .saldo{color:var(--morango)}
+.chip{display:inline-block;padding:4px 11px;border-radius:99px;font-size:12px;font-weight:700;text-transform:uppercase}
+.chip.ok{background:#E7F0E4;color:var(--pistache-esc)}.chip.mel{background:#F6ECD6;color:#7A5A14}.chip.azul{background:#E4EDF2;color:#2B5A78}.chip.ver{background:#FBEAEA;color:var(--morango)}
+.check{display:flex;align-items:center;gap:12px;padding:12px;border:1.5px solid var(--linha);border-radius:12px;font-size:16px;cursor:pointer;background:#fff;margin-bottom:8px}
+.check input{width:26px;height:26px;accent-color:var(--pistache);flex:none}
+.check .qtd{margin-left:auto;font-weight:900;font-variant-numeric:tabular-nums}
+.check.ok{background:#F0F6EE;border-color:#BFD8C0}
+.resumo{background:#F6F1E8;border-radius:var(--raio);padding:16px;font-size:16.5px;line-height:1.55;border:1.5px solid var(--linha)}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.kpi{background:#fff;border:1.5px solid var(--linha);border-radius:var(--raio);padding:14px;text-align:center}
+.kpi b{font-size:34px;font-variant-numeric:tabular-nums;display:block}
+.kpi p{font-size:12.5px;font-weight:700}
+.kpi.alerta{border-color:#E8B9B9;background:#FDF7F7}.kpi.alerta b{color:var(--morango)}
+.feed{border-left:3px solid var(--linha);padding-left:14px;display:grid;gap:13px}
+.feed .hora{font-size:12px;color:#7A6A57}
+.msg{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--cacau);color:#fff;padding:14px 22px;border-radius:14px;font-weight:700;font-size:15px;z-index:99;max-width:90%;text-align:center;box-shadow:0 6px 24px #0004}
+.msg.erro{background:var(--morango)}
+.tela{display:none}.tela.on{display:block}
+.dia{display:flex;gap:10px;align-items:center;margin:14px 0 10px;background:var(--cacau);color:#fff;border-radius:var(--raio);padding:11px 15px}
+.dia b{font-size:24px;font-variant-numeric:tabular-nums}
+.dia div{flex:1;font-size:13px;color:#E8DECF}
+.mo{flex:none;width:64px;text-align:center;border-radius:12px;padding:8px 2px}
+.mo small{font-size:9px;text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+.mo b{display:block;font-size:26px;line-height:1}
+.mo.m1{background:#F3EAD8;color:#7A5A14}.mo.m2{background:#E4EDF2;color:#2B5A78}
+.center{text-align:center;color:#8A7A64;padding:30px 10px;font-size:15px}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+<script>
+/* ================= CONFIG ================= */
+const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
+let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
+
+function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
+function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
+function hoje(){return new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}
+function loteSugestao(seq){const d=new Date();const s=String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');return s+'-'+(seq||1)}
+function msg(t,erro){const m=el(`<div class="msg ${erro?'erro':''}">${t}</div>`);document.body.appendChild(m);setTimeout(()=>m.remove(),3800)}
+function trilha(atual){const etapas=['Programação','Compra','Receber','Pesagem','Moinho','Balde','Envase','Estoque'];return '<div class="trilha">'+etapas.map(e=>`<span class="${e===atual?'atual':''}">${e}</span>`).join('')+'</div>'}
+function topo(t,sub,voltar=true){return `<div class="topo">${voltar?'<button class="voltar" onclick="tela(\'inicio\')">←</button>':''}<div><h1>${t}</h1><p>${sub||''}</p></div></div>`}
+function precisaOperador(){if(!EST.operador){msg('Escolha primeiro quem é você, na tela inicial',true);tela('inicio');return true}return false}
+
+/* ================= BOOT / AUTH ================= */
+async function boot(){
+  const key=localStorage.getItem('nf_key');
+  if(!key){return telaConfig()}
+  sb=window.supabase.createClient(SUPA_URL,key);
+  const {data:{session}}=await sb.auth.getSession();
+  if(!session){return telaLogin()}
+  tela('inicio');
+}
+function telaConfig(){
+  document.getElementById('app').innerHTML=`
+  ${topo('Configuração','só na primeira vez, neste aparelho',false)}
+  <main><div class="card">
+    <p style="font-size:15px;line-height:1.5">Cole a <b>chave pública (anon key)</b> do Supabase.<br><small style="color:#7A6A57">supabase.com → projeto nutrissima-producao → Settings → API Keys → <b>anon public</b></small></p>
+    <label>Chave</label><input id="cfgKey" placeholder="eyJ… ou sb_publishable_…">
+    <button class="btnP" onclick="salvarCfg()">Salvar e continuar</button>
+  </div></main>`;
+}
+function salvarCfg(){const k=document.getElementById('cfgKey').value.trim();if(k.length<20)return msg('Chave inválida',true);localStorage.setItem('nf_key',k);boot()}
+function telaLogin(){
+  document.getElementById('app').innerHTML=`
+  ${topo('Entrar','conta da fábrica',false)}
+  <main><div class="card">
+    <label>E-mail</label><input id="lEmail" type="email" autocomplete="username">
+    <label>Senha</label><input id="lSenha" type="password" autocomplete="current-password">
+    <button class="btnP" onclick="login()">Entrar</button>
+    <button class="btnSec" onclick="localStorage.removeItem('nf_key');boot()">Trocar chave de configuração</button>
+  </div></main>`;
+}
+async function login(){
+  const {error}=await sb.auth.signInWithPassword({email:lEmail.value.trim(),password:lSenha.value});
+  if(error)return msg('Não entrou: '+error.message,true);
+  tela('inicio');
+}
+
+/* ================= NAVEGAÇÃO ================= */
+const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,mrp:tMRP};
+function tela(n,arg){TELAS[n](arg)}
+
+/* ================= INÍCIO ================= */
+async function tInicio(){
+  const {data:ops}=await sb.from('operadores').select('nome').eq('ativo',true).order('nome');
+  document.getElementById('app').innerHTML=`
+  ${trilha('')}
+  ${topo('Nutríssima Fábrica',hoje(),false)}
+  <main>
+    <p class="pergunta">Quem é você?</p>
+    <div class="chips" id="ops">${(ops||[]).map(o=>`<button class="${o.nome===EST.operador?'sel':''}" onclick="setOp('${o.nome}')">${o.nome}</button>`).join('')}</div>
+    <p class="pergunta">O que você vai fazer agora?</p>
+    <div class="acoes">
+      <button onclick="tela('painel')"><span class="ico" style="background:#EFE7DC">📊</span><span><b>Painel</b><small>A empresa agora — números e atividade</small></span></button>
+      <button onclick="tela('programacao')"><span class="ico" style="background:#F3EAD8">🗓️</span><span><b>Programação</b><small>Moinhos 1 e 2 — pesar e lançar no balde</small></span></button>
+      <button onclick="tela('mrp')"><span class="ico" style="background:#FBEAEA">🛒</span><span><b>Compras / MRP</b><small>O que comprar, quanto e até quando</small></span></button>
+      <button onclick="tela('receber')"><span class="ico" style="background:#E7F0E4">📦</span><span><b>Receber mercadoria</b><small>Confirmar chegada das compras</small></span></button>
+      <button onclick="tela('envase')"><span class="ico" style="background:#EAE4F2">🫙</span><span><b>Envasar</b><small>Do balde para os potes</small></span></button>
+      <button onclick="tela('estoque')"><span class="ico" style="background:#E4EDF2">📋</span><span><b>Conferir estoque</b><small>Matéria-prima, balde e potes</small></span></button>
+    </div>
+    <button class="btnSec" style="margin-top:20px" onclick="sb.auth.signOut().then(boot)">Sair da conta</button>
+  </main>`;
+}
+function setOp(n){EST.operador=n;localStorage.setItem('nf_operador',n);document.querySelectorAll('#ops button').forEach(b=>b.classList.toggle('sel',b.textContent===n))}
+
+/* ================= PAINEL ================= */
+async function tPainel(){
+  document.getElementById('app').innerHTML=trilha('')+topo('Painel','Nutríssima agora')+'<main><div class="center">Carregando…</div></main>';
+  const [itens,compras,balde,pa,ativ]=await Promise.all([
+    sb.from('itens').select('nome,saldo_atual,estoque_minimo'),
+    sb.from('compras').select('id,status,data_prevista_entrega').in('status',['pendente','aguardando_pagamento','liberado']),
+    sb.from('estoque_balde').select('quantidade_kg,produtos(nome)').gt('quantidade_kg',0),
+    sb.from('produto_acabado').select('saldo_potes'),
+    sb.from('atividades').select('*').order('criado_em',{ascending:false}).limit(15)
+  ]);
+  const abaixo=(itens.data||[]).filter(i=>i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo));
+  const kgBalde=(balde.data||[]).reduce((a,b)=>a+Number(b.quantidade_kg),0);
+  const potes=(pa.data||[]).reduce((a,b)=>a+Number(b.saldo_potes),0);
+  const hj=new Date().toISOString().slice(0,10);
+  const chegaHoje=(compras.data||[]).filter(c=>c.data_prevista_entrega===hj).length;
+  document.getElementById('app').innerHTML=`
+  ${trilha('')}${topo('Painel','Nutríssima agora · '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}))}
+  <main>
+    <div class="kpis">
+      <div class="kpi ${abaixo.length?'alerta':''}"><b>${abaixo.length}</b><p>itens abaixo do mínimo</p></div>
+      <div class="kpi"><b>${(compras.data||[]).length}</b><p>compras a receber${chegaHoje?`<br><small style="color:#7A6A57">${chegaHoje} chega hoje ⏰</small>`:''}</p></div>
+      <div class="kpi"><b>${fmt(kgBalde)}<small style="font-size:15px"> kg</small></b><p>creme em balde<br><small style="color:#7A6A57">${(balde.data||[]).length} base(s)</small></p></div>
+      <div class="kpi"><b>${fmt(potes,0)}</b><p>potes em estoque</p></div>
+    </div>
+    ${abaixo.length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-top:12px"><b style="color:var(--morango)">Precisa de atenção</b>${abaixo.slice(0,8).map(i=>`<div class="item-row baixo"><span>${i.nome}</span><span class="saldo mono">${fmt(i.saldo_atual)}</span></div>`).join('')}</div>`:''}
+    ${(balde.data||[]).length?`<div class="card" style="margin-top:12px"><b>Baldes com saldo</b>${balde.data.map(b=>`<div class="item-row"><span>${b.produtos.nome}</span><span class="saldo mono">${fmt(b.quantidade_kg)} kg</span></div>`).join('')}</div>`:''}
+    <div class="card" style="margin-top:12px"><b>Atividade da fábrica</b><small style="color:#7A6A57;display:block;margin-bottom:10px">tudo que aconteceu, com quem fez e o lote</small>
+      <div class="feed">${(ativ.data&&ativ.data.length)?ativ.data.map(a=>{
+        const ic={recebimento:'📦',pesagem:'⚖️',refino:'🌀',envase:'🫙',compra:'🛒'}[a.tipo]||'•';
+        const d=new Date(a.criado_em);
+        return `<div><span class="hora mono">${d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})} ${d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span><br>${ic} ${a.descricao} <span class="mono" style="font-size:12px;color:#7A6A57">${a.lote?'· '+a.lote:''} ${a.responsavel?'· '+a.responsavel:''}</span></div>`
+      }).join(''):'<div class="center">Nenhuma atividade registrada ainda — ela aparece aqui conforme a equipe usa o app.</div>'}</div>
+    </div>
+  </main>`;
+}
+
+/* ================= ESTOQUE ================= */
+async function tEstoque(){
+  const {data:itens}=await sb.from('itens').select('nome,categoria,unidade,saldo_atual,estoque_minimo').order('ordem');
+  EST.cache.itens=itens||[];
+  document.getElementById('app').innerHTML=`
+  ${trilha('Estoque')}${topo('Estoque','matéria-prima e embalagens')}
+  <main>
+    <input id="busca" placeholder="🔍 Buscar item…" oninput="fEstoque()">
+    <div class="chips" style="margin:10px 0"><button class="sel" data-f="materia_prima" onclick="fCat(this)">Matéria-prima</button><button data-f="embalagem" onclick="fCat(this)">Embalagens</button><button data-f="todos" onclick="fCat(this)">Tudo</button><button data-f="alerta" onclick="fCat(this)">🔴 Abaixo do mín.</button></div>
+    <div id="lista"></div>
+  </main>`;
+  EST.fcat='materia_prima';fEstoque();
+}
+function fCat(b){document.querySelectorAll('[data-f]').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');EST.fcat=b.dataset.f;fEstoque()}
+function fEstoque(){
+  const q=(document.getElementById('busca').value||'').toLowerCase();
+  let L=EST.cache.itens;
+  if(EST.fcat==='alerta')L=L.filter(i=>i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo));
+  else if(EST.fcat!=='todos')L=L.filter(i=>i.categoria===EST.fcat);
+  if(q)L=L.filter(i=>i.nome.toLowerCase().includes(q));
+  document.getElementById('lista').innerHTML=L.map(i=>{
+    const baixo=i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo);
+    return `<div class="item-row ${baixo?'baixo':''}"><span>${baixo?'⬤ ':''}${i.nome}</span><span class="saldo mono">${fmt(i.saldo_atual)} ${i.unidade}</span></div>`
+  }).join('')||'<div class="center">Nada encontrado.</div>';
+}
+
+/* ================= RECEBER ================= */
+async function tReceber(sel){
+  const {data:compras}=await sb.from('compras').select('*, itens(nome,unidade)').eq('status','liberado').order('data_prevista_entrega');
+  if(!sel){
+    document.getElementById('app').innerHTML=`
+    ${trilha('Receber')}${topo('Receber','toque no pedido que chegou')}
+    <main>${(compras&&compras.length)?compras.map(c=>`
+      <button class="card" style="width:100%;text-align:left;cursor:pointer;font-family:inherit" onclick="tela('receber','${c.id}')">
+        <b style="font-size:18px">${c.itens.nome} — ${fmt(c.quantidade_solicitada)} ${c.itens.unidade}</b>
+        <p style="font-size:14.5px;color:#7A6A57;margin-top:4px">${c.fornecedor_nome||''} · entrega ${c.data_prevista_entrega?new Date(c.data_prevista_entrega+'T12:00').toLocaleDateString('pt-BR'):'—'} <span class="chip azul">Liberado</span></p>
+      </button>`).join(''):'<div class="center">Nenhuma compra liberada aguardando recebimento. 🎉</div>'}
+    </main>`;
+    EST.cache.compras=compras||[];return;
+  }
+  const c=EST.cache.compras.find(x=>x.id===sel);
+  document.getElementById('app').innerHTML=`
+  ${trilha('Receber')}${topo('Receber','${'operador: '+ (EST.operador||"—")}')}
+  <main>
+    <div class="card"><b style="font-size:19px">${c.itens.nome}</b><p style="color:#7A6A57;font-size:14.5px">${c.fornecedor_nome||''} · pedido: ${fmt(c.quantidade_solicitada)} ${c.itens.unidade}</p></div>
+    <div class="card"><label>1 · Quanto chegou? (${c.itens.unidade})</label>
+      <input class="campoG" id="rQtd" inputmode="decimal" value="${c.quantidade_solicitada}">
+      <label>2 · Lote do fornecedor (opcional)</label>
+      <input id="rLote" class="mono" placeholder="ex.: USI-260713-A">
+      <button class="btnP" onclick="confReceber('${c.id}')">Confirmar entrada no estoque</button>
+    </div>
+  </main>`;
+}
+async function confReceber(id){
+  if(precisaOperador())return;
+  const q=Number(document.getElementById('rQtd').value.replace(',','.'));
+  if(!q||q<=0)return msg('Informe a quantidade',true);
+  const {error}=await sb.rpc('confirmar_recebimento',{p_compra:id,p_qtd:q,p_lote:document.getElementById('rLote').value.trim()||null,p_responsavel:EST.operador});
+  if(error)return msg(error.message,true);
+  msg('✅ Entrou no estoque — '+fmt(q));tela('receber');
+}
+
+/* ================= PROGRAMAÇÃO ================= */
+async function tProg(){
+  const [prog,prods,equip]=await Promise.all([
+    sb.from('programacao_refino').select('*, produtos(nome,estocavel_balde), equipamentos(nome)').neq('status','no_balde').order('data'),
+    sb.from('produtos').select('id,nome').eq('ativo',true).order('nome'),
+    sb.from('equipamentos').select('id,nome').eq('ativo',true).order('nome')
+  ]);
+  EST.cache.prods=prods.data||[];EST.cache.equip=equip.data||[];
+  const porDia={};(prog.data||[]).forEach(p=>{(porDia[p.data]=porDia[p.data]||[]).push(p)});
+  document.getElementById('app').innerHTML=`
+  ${trilha('Programação')}${topo('Programação','Moinhos 1 e 2 em paralelo')}
+  <main>
+    ${Object.keys(porDia).sort().map(d=>{
+      const dt=new Date(d+'T12:00');const itens=porDia[d];
+      return `<div class="dia"><b>${dt.getDate()}</b><div><b style="color:#fff;font-size:15px">${dt.toLocaleDateString('pt-BR',{weekday:'long'}).toUpperCase()}</b> · ${itens.length} produto(s) · ${fmt(itens.reduce((a,p)=>a+Number(p.quantidade_kg),0))} kg</div></div>`+
+      itens.map(p=>{
+        const m=(p.equipamentos?.nome||'').includes('2')?'m2':'m1';
+        const acao=p.status==='programado'
+          ?`<button class="btnP" style="min-height:48px;font-size:16px" onclick="tela('pesagem','${p.id}')">⚖️ Pesar</button>`
+          :`<button class="btnP" style="min-height:48px;font-size:16px;background:var(--mel)" onclick="pedirRefino('${p.id}','${p.produtos.nome}',${p.quantidade_kg})">🌀 Concluir refino → balde</button>`;
+        return `<div class="card" style="display:flex;gap:12px;align-items:flex-start">
+          <div class="mo ${m}"><small>Moinho</small><b>${m==='m1'?'1':'2'}</b></div>
+          <div style="flex:1"><b style="font-size:17px">${p.produtos.nome}</b>
+            <p style="font-size:14px;color:#7A6A57">${fmt(p.quantidade_kg)} kg · <span class="chip ${p.status==='programado'?'mel':'azul'}">${p.status==='programado'?'a pesar':'pesado — no moinho'}</span> ${p.lote?`<span class="mono" style="font-size:12px">· ${p.lote}</span>`:''}</p>
+            ${acao}
+          </div></div>`
+      }).join('')
+    }).join('')||'<div class="center">Nada programado. Programe o primeiro produto abaixo. 👇</div>'}
+    <div class="card" style="margin-top:14px"><b>＋ Programar produto</b>
+      <label>Produto</label><select id="pProd">${EST.cache.prods.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('')}</select>
+      <label>Moinho</label><select id="pEquip">${EST.cache.equip.map(e=>`<option value="${e.id}">${e.nome}</option>`).join('')}</select>
+      <label>Data</label><input type="date" id="pData" value="${new Date().toISOString().slice(0,10)}">
+      <label>Quantidade (kg)</label><input class="campoG" id="pKg" inputmode="decimal" placeholder="300">
+      <button class="btnP" onclick="criarProg()">Programar</button>
+    </div>
+  </main>`;
+}
+async function criarProg(){
+  if(precisaOperador())return;
+  const kg=Number(document.getElementById('pKg').value.replace(',','.'));
+  if(!kg||kg<=0)return msg('Informe os kg',true);
+  const {error}=await sb.from('programacao_refino').insert({produto_id:pProd.value,equipamento_id:pEquip.value,data:pData.value,quantidade_kg:kg});
+  if(error)return msg(error.message,true);
+  msg('✅ Programado');tela('programacao');
+}
+async function pedirRefino(id,nome,kg){
+  const q=prompt(`Quantos kg de ${nome} saíram do moinho para o balde?`,kg);
+  if(q==null)return; const n=Number(String(q).replace(',','.'));
+  if(!n||n<=0)return msg('Quantidade inválida',true);
+  if(precisaOperador())return;
+  const {error}=await sb.rpc('concluir_refino',{p_prog:id,p_qtd_real:n,p_responsavel:EST.operador});
+  if(error)return msg(error.message,true);
+  msg('✅ '+fmt(n)+' kg no balde');tela('programacao');
+}
+
+
+/* ================= COMPRAS / MRP ================= */
+async function tMRP(){
+  document.getElementById('app').innerHTML=trilha('Compra')+topo('Compras / MRP','calculando a partir da programação…')+'<main><div class="center">Calculando…</div></main>';
+  const [mrp,pedidos,forns]=await Promise.all([
+    sb.rpc('fn_mrp'),
+    sb.from('compras').select('*, itens(nome,unidade)').in('status',['pendente','aguardando_pagamento','liberado']).order('data_prevista_entrega'),
+    sb.from('fornecedores').select('id,nome').order('nome')
+  ]);
+  EST.cache.forns=forns.data||[];EST.cache.mrp=mrp.data||[];
+  const sug=(mrp.data||[]).filter(m=>m.a_comprar>0||m.status==='faltam dados');
+  const cor=st=>st==='PEDIR AGORA'?'ver':st==='esta semana'?'mel':st==='faltam dados'?'azul':'ok';
+  document.getElementById('app').innerHTML=`
+  ${trilha('Compra')}${topo('Compras / MRP','necessidade calculada da programação dos moinhos')}
+  <main>
+    <div class="card"><b>Sugestões de compra</b><small style="color:#7A6A57;display:block;margin-bottom:6px">demanda dos refinos programados + estoque mínimo − saldo · prazo pelo lead time</small>
+    ${sug.length?sug.map((m,ix)=>`
+      <div style="border-top:1px solid var(--linha);padding:12px 0">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+          <b style="font-size:16.5px">${m.nome}</b><span class="chip ${cor(m.status)}">${m.status}</span></div>
+        <p style="font-size:14px;color:#7A6A57;margin-top:4px">
+          precisa <b class="mono">${fmt(m.necessidade)} ${m.unidade}</b> · saldo ${fmt(m.saldo)} · mín. ${m.estoque_minimo!=null?fmt(m.estoque_minimo):'—'}
+          → comprar <b class="mono" style="color:var(--cacau)">${fmt(m.a_comprar)} ${m.unidade}</b><br>
+          ${m.pedir_ate?('pedir até <b>'+new Date(m.pedir_ate+'T12:00').toLocaleDateString('pt-BR')+'</b> (produção '+new Date(m.data_producao+'T12:00').toLocaleDateString('pt-BR')+', entrega '+fmt(m.lead_time_dias,0)+'d)'):'sem lead time cadastrado — preencha no item'}
+        </p>
+        ${m.a_comprar>0?`<button class="btnP" style="min-height:44px;font-size:15px;background:${m.status==='PEDIR AGORA'?'var(--morango)':'var(--pistache)'}" onclick="novoPedido('${m.item_id}','${m.nome.replace(/'/g,"\\'")}',${m.a_comprar})">Criar pedido de ${fmt(m.a_comprar)} ${m.unidade}</button>`:''}
+      </div>`).join(''):'<div class="center">Nenhuma compra necessária para a programação atual. ✅</div>'}
+    </div>
+    <div class="card"><b>Pedidos em andamento</b>
+    ${(pedidos.data||[]).length?pedidos.data.map(c=>`
+      <div class="item-row"><span>${c.itens.nome} — ${fmt(c.quantidade_solicitada)} ${c.itens.unidade}<br><small style="color:#7A6A57">${c.fornecedor_nome||'—'} · entrega ${c.data_prevista_entrega?new Date(c.data_prevista_entrega+'T12:00').toLocaleDateString('pt-BR'):'—'}</small></span><span class="chip azul">${c.status.replace('_',' ')}</span></div>`).join(''):'<div class="center">Nenhum pedido em aberto.</div>'}
+    <button class="btnSec" onclick="tela('receber')">📦 Ir para Receber</button></div>
+  </main>`;
+}
+async function novoPedido(itemId,nome,qtd){
+  if(precisaOperador())return;
+  const f=EST.cache.forns; if(!f.length)return msg('Cadastre um fornecedor antes',true);
+  const nomes=f.map((x,i)=>(i+1)+') '+x.nome).join('\n');
+  const esc=prompt('Fornecedor para '+nome+':\n'+nomes+'\n\nDigite o número:','1');
+  if(esc==null)return; const fi=f[parseInt(esc)-1]; if(!fi)return msg('Fornecedor inválido',true);
+  const q=prompt('Quantidade a pedir:',qtd); if(q==null)return;
+  const dt=prompt('Entrega prevista (AAAA-MM-DD):',new Date(Date.now()+5*864e5).toISOString().slice(0,10)); if(dt==null)return;
+  const {error}=await sb.from('compras').insert({item_id:itemId,fornecedor_id:fi.id,fornecedor_nome:fi.nome,quantidade_solicitada:Number(String(q).replace(',','.')),status:'liberado',data_pedido:new Date().toISOString().slice(0,10),data_prevista_entrega:dt});
+  if(error)return msg(error.message,true);
+  await sb.from('atividades').insert({tipo:'compra',descricao:'Pedido criado — '+fmt(Number(String(q).replace(',','.')))+' de '+nome+' ('+fi.nome+')',responsavel:EST.operador});
+  msg('✅ Pedido criado');tela('mrp');
+}
+
+/* ================= PESAGEM ================= */
+async function tPesagem(progId){
+  if(!progId)return tela('programacao');
+  const {data:prog}=await sb.from('programacao_refino').select('*, produtos(nome)').eq('id',progId).single();
+  const perda=3; const pesar=Number(prog.quantidade_kg)/(1-perda/100);
+  const {data:exp,error}=await sb.rpc('fn_explode',{p_produto:prog.produto_id,p_kg:pesar});
+  if(error)return msg(error.message,true);
+  if(!EST.cache.itens){const {data}=await sb.from('itens').select('id,nome,unidade');EST.cache.itensById=Object.fromEntries((data||[]).map(i=>[i.id,i]))}
+  else EST.cache.itensById=EST.cache.itensById||Object.fromEntries(EST.cache.itens.map(i=>[i.id,i]));
+  if(!EST.cache.itensById){const {data}=await sb.from('itens').select('id,nome');EST.cache.itensById=Object.fromEntries((data||[]).map(i=>[i.id,i]))}
+  const {data:prodsAll}=await sb.from('produtos').select('id,nome');
+  const prodBy=Object.fromEntries((prodsAll||[]).map(p=>[p.id,p.nome]));
+  const {count}=await sb.from('programacao_refino').select('id',{count:'exact',head:true}).not('lote','is',null).gte('criado_em',new Date().toISOString().slice(0,10));
+  const insumos=(exp||[]).filter(e=>e.item_id);
+  const baldes=(exp||[]).filter(e=>e.balde_produto_id);
+  document.getElementById('app').innerHTML=`
+  ${trilha('Pesagem')}${topo('Pesagem',prog.produtos.nome+' · '+fmt(prog.quantidade_kg)+' kg programados')}
+  <main>
+    <div class="card"><label style="margin-top:0">① Lote da pesagem</label>
+      <input id="wLote" class="mono campoG" style="font-size:22px!important" value="${loteSugestao((count||0)+1)}"></div>
+    ${baldes.length?`<div class="card"><b>② Retirar dos baldes</b><small style="color:#7A6A57;display:block">bases prontas que entram nesta mistura</small>
+      ${baldes.map(b=>`<div class="item-row"><span>🪣 ${prodBy[b.balde_produto_id]||'?'}</span><span class="saldo mono">${fmt(b.balde_kg)} kg</span></div>`).join('')}</div>`:''}
+    <div class="card"><b>${baldes.length?'③':'②'} Pese e marque cada insumo</b><small style="color:#7A6A57;display:block;margin-bottom:10px">quantidades já incluem a perda de ${perda}%</small>
+      <div id="wChecks">${insumos.map((i,ix)=>`<label class="check" id="ck${ix}"><input type="checkbox" onchange="this.parentElement.classList.toggle('ok',this.checked);verPesagem()"> ${EST.cache.itensById[i.item_id]?.nome||'?'}<span class="qtd mono">${fmt(i.kg,2)} kg</span></label>`).join('')}</div>
+    </div>
+    <button class="btnP" id="wBtn" disabled onclick="confPesagem('${progId}')">Faltam insumos para concluir</button>
+  </main>`;
+  window.verPesagem=()=>{const t=document.querySelectorAll('#wChecks input');const ok=[...t].every(c=>c.checked);const b=document.getElementById('wBtn');b.disabled=!ok;b.textContent=ok?'Concluir pesagem — baixa a matéria-prima':`Faltam ${[...t].filter(c=>!c.checked).length} insumo(s) para concluir`}
+  verPesagem();
+}
+async function confPesagem(progId){
+  if(precisaOperador())return;
+  const lote=document.getElementById('wLote').value.trim();
+  if(!lote)return msg('Informe o lote',true);
+  const {error}=await sb.rpc('confirmar_pesagem',{p_prog:progId,p_responsavel:EST.operador,p_lote:lote});
+  if(error)return msg(error.message,true);
+  msg('✅ Pesagem concluída — estoque baixado · lote '+lote);tela('programacao');
+}
+
+/* ================= ENVASE ================= */
+async function tEnvase(){
+  const [balde,pa]=await Promise.all([
+    sb.from('estoque_balde').select('produto_id,quantidade_kg,produtos(nome)').gt('quantidade_kg',0),
+    sb.from('produto_acabado').select('id,nome,linha,peso_pote_kg,saldo_potes').eq('ativo',true).order('linha').order('nome')
+  ]);
+  EST.cache.balde=balde.data||[];EST.cache.pa=pa.data||[];
+  if(!EST.cache.balde.length){document.getElementById('app').innerHTML=trilha('Envase')+topo('Envasar','')+'<main><div class="center">Nenhum balde com saldo. Conclua um refino primeiro.</div></main>';return}
+  document.getElementById('app').innerHTML=`
+  ${trilha('Envase')}${topo('Envasar','do balde para os potes')}
+  <main>
+    <div class="card"><label style="margin-top:0">① De qual balde?</label>
+      <select id="eBalde" onchange="eResumo()">${EST.cache.balde.map(b=>`<option value="${b.produto_id}">${b.produtos.nome} — ${fmt(b.quantidade_kg)} kg</option>`).join('')}</select>
+      <label>② Para qual produto?</label>
+      <select id="ePa" onchange="ePeso();eResumo()">${EST.cache.pa.map(p=>`<option value="${p.id}">${p.linha?p.linha+' · ':''}${p.nome}</option>`).join('')}</select>
+      <div id="ePesoBox"></div>
+      <label>③ Quantos potes saíram?</label>
+      <input class="campoG" id="ePotes" inputmode="numeric" oninput="eResumo()" placeholder="0">
+      <label>Lote</label><input id="eLote" class="mono" value="${loteSugestao(1)}">
+    </div>
+    <div class="card"><div class="resumo" id="eRes">Preencha acima…</div>
+      <button class="btnP" onclick="confEnvase()">Confirmar envase</button></div>
+  </main>`;
+  ePeso();eResumo();
+}
+function ePeso(){
+  const p=EST.cache.pa.find(x=>x.id===ePa.value);
+  document.getElementById('ePesoBox').innerHTML=p&&p.peso_pote_kg==null
+    ?`<label style="color:var(--morango)">⚠️ Peso do pote não cadastrado — informe (kg por pote)</label><input id="ePeso" inputmode="decimal" placeholder="ex.: 1.01">`
+    :(p?`<p style="font-size:13.5px;color:#7A6A57;margin-top:6px">peso do pote: <b class="mono">${p.peso_pote_kg} kg</b> · em estoque hoje: ${fmt(p.saldo_potes,0)} potes</p>`:'');
+}
+function eResumo(){
+  const b=EST.cache.balde.find(x=>x.produto_id===eBalde.value);
+  const p=EST.cache.pa.find(x=>x.id===ePa.value);
+  const peso=p?.peso_pote_kg??Number((document.getElementById('ePeso')?.value||'').replace(',','.'));
+  const n=Number(ePotes.value)||0;
+  const kg=peso?n*peso:0;
+  document.getElementById('eRes').innerHTML=(n&&peso)
+    ?`Sai <b>${fmt(kg)} kg</b> do balde <b>${b.produtos.nome}</b><br><span style="color:var(--pistache);font-weight:900">→</span> entram <b>${n} potes</b> de <b>${p.nome}</b><br><span class="mono" style="font-size:13px">${eLote.value} · por ${EST.operador||'—'}</span>${kg>Number(b.quantidade_kg)?'<br><b style="color:var(--morango)">⚠️ maior que o saldo do balde!</b>':''}`
+    :'Preencha acima…';
+}
+async function confEnvase(){
+  if(precisaOperador())return;
+  const p=EST.cache.pa.find(x=>x.id===ePa.value);
+  const n=parseInt(ePotes.value);if(!n||n<=0)return msg('Informe os potes',true);
+  if(p.peso_pote_kg==null){
+    const peso=Number((document.getElementById('ePeso')?.value||'').replace(',','.'));
+    if(!peso||peso<=0)return msg('Informe o peso do pote',true);
+    const {error:e1}=await sb.from('produto_acabado').update({peso_pote_kg:peso}).eq('id',p.id);
+    if(e1)return msg(e1.message,true);
+  }
+  const {error}=await sb.rpc('envasar',{p_produto:eBalde.value,p_pa:p.id,p_potes:n,p_responsavel:EST.operador,p_lote:eLote.value.trim()||null});
+  if(error)return msg(error.message,true);
+  msg('✅ Envase gravado — '+n+' potes');tela('envase');
+}
+
+boot();
+</script>
+</body>
+</html>
