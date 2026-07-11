@@ -64,26 +64,37 @@ label{display:block;font-size:13px;font-weight:700;color:#7A6A57;margin:12px 0 5
 .mo b{display:block;font-size:26px;line-height:1}
 .mo.m1{background:#F3EAD8;color:#7A5A14}.mo.m2{background:#E4EDF2;color:#2B5A78}
 .center{text-align:center;color:#8A7A64;padding:30px 10px;font-size:15px}
-/* Modo TV */
-.tv{background:var(--cacau);color:#FFFDF9;min-height:100vh;padding:22px 26px;max-width:none}
-.tv h1{font-size:34px;font-weight:900}
-.tv .relogio{font-size:30px;font-variant-numeric:tabular-nums;font-weight:900;color:#E8DECF}
-.tv .recado{background:var(--mel);color:#2B1A00;border-radius:14px;padding:12px 18px;font-size:21px;font-weight:800;margin:14px 0}
-.tv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-top:14px}
-.tv-col{background:#3F2A16;border-radius:18px;padding:16px}
-.tv-col h2{font-size:20px;letter-spacing:.08em;text-transform:uppercase;color:#C9B99F;margin-bottom:10px}
-.tv-item{margin-bottom:14px}
-.tv-item .nome{font-size:19px;font-weight:800}
-.tv-item .nums{font-size:26px;font-weight:900;font-variant-numeric:tabular-nums}
-.tv-item .nums small{font-size:15px;color:#C9B99F;font-weight:700}
-.tv-bar{height:14px;background:#5A4630;border-radius:99px;overflow:hidden;margin-top:5px}
-.tv-bar i{display:block;height:100%;background:var(--pistache);border-radius:99px;transition:width 1.2s ease}
-.tv-item.feito .tv-bar i{background:#5FBF6A;box-shadow:0 0 14px #5FBF6A}
-.tv-item.feito .nums{color:#8FE39A}
-.tv-item.atrasado .tv-bar i{background:var(--mel)}
-.tv-item.atrasado .nome::after{content:" ⏰ ritmo abaixo";color:var(--mel);font-size:13px;animation:pisca 1.4s infinite}
-@keyframes pisca{50%{opacity:.35}}
-.tv .semmeta{color:#8A7A64;font-size:16px}
+/* Modo TV — cartaz */
+.tv{background:radial-gradient(1200px 600px at 20% -10%,#4A2E15,#1C0F06 60%);color:#FFFDF9;min-height:100vh;padding:22px 28px;max-width:none}
+.tv h1{font-size:38px;font-weight:900;letter-spacing:-.01em}
+.tv .relogio{font-size:40px;font-variant-numeric:tabular-nums;font-weight:900;color:#FFD84D;text-shadow:0 0 18px #FFD84D55}
+.tv .recado{background:linear-gradient(90deg,#FFD84D,#FFB93B);color:#3A2400;border-radius:16px;padding:16px 22px;font-size:28px;font-weight:900;margin:16px 0;box-shadow:0 6px 24px #FFB93B44;animation:flutua 3s ease-in-out infinite}
+@keyframes flutua{50%{transform:translateY(-3px)}}
+.tv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;margin-top:16px}
+.tv-col{background:#00000038;border-radius:22px;padding:0 0 14px;overflow:hidden;border:1px solid #ffffff14}
+.tv-col h2{font-size:24px;letter-spacing:.1em;text-transform:uppercase;font-weight:900;padding:14px 18px;margin-bottom:12px;color:#1C0F06}
+.tv-col.a-pesagem h2{background:linear-gradient(90deg,#FFB93B,#FF8A3B)}
+.tv-col.a-refino h2{background:linear-gradient(90deg,#4FC3F7,#2E86DE);color:#fff}
+.tv-col.a-envase h2{background:linear-gradient(90deg,#7ED957,#3E9B4F);color:#fff}
+.tv-item{margin:0 16px 20px;background:#ffffff0a;border-radius:16px;padding:14px 16px;border:2px solid transparent}
+.tv-item .nome{font-size:23px;font-weight:900}
+.tv-item .pct{font-size:56px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums;color:#FFD84D}
+.tv-item .nums{font-size:20px;font-weight:800;color:#E8DECF;font-variant-numeric:tabular-nums}
+.tv-bar{height:26px;background:#00000055;border-radius:99px;overflow:hidden;margin-top:10px;border:1px solid #ffffff22}
+.tv-bar i{display:block;height:100%;border-radius:99px;transition:width 1.2s ease;background:repeating-linear-gradient(45deg,#FFB93B,#FFB93B 14px,#FFCE6B 14px,#FFCE6B 28px);background-size:200% 100%;animation:anda 1.6s linear infinite}
+.a-refino .tv-bar i{background:repeating-linear-gradient(45deg,#2E86DE,#2E86DE 14px,#4FC3F7 14px,#4FC3F7 28px)}
+.a-envase .tv-bar i{background:repeating-linear-gradient(45deg,#3E9B4F,#3E9B4F 14px,#7ED957 14px,#7ED957 28px)}
+@keyframes anda{to{background-position:56px 0}}
+.tv-item.feito{border-color:#7ED957;box-shadow:0 0 28px #7ED95744,inset 0 0 22px #7ED95722;animation:comemora .7s ease}
+.tv-item.feito .pct{color:#7ED957;text-shadow:0 0 18px #7ED95788}
+.tv-item.feito .tv-bar i{background:#7ED957;animation:none}
+.tv-item.feito .nome::after{content:"  🎉 META BATIDA!";color:#7ED957;font-size:17px}
+@keyframes comemora{0%{transform:scale(.96)}55%{transform:scale(1.03)}100%{transform:scale(1)}}
+.tv-item.atrasado{border-color:#FF5A5A;animation:alerta 1.2s infinite}
+.tv-item.atrasado .pct{color:#FF7B7B}
+.tv-item.atrasado .nome::after{content:"  ⏰ ACELERA!";color:#FF7B7B;font-size:17px}
+@keyframes alerta{50%{border-color:#FF5A5A22;box-shadow:0 0 22px #FF5A5A33}}
+.tv .semmeta{color:#8A7A64;font-size:18px;padding:0 18px 8px}
 </style>
 </head>
 <body>
@@ -650,8 +661,7 @@ async function tvRender(){
     return L.map(m=>{
       const real=soma[a+m.ref_id]||0, pct=Math.min(100,Math.round(real/Number(m.meta)*100));
       const cls=pct>=100?'feito':(pct/100<ritmo-0.15?'atrasado':'');
-      return `<div class="tv-item ${cls}"><div class="nome">${m.ref_nome}</div>
-        <div class="nums">${fmt(real,0)} <small>/ ${fmt(m.meta,0)} ${m.unidade} · ${pct}%</small></div>
+      return `<div class="tv-item ${cls}"><div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px"><div><div class="nome">${m.ref_nome}</div><div class="nums">${fmt(real,0)} de ${fmt(m.meta,0)} ${m.unidade}</div></div><div class="pct">${pct}%</div></div>
         <div class="tv-bar"><i style="width:${pct}%"></i></div></div>`;
     }).join('');
   };
@@ -664,7 +674,7 @@ async function tvRender(){
     </div>
     ${rec.data?.recado?`<div class="recado">📌 ${rec.data.recado}</div>`:''}
     <div class="tv-grid" id="tvGrid">
-      ${areas.map(([a,t])=>`<div class="tv-col"><h2>${t}</h2>${col(a)}</div>`).join('')}
+      ${areas.map(([a,t])=>`<div class="tv-col a-${a}"><h2>${t}</h2>${col(a)}</div>`).join('')}
     </div>
     <p style="margin-top:14px;color:#8A7A64;font-size:13px">atualiza sozinho a cada 45 s · para a TV, abra ${location.origin+location.pathname}#tv</p>
   </div>`;
