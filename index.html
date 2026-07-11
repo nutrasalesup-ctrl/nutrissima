@@ -579,7 +579,7 @@ async function tMetas(){
       <button class="btnSec" onclick="salvarRecado()">Salvar recado</button>
     </div>
     <div class="card"><b>＋ Nova meta</b>
-      <label>Área</label><select id="mArea" onchange="document.getElementById('mRef').innerHTML=(this.value==='envase'?\`${opts('envase')}\`:\`${opts('x')}\`)">
+      <label>Área</label><select id="mArea" onchange="trocaArea(this.value)">
         <option value="envase">Envase (potes)</option><option value="refino">Refino (kg no balde)</option><option value="pesagem">Pesagem (kg)</option></select>
       <label>Produto</label><select id="mRef">${opts('envase')}</select>
       <label>Meta</label><input class="campoG" id="mMeta" inputmode="decimal" placeholder="300">
@@ -592,6 +592,12 @@ async function tMetas(){
     </div>
     <button class="btnSec" onclick="tela('tv')">📺 Ver como fica na TV</button>
   </main>`;
+}
+function trocaArea(a){
+  const el=document.getElementById('mRef');
+  el.innerHTML=(a==='envase'
+    ?EST.cache.mPa.map(p=>'<option value="'+p.id+'">'+(p.linha?p.linha+' · ':'')+p.nome+'</option>')
+    :EST.cache.mProds.map(p=>'<option value="'+p.id+'">'+p.nome+'</option>')).join('');
 }
 async function salvarRecado(){
   const {error}=await sb.from('quadro_recado').upsert({data:EST.metaDia,recado:document.getElementById('mRecado').value.trim()});
