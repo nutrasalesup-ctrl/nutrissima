@@ -419,7 +419,7 @@ async function tPesagem(progId){
     </div>
     <button class="btnP" id="wBtn" disabled onclick="confPesagem('${progId}')">Faltam insumos para concluir</button>
   </main>`;
-  window.verPesagem=()=>{const t=document.querySelectorAll('#wChecks input');const ok=[...t].every(c=>c.checked);const b=document.getElementById('wBtn');b.disabled=!ok;b.textContent=ok?'Concluir pesagem — baixa a matéria-prima':`Faltam ${[...t].filter(c=>!c.checked).length} insumo(s) para concluir`}
+  window.verPesagem=()=>{const t=document.querySelectorAll('#wChecks input[type=checkbox]');const ok=[...t].every(c=>c.checked);const b=document.getElementById('wBtn');b.disabled=!ok;b.textContent=ok?'Concluir pesagem — baixa a matéria-prima':`Faltam ${[...t].filter(c=>!c.checked).length} insumo(s) para concluir`}
   verPesagem();
 }
 async function confPesagem(progId){
