@@ -222,7 +222,7 @@ async function tReceber(sel){
   }
   const c=EST.cache.compras.find(x=>x.id===sel);
   document.getElementById('app').innerHTML=`
-  ${trilha('Receber')}${topo('Receber','${'operador: '+ (EST.operador||"—")}')}
+  ${trilha('Receber')}${topo('Receber','operador: '+(EST.operador||'—'))}
   <main>
     <div class="card"><b style="font-size:19px">${c.itens.nome}</b><p style="color:#7A6A57;font-size:14.5px">${c.fornecedor_nome||''} · pedido: ${fmt(c.quantidade_solicitada)} ${c.itens.unidade}</p></div>
     <div class="card"><label>1 · Quanto chegou? (${c.itens.unidade})</label>
