@@ -64,6 +64,26 @@ label{display:block;font-size:13px;font-weight:700;color:#7A6A57;margin:12px 0 5
 .mo b{display:block;font-size:26px;line-height:1}
 .mo.m1{background:#F3EAD8;color:#7A5A14}.mo.m2{background:#E4EDF2;color:#2B5A78}
 .center{text-align:center;color:#8A7A64;padding:30px 10px;font-size:15px}
+/* Modo TV */
+.tv{background:var(--cacau);color:#FFFDF9;min-height:100vh;padding:22px 26px;max-width:none}
+.tv h1{font-size:34px;font-weight:900}
+.tv .relogio{font-size:30px;font-variant-numeric:tabular-nums;font-weight:900;color:#E8DECF}
+.tv .recado{background:var(--mel);color:#2B1A00;border-radius:14px;padding:12px 18px;font-size:21px;font-weight:800;margin:14px 0}
+.tv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-top:14px}
+.tv-col{background:#3F2A16;border-radius:18px;padding:16px}
+.tv-col h2{font-size:20px;letter-spacing:.08em;text-transform:uppercase;color:#C9B99F;margin-bottom:10px}
+.tv-item{margin-bottom:14px}
+.tv-item .nome{font-size:19px;font-weight:800}
+.tv-item .nums{font-size:26px;font-weight:900;font-variant-numeric:tabular-nums}
+.tv-item .nums small{font-size:15px;color:#C9B99F;font-weight:700}
+.tv-bar{height:14px;background:#5A4630;border-radius:99px;overflow:hidden;margin-top:5px}
+.tv-bar i{display:block;height:100%;background:var(--pistache);border-radius:99px;transition:width 1.2s ease}
+.tv-item.feito .tv-bar i{background:#5FBF6A;box-shadow:0 0 14px #5FBF6A}
+.tv-item.feito .nums{color:#8FE39A}
+.tv-item.atrasado .tv-bar i{background:var(--mel)}
+.tv-item.atrasado .nome::after{content:" ⏰ ritmo abaixo";color:var(--mel);font-size:13px;animation:pisca 1.4s infinite}
+@keyframes pisca{50%{opacity:.35}}
+.tv .semmeta{color:#8A7A64;font-size:16px}
 </style>
 </head>
 <body>
@@ -89,7 +109,7 @@ async function boot(){
   sb=window.supabase.createClient(SUPA_URL,key);
   const {data:{session}}=await sb.auth.getSession();
   if(!session){return telaLogin()}
-  tela('inicio');
+  tela(location.hash==='#tv'?'tv':'inicio');
 }
 function telaConfig(){
   document.getElementById('app').innerHTML=`
@@ -118,7 +138,7 @@ async function login(){
 }
 
 /* ================= NAVEGAÇÃO ================= */
-const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,mrp:tMRP};
+const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,mrp:tMRP,metas:tMetas,tv:tTV};
 function tela(n,arg){TELAS[n](arg)}
 
 /* ================= INÍCIO ================= */
@@ -138,6 +158,8 @@ async function tInicio(){
       <button onclick="tela('receber')"><span class="ico" style="background:#E7F0E4">📦</span><span><b>Receber mercadoria</b><small>Confirmar chegada das compras</small></span></button>
       <button onclick="tela('envase')"><span class="ico" style="background:#EAE4F2">🫙</span><span><b>Envasar</b><small>Do balde para os potes</small></span></button>
       <button onclick="tela('estoque')"><span class="ico" style="background:#E4EDF2">📋</span><span><b>Conferir estoque</b><small>Matéria-prima, balde e potes</small></span></button>
+      <button onclick="tela('metas')"><span class="ico" style="background:#F6ECD6">🎯</span><span><b>Metas do dia</b><small>Definir o quadro (PIN do gestor)</small></span></button>
+      <button onclick="tela('tv')"><span class="ico" style="background:#33200F;color:#fff">📺</span><span><b>Modo TV</b><small>Quadro do dia em tela cheia</small></span></button>
     </div>
     <button class="btnSec" style="margin-top:20px" onclick="sb.auth.signOut().then(boot)">Sair da conta</button>
   </main>`;
@@ -524,6 +546,122 @@ async function confEnvase(){
   const {error}=await sb.rpc('envasar',{p_produto:mix?null:eBalde.value,p_pa:p.id,p_potes:n,p_responsavel:EST.operador,p_lote:eLote.value.trim()||null});
   if(error)return msg(error.message,true);
   msg('✅ Envase gravado — '+n+' potes');tela('envase');
+}
+
+/* ================= METAS DO DIA ================= */
+function hojeLocal(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+async function tMetas(){
+  if(!EST.gestor){
+    const pin=prompt('PIN do gestor:');
+    if(pin==null)return tela('inicio');
+    const {data:ok}=await sb.rpc('verificar_pin',{p_nome:'Gestor',p_pin:String(pin).trim()});
+    if(!ok){msg('PIN do gestor incorreto',true);return tela('inicio')}
+    EST.gestor=true;
+  }
+  const dia=EST.metaDia||hojeLocal();EST.metaDia=dia;
+  const [metas,rec,pa,prods]=await Promise.all([
+    sb.from('metas_dia').select('*').eq('data',dia).order('area'),
+    sb.from('quadro_recado').select('recado').eq('data',dia).maybeSingle(),
+    sb.from('produto_acabado').select('id,nome,linha').eq('ativo',true).order('linha').order('nome'),
+    sb.from('produtos').select('id,nome').eq('ativo',true).order('nome')
+  ]);
+  EST.cache.mPa=pa.data||[];EST.cache.mProds=prods.data||[];
+  const opts=a=>a==='envase'
+    ?EST.cache.mPa.map(p=>`<option value="${p.id}">${p.linha?p.linha+' · ':''}${p.nome}</option>`).join('')
+    :EST.cache.mProds.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('');
+  document.getElementById('app').innerHTML=`
+  ${trilha('')}${topo('Metas do dia','quadro que aparece na TV')}
+  <main>
+    <div class="card"><label style="margin-top:0">Dia</label>
+      <input type="date" id="mDia" value="${dia}" onchange="EST.metaDia=this.value;tela('metas')">
+      <label>Recado do dia (aparece em destaque na TV)</label>
+      <input id="mRecado" value="${(rec.data?.recado||'').replace(/"/g,'&quot;')}" placeholder="ex.: prioridade hoje é o pedido da loja X">
+      <button class="btnSec" onclick="salvarRecado()">Salvar recado</button>
+    </div>
+    <div class="card"><b>＋ Nova meta</b>
+      <label>Área</label><select id="mArea" onchange="document.getElementById('mRef').innerHTML=(this.value==='envase'?\`${opts('envase')}\`:\`${opts('x')}\`)">
+        <option value="envase">Envase (potes)</option><option value="refino">Refino (kg no balde)</option><option value="pesagem">Pesagem (kg)</option></select>
+      <label>Produto</label><select id="mRef">${opts('envase')}</select>
+      <label>Meta</label><input class="campoG" id="mMeta" inputmode="decimal" placeholder="300">
+      <button class="btnP" onclick="salvarMeta()">Adicionar ao quadro</button>
+    </div>
+    <div class="card"><b>Quadro de ${dia.split('-').reverse().join('/')}</b>
+      ${(metas.data||[]).length?metas.data.map(m=>`<div class="item-row"><span><span class="chip ${m.area==='envase'?'ok':m.area==='refino'?'azul':'mel'}">${m.area}</span> ${m.ref_nome}</span>
+        <span style="display:flex;gap:10px;align-items:center"><b class="mono">${fmt(m.meta,0)} ${m.unidade}</b>
+        <button onclick="delMeta('${m.id}')" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer">🗑</button></span></div>`).join(''):'<div class="center">Nenhuma meta neste dia ainda.</div>'}
+    </div>
+    <button class="btnSec" onclick="tela('tv')">📺 Ver como fica na TV</button>
+  </main>`;
+}
+async function salvarRecado(){
+  const {error}=await sb.from('quadro_recado').upsert({data:EST.metaDia,recado:document.getElementById('mRecado').value.trim()});
+  if(error)return msg(error.message,true);msg('✅ Recado salvo');
+}
+async function salvarMeta(){
+  const area=document.getElementById('mArea').value, ref=document.getElementById('mRef').value;
+  const meta=Number(document.getElementById('mMeta').value.replace(',','.'));
+  if(!meta||meta<=0)return msg('Informe a meta',true);
+  const lista=area==='envase'?EST.cache.mPa:EST.cache.mProds;
+  const item=lista.find(x=>x.id===ref);
+  const nome=area==='envase'&&item.linha?item.linha+' · '+item.nome:item.nome;
+  const {error}=await sb.from('metas_dia').upsert({data:EST.metaDia,area,ref_id:ref,ref_nome:nome,meta,unidade:area==='envase'?'potes':'kg'},{onConflict:'data,area,ref_id'});
+  if(error)return msg(error.message,true);
+  msg('✅ Meta adicionada');tela('metas');
+}
+async function delMeta(id){
+  const {error}=await sb.from('metas_dia').delete().eq('id',id);
+  if(error)return msg(error.message,true);tela('metas');
+}
+
+/* ================= MODO TV ================= */
+async function tTV(){
+  if(EST.tvTimer){clearInterval(EST.tvTimer);EST.tvTimer=null}
+  if(EST.tvRelogio){clearInterval(EST.tvRelogio);EST.tvRelogio=null}
+  await tvRender();
+  EST.tvTimer=setInterval(()=>{if(document.getElementById('tvGrid'))tvRender();else{clearInterval(EST.tvTimer);EST.tvTimer=null}},45000);
+  EST.tvRelogio=setInterval(()=>{const r=document.getElementById('tvClock');if(r)r.textContent=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});else{clearInterval(EST.tvRelogio);EST.tvRelogio=null}},1000);
+}
+async function tvRender(){
+  const dia=hojeLocal();
+  const ini=new Date();ini.setHours(0,0,0,0);const iniISO=ini.toISOString();
+  const [metas,rec,envMov,refMov,pesag]=await Promise.all([
+    sb.from('metas_dia').select('*').eq('data',dia),
+    sb.from('quadro_recado').select('recado').eq('data',dia).maybeSingle(),
+    sb.from('produto_acabado_movimentos').select('produto_acabado_id,quantidade,lote').eq('tipo','entrada').gte('criado_em',iniISO),
+    sb.from('estoque_balde_movimentos').select('produto_id,quantidade_kg,lote').eq('tipo','entrada').gte('criado_em',iniISO),
+    sb.from('programacao_refino').select('produto_id,quantidade_kg,status').eq('data',dia).in('status',['pesado','no_balde'])
+  ]);
+  const soma={};
+  (envMov.data||[]).filter(m=>m.lote!=='AJUSTE').forEach(m=>soma['envase'+m.produto_acabado_id]=(soma['envase'+m.produto_acabado_id]||0)+Number(m.quantidade));
+  (refMov.data||[]).filter(m=>m.lote!=='AJUSTE').forEach(m=>soma['refino'+m.produto_id]=(soma['refino'+m.produto_id]||0)+Number(m.quantidade_kg));
+  (pesag.data||[]).forEach(m=>soma['pesagem'+m.produto_id]=(soma['pesagem'+m.produto_id]||0)+Number(m.quantidade_kg));
+  const h=new Date().getHours()+new Date().getMinutes()/60;
+  const ritmo=Math.min(1,Math.max(0,(h-7)/10)); // expediente 7h–17h
+  const areas=[['pesagem','⚖️ Pesagem'],['refino','🌀 Refino'],['envase','🫙 Envase']];
+  const col=a=>{
+    const L=(metas.data||[]).filter(m=>m.area===a);
+    if(!L.length)return '<div class="semmeta">— sem meta hoje —</div>';
+    return L.map(m=>{
+      const real=soma[a+m.ref_id]||0, pct=Math.min(100,Math.round(real/Number(m.meta)*100));
+      const cls=pct>=100?'feito':(pct/100<ritmo-0.15?'atrasado':'');
+      return `<div class="tv-item ${cls}"><div class="nome">${m.ref_nome}</div>
+        <div class="nums">${fmt(real,0)} <small>/ ${fmt(m.meta,0)} ${m.unidade} · ${pct}%</small></div>
+        <div class="tv-bar"><i style="width:${pct}%"></i></div></div>`;
+    }).join('');
+  };
+  document.getElementById('app').innerHTML=`
+  <div class="tv">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">
+      <h1>🏭 Nutríssima — Quadro do Dia <small style="font-size:16px;color:#C9B99F;font-weight:700">${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</small></h1>
+      <div style="display:flex;gap:14px;align-items:center"><span class="relogio" id="tvClock">${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</span>
+      <button onclick="tela('inicio')" style="border:1px solid #5A4630;background:transparent;color:#C9B99F;border-radius:10px;padding:8px 14px;cursor:pointer">sair</button></div>
+    </div>
+    ${rec.data?.recado?`<div class="recado">📌 ${rec.data.recado}</div>`:''}
+    <div class="tv-grid" id="tvGrid">
+      ${areas.map(([a,t])=>`<div class="tv-col"><h2>${t}</h2>${col(a)}</div>`).join('')}
+    </div>
+    <p style="margin-top:14px;color:#8A7A64;font-size:13px">atualiza sozinho a cada 45 s · para a TV, abra ${location.origin+location.pathname}#tv</p>
+  </div>`;
 }
 
 boot();
