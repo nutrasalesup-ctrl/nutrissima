@@ -355,7 +355,7 @@ async function tProg(){
       itens.map(p=>{
         const m=(p.equipamentos?.nome||'').includes('2')?'m2':'m1';
         const acao=p.status==='programado'
-          ?`<button class="btnP" style="min-height:48px;font-size:16px" onclick="tela('pesagem','${p.id}')">⚖️ Pesar</button><button class="btnSec" style="margin-top:8px" onclick="mudarDataProg('${p.id}','${(p.produtos.nome||'').replace(/'/g,"\\'")}','${p.data}')">🗓️ Alterar data</button>`
+          ?`<button class="btnP" style="min-height:48px;font-size:16px" onclick="tela('pesagem','${p.id}')">⚖️ Pesar</button><button class="btnSec" style="margin-top:8px" onclick="mudarDataProg('${p.id}','${(p.produtos.nome||'').replace(/'/g,"\\'")}','${p.data}')">🗓️ Alterar data</button><button class="btnSec" style="margin-top:8px" onclick="mudarQtdProg('${p.id}','${(p.produtos.nome||'').replace(/'/g,"\\'")}',${p.quantidade_kg})">⚖️ Alterar quantidade</button>`
           :`<button class="btnP" style="min-height:48px;font-size:16px;background:var(--mel)" onclick="pedirRefino('${p.id}','${p.produtos.nome}',${p.quantidade_kg})">🌀 Concluir refino → balde</button>`;
         return `<div class="card" style="display:flex;gap:12px;align-items:flex-start">
           <div class="mo ${m}"><small>Moinho</small><b>${m==='m1'?'1':'2'}</b></div>
@@ -401,6 +401,17 @@ async function mudarDataProg(id,nome,atual){
   if(error)return msg(error.message,true);
   await sb.from('atividades').insert({tipo:'ajuste',descricao:'Produção remarcada — '+nome+' de '+brData(atual)+' para '+brData(v),responsavel:EST.operador});
   msg('✅ Data alterada');tela('programacao');
+}
+async function mudarQtdProg(id,nome,atual){
+  if(precisaOperador())return;
+  const nova=prompt('Nova quantidade (kg) para '+nome+':',atual);
+  if(nova==null)return; const n=Number(String(nova).replace(',','.'));
+  if(!n||n<=0)return msg('Quantidade inválida',true);
+  if(n===atual)return;
+  const {error}=await sb.from('programacao_refino').update({quantidade_kg:n}).eq('id',id).eq('status','programado');
+  if(error)return msg(error.message,true);
+  await sb.from('atividades').insert({tipo:'ajuste',descricao:'Produção remarcada — '+nome+' de '+fmt(atual)+' para '+fmt(n)+' kg',responsavel:EST.operador});
+  msg('✅ Quantidade alterada');tela('programacao');
 }
 async function mudarEntrega(id,nome,atual){
   if(precisaOperador())return;
