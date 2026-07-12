@@ -599,6 +599,19 @@ async function confEnvase(){
 
 /* ================= METAS DO DIA ================= */
 function hojeLocal(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function inicioSemana(dataISO){
+  const d=new Date(dataISO+'T12:00');const dow=d.getDay();const diff=(dow===0?-6:1-dow);
+  d.setDate(d.getDate()+diff);return d;
+}
+function diasDaSemana(dataISO){
+  const ini=inicioSemana(dataISO);const arr=[];
+  for(let i=0;i<7;i++){const d=new Date(ini);d.setDate(ini.getDate()+i);arr.push(d.toISOString().slice(0,10))}
+  return arr;
+}
+function mudaSemana(deltaDias){
+  const d=new Date((EST.metaDia||hojeLocal())+'T12:00');d.setDate(d.getDate()+deltaDias);
+  EST.metaDia=d.toISOString().slice(0,10);tela('metas');
+}
 async function tMetas(){
   if(!EST.gestor){
     const pin=prompt('PIN do gestor:');
@@ -608,8 +621,10 @@ async function tMetas(){
     EST.gestor=true;
   }
   const dia=EST.metaDia||hojeLocal();EST.metaDia=dia;
-  const [metas,rec,pa,prods]=await Promise.all([
-    sb.from('metas_dia').select('*').eq('data',dia).order('area'),
+  const semana=diasDaSemana(dia);const hoje=hojeLocal();
+  const [metas,tarefas,rec,pa,prods]=await Promise.all([
+    sb.from('metas_dia').select('*').in('data',semana).order('area'),
+    sb.from('tarefas').select('*').in('data',semana).order('criado_em'),
     sb.from('quadro_recado').select('recado').eq('data',dia).maybeSingle(),
     sb.from('produto_acabado').select('id,nome,linha').eq('ativo',true).order('linha').order('nome'),
     sb.from('produtos').select('id,nome').eq('ativo',true).order('nome')
@@ -618,29 +633,72 @@ async function tMetas(){
   const opts=a=>a==='envase'
     ?EST.cache.mPa.map(p=>`<option value="${p.id}">${p.linha?p.linha+' · ':''}${p.nome}</option>`).join('')
     :EST.cache.mProds.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('');
+  const metasPorDia={};(metas.data||[]).forEach(m=>{(metasPorDia[m.data]=metasPorDia[m.data]||[]).push(m)});
+  const tarefasPorDia={};(tarefas.data||[]).forEach(t=>{(tarefasPorDia[t.data]=tarefasPorDia[t.data]||[]).push(t)});
   document.getElementById('app').innerHTML=`
-  ${trilha('')}${topo('Metas do dia','quadro que aparece na TV')}
+  ${trilha('')}${topo('Metas da semana','quadro que aparece na TV')}
   <main>
-    <div class="card"><label style="margin-top:0">Dia</label>
+    <div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btnSec" onclick="mudaSemana(-7)">‹ semana anterior</button>
+      <b style="flex:1;text-align:center">${brData(semana[0])} – ${brData(semana[6])}</b>
+      <button class="btnSec" onclick="mudaSemana(7)">semana seguinte ›</button>
+    </div>
+    <div class="card"><label style="margin-top:0">Adicionar no dia</label>
       <input type="date" id="mDia" value="${dia}" onchange="EST.metaDia=this.value;tela('metas')">
-      <label>Recado do dia (aparece em destaque na TV)</label>
+      <label>Recado deste dia (aparece em destaque na TV)</label>
       <input id="mRecado" value="${(rec.data?.recado||'').replace(/"/g,'&quot;')}" placeholder="ex.: prioridade hoje é o pedido da loja X">
       <button class="btnSec" onclick="salvarRecado()">Salvar recado</button>
     </div>
-    <div class="card"><b>＋ Nova meta</b>
+    <div class="card"><b>＋ Nova meta (no dia selecionado acima)</b>
       <label>Área</label><select id="mArea" onchange="trocaArea(this.value)">
         <option value="envase">Envase (potes)</option><option value="refino">Refino (kg no balde)</option><option value="pesagem">Pesagem (kg)</option></select>
       <label>Produto</label><select id="mRef">${opts('envase')}</select>
       <label>Meta</label><input class="campoG" id="mMeta" inputmode="decimal" placeholder="300">
       <button class="btnP" onclick="salvarMeta()">Adicionar ao quadro</button>
     </div>
-    <div class="card"><b>Quadro de ${dia.split('-').reverse().join('/')}</b>
-      ${(metas.data||[]).length?metas.data.map(m=>`<div class="item-row"><span><span class="chip ${m.area==='envase'?'ok':m.area==='refino'?'azul':'mel'}">${m.area}</span> ${m.ref_nome}</span>
-        <span style="display:flex;gap:10px;align-items:center"><b class="mono">${fmt(m.meta,0)} ${m.unidade}</b>
-        <button onclick="delMeta('${m.id}')" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer">🗑</button></span></div>`).join(''):'<div class="center">Nenhuma meta neste dia ainda.</div>'}
+    <div class="card"><b>＋ Nova tarefa (no dia selecionado acima)</b>
+      <label>Descrição</label><input id="tDesc" placeholder="ex.: Rotular potes programados para envase">
+      <label>Responsável (opcional)</label><input id="tResp" placeholder="ex.: Lucia — deixe em branco se for de todos">
+      <button class="btnP" onclick="salvarTarefa()">Adicionar tarefa</button>
     </div>
+    ${semana.map(d=>{
+      const dt=new Date(d+'T12:00');const ms=metasPorDia[d]||[];const ts=tarefasPorDia[d]||[];
+      return `<div class="card"${d===hoje?' style="border-color:var(--pistache)"':''}>
+        <b>${dt.toLocaleDateString('pt-BR',{weekday:'long'})} · ${brData(d)}${d===hoje?' <span class="chip ok">hoje</span>':''}</b>
+        ${ms.map(m=>`<div class="item-row"><span><span class="chip ${m.area==='envase'?'ok':m.area==='refino'?'azul':'mel'}">${m.area}</span> ${m.ref_nome}</span>
+          <span style="display:flex;gap:10px;align-items:center"><b class="mono">${fmt(m.meta,0)} ${m.unidade}</b>
+          <button onclick="delMeta('${m.id}')" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer">🗑</button></span></div>`).join('')}
+        ${ts.map(t=>`<div class="item-row"><span style="display:flex;align-items:center;gap:8px"><input type="checkbox" ${t.concluido?'checked':''} onchange="toggleTarefa('${t.id}',this.checked)" style="width:22px;height:22px;flex-shrink:0"><span style="${t.concluido?'text-decoration:line-through;color:#A99A82':''}">${t.descricao}${t.responsavel_designado?` <b>(${t.responsavel_designado})</b>`:''}</span></span>
+          <span style="display:flex;gap:10px;align-items:center">${t.concluido?`<small style="color:#5FBF6A">✅ ${t.concluido_por||''}</small>`:''}<button onclick="delTarefa('${t.id}')" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer">🗑</button></span></div>`).join('')}
+        ${!ms.length&&!ts.length?'<p style="color:#A99A82;font-size:14px;margin:8px 0 0">Nada neste dia.</p>':''}
+      </div>`;
+    }).join('')}
     <button class="btnSec" onclick="tela('tv')">📺 Ver como fica na TV</button>
   </main>`;
+}
+async function salvarTarefa(){
+  const descricao=document.getElementById('tDesc').value.trim();
+  const responsavel=document.getElementById('tResp').value.trim()||null;
+  if(!descricao)return msg('Descreva a tarefa',true);
+  const {error}=await sb.from('tarefas').insert({data:EST.metaDia,descricao,responsavel_designado:responsavel});
+  if(error)return msg(error.message,true);
+  msg('✅ Tarefa adicionada');tela('metas');
+}
+async function toggleTarefa(id,checked){
+  if(checked){
+    const quem=prompt('Quem concluiu essa tarefa?');
+    if(quem==null)return tela('metas');
+    const {error}=await sb.from('tarefas').update({concluido:true,concluido_por:quem.trim()||'—',concluido_em:new Date().toISOString()}).eq('id',id);
+    if(error)return msg(error.message,true);
+  }else{
+    const {error}=await sb.from('tarefas').update({concluido:false,concluido_por:null,concluido_em:null}).eq('id',id);
+    if(error)return msg(error.message,true);
+  }
+  tela('metas');
+}
+async function delTarefa(id){
+  const {error}=await sb.from('tarefas').delete().eq('id',id);
+  if(error)return msg(error.message,true);tela('metas');
 }
 function trocaArea(a){
   const el=document.getElementById('mRef');
@@ -679,12 +737,13 @@ async function tTV(){
 async function tvRender(){
   const dia=hojeLocal();
   const ini=new Date();ini.setHours(0,0,0,0);const iniISO=ini.toISOString();
-  const [metas,rec,envMov,refMov,pesag]=await Promise.all([
+  const [metas,rec,envMov,refMov,pesag,tarefas]=await Promise.all([
     sb.from('metas_dia').select('*').eq('data',dia),
     sb.from('quadro_recado').select('recado').eq('data',dia).maybeSingle(),
     sb.from('produto_acabado_movimentos').select('produto_acabado_id,quantidade,lote').eq('tipo','entrada').gte('criado_em',iniISO),
     sb.from('estoque_balde_movimentos').select('produto_id,quantidade_kg,lote').eq('tipo','entrada').gte('criado_em',iniISO),
-    sb.from('programacao_refino').select('produto_id,quantidade_kg,status').eq('data',dia).in('status',['pesado','no_balde'])
+    sb.from('programacao_refino').select('produto_id,quantidade_kg,status').eq('data',dia).in('status',['pesado','no_balde']),
+    sb.from('tarefas').select('*').eq('data',dia).order('criado_em')
   ]);
   const soma={};
   (envMov.data||[]).filter(m=>m.lote!=='AJUSTE').forEach(m=>soma['envase'+m.produto_acabado_id]=(soma['envase'+m.produto_acabado_id]||0)+Number(m.quantidade));
@@ -714,6 +773,10 @@ async function tvRender(){
     <div class="tv-grid" id="tvGrid">
       ${areas.map(([a,t])=>`<div class="tv-col a-${a}"><h2>${t}</h2>${col(a)}</div>`).join('')}
     </div>
+    ${(tarefas.data||[]).length?`<div class="card" style="margin-top:16px;background:#3A281A;border-color:#5A4630">
+      <b style="color:#fff">✅ Tarefas de hoje</b>
+      ${tarefas.data.map(t=>`<div class="item-row" style="border-color:#5A4630"><span style="color:${t.concluido?'#8FE39A':'#F0E6D6'}">${t.concluido?'☑':'☐'} ${t.descricao}${t.responsavel_designado?` <b>(${t.responsavel_designado})</b>`:''}</span>${t.concluido?`<small style="color:#8FE39A">${t.concluido_por||''}</small>`:''}</div>`).join('')}
+    </div>`:''}
     <p style="margin-top:14px;color:#8A7A64;font-size:13px">atualiza sozinho a cada 45 s · para a TV, abra ${location.origin+location.pathname}#tv</p>
   </div>`;
 }
