@@ -95,6 +95,20 @@ label{display:block;font-size:13px;font-weight:700;color:#7A6A57;margin:12px 0 5
 .tv-item.atrasado .nome::after{content:"  ⏰ ACELERA!";color:#FF7B7B;font-size:17px}
 @keyframes alerta{50%{border-color:#FF5A5A22;box-shadow:0 0 22px #FF5A5A33}}
 .tv .semmeta{color:#8A7A64;font-size:18px;padding:0 18px 8px}
+.tv .pa-row{display:flex;justify-content:space-between;gap:12px;padding:7px 18px;font-size:19px;font-weight:700;border-bottom:1px solid #ffffff12}.tv .pa-row b{font-variant-numeric:tabular-nums;font-size:21px;flex:none}
+.tv .tv-placar{border-width:2px}
+.tv .tv-topo{padding:14px 16px 4px;text-align:center}
+.tv .tv-pct{font-size:64px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
+.tv .tv-tot{font-size:22px;font-weight:800;color:#E8DECF;margin-top:6px;font-variant-numeric:tabular-nums}
+.tv .tv-status{font-size:17px;font-weight:800;margin-top:2px}
+.tv .tv-barG{height:18px;background:#00000055;border-radius:99px;overflow:hidden;margin:10px 0 12px;border:1px solid #ffffff22}
+.tv .tv-barG i{display:block;height:100%;border-radius:99px;transition:width 1.2s ease}
+.tv .tv-det{border-top:1px solid #ffffff12;padding:8px 16px 6px}
+.tv .tv-mini{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:16px;font-weight:700;color:#F0E6D6}
+.tv .tv-mini .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tv .tv-mini .b{width:80px;height:8px;background:#00000055;border-radius:99px;overflow:hidden;flex:none}
+.tv .tv-mini .b i{display:block;height:100%;border-radius:99px}
+.tv .tv-mini b{font-variant-numeric:tabular-nums;flex:none;font-size:17px}
 </style>
 </head>
 <body>
@@ -102,6 +116,7 @@ label{display:block;font-size:13px;font-weight:700;color:#7A6A57;margin:12px 0 5
 <script>
 /* ================= CONFIG ================= */
 const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
+const SUPA_KEY_PADRAO='sb_publishable_tNe4G9C0re2YDN9lsnRQXg_zQgFLmzn';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
@@ -116,7 +131,7 @@ function precisaOperador(){if(!EST.operador){msg('Escolha primeiro quem é você
 
 /* ================= BOOT / AUTH ================= */
 async function boot(){
-  const key=localStorage.getItem('nf_key');
+  const key=localStorage.getItem('nf_key')||SUPA_KEY_PADRAO;
   if(!key){return telaConfig()}
   sb=window.supabase.createClient(SUPA_URL,key);
   const {data:{session}}=await sb.auth.getSession();
@@ -730,20 +745,24 @@ async function delMeta(id){
 async function tTV(){
   if(EST.tvTimer){clearInterval(EST.tvTimer);EST.tvTimer=null}
   if(EST.tvRelogio){clearInterval(EST.tvRelogio);EST.tvRelogio=null}
+  if(EST.tvSlideTimer){clearInterval(EST.tvSlideTimer);EST.tvSlideTimer=null}
+  EST.tvSlide=EST.tvSlide||0;
   await tvRender();
+  EST.tvSlideTimer=setInterval(()=>{if(document.getElementById('tvGrid')){EST.tvSlide=(EST.tvSlide+1)%2;tvRender()}else{clearInterval(EST.tvSlideTimer);EST.tvSlideTimer=null}},20000);
   EST.tvTimer=setInterval(()=>{if(document.getElementById('tvGrid'))tvRender();else{clearInterval(EST.tvTimer);EST.tvTimer=null}},45000);
   EST.tvRelogio=setInterval(()=>{const r=document.getElementById('tvClock');if(r)r.textContent=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});else{clearInterval(EST.tvRelogio);EST.tvRelogio=null}},1000);
 }
 async function tvRender(){
   const dia=hojeLocal();
   const ini=new Date();ini.setHours(0,0,0,0);const iniISO=ini.toISOString();
-  const [metas,rec,envMov,refMov,pesag,tarefas]=await Promise.all([
+  const [metas,rec,envMov,refMov,pesag,tarefas,paDados]=await Promise.all([
     sb.from('metas_dia').select('*').eq('data',dia),
     sb.from('quadro_recado').select('recado').eq('data',dia).maybeSingle(),
     sb.from('produto_acabado_movimentos').select('produto_acabado_id,quantidade,lote').eq('tipo','entrada').gte('criado_em',iniISO),
     sb.from('estoque_balde_movimentos').select('produto_id,quantidade_kg,lote').eq('tipo','entrada').gte('criado_em',iniISO),
     sb.from('programacao_refino').select('produto_id,quantidade_kg,status').eq('data',dia).in('status',['pesado','no_balde']),
-    sb.from('tarefas').select('*').eq('data',dia).order('criado_em')
+    sb.from('tarefas').select('*').eq('data',dia).order('criado_em'),
+    sb.from('produto_acabado').select('nome,linha,embalagem,saldo_potes')
   ]);
   const soma={};
   (envMov.data||[]).filter(m=>m.lote!=='AJUSTE').forEach(m=>soma['envase'+m.produto_acabado_id]=(soma['envase'+m.produto_acabado_id]||0)+Number(m.quantidade));
@@ -752,16 +771,40 @@ async function tvRender(){
   const h=new Date().getHours()+new Date().getMinutes()/60;
   const ritmo=Math.min(1,Math.max(0,(h-7)/10)); // expediente 7h–17h
   const areas=[['pesagem','⚖️ Pesagem'],['refino','🌀 Refino'],['envase','🫙 Envase']];
-  const col=a=>{
+  const cardArea=(a,t)=>{
     const L=(metas.data||[]).filter(m=>m.area===a);
-    if(!L.length)return '<div class="semmeta">— sem meta hoje —</div>';
-    return L.map(m=>{
-      const real=soma[a+m.ref_id]||0, pct=Math.min(100,Math.round(real/Number(m.meta)*100));
-      const cls=pct>=100?'feito':(pct/100<ritmo-0.15?'atrasado':'');
-      return `<div class="tv-item ${cls}"><div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px"><div><div class="nome">${m.ref_nome}</div><div class="nums">${fmt(real,0)} de ${fmt(m.meta,0)} ${m.unidade}</div></div><div class="pct">${pct}%</div></div>
-        <div class="tv-bar"><i style="width:${pct}%"></i></div></div>`;
-    }).join('');
+    if(!L.length)return `<div class="tv-col a-${a}"><h2>${t}</h2><div class="semmeta">— sem meta hoje —</div></div>`;
+    const un=L[0].unidade;
+    const totMeta=L.reduce((s,m)=>s+Number(m.meta),0);
+    const real=L.reduce((s,m)=>s+(soma[a+m.ref_id]||0),0);
+    const capped=L.reduce((s,m)=>s+Math.min(Number(m.meta),soma[a+m.ref_id]||0),0);
+    const pct=totMeta>0?Math.min(100,Math.round(capped/totMeta*100)):0;
+    const atras=pct<100&&pct/100<ritmo-0.15;
+    const cor=pct>=100?'#7ED957':(atras?'#FF7B7B':'#FFD84D');
+    const borda=pct>=100?'border-color:#7ED957;box-shadow:0 0 24px #7ED95733':(atras?'border-color:#FF5A5A':'');
+    const status=pct>=100?'<div class="tv-status" style="color:#7ED957">🎉 meta batida!</div>'
+      :(atras?`<div class="tv-status" style="color:#FF7B7B">faltam ${fmt(totMeta-capped,0)} ${un}</div>`
+      :'<div class="tv-status" style="color:#8FE39A">✔ no ritmo do dia</div>');
+    const linhas=L.map(m=>{const r=soma[a+m.ref_id]||0;const p=Math.min(100,Math.round(r/Number(m.meta)*100));
+      return `<div class="tv-mini"><span class="n">${m.ref_nome}</span><span class="b"><i style="width:${p}%;background:${p>=100?'#7ED957':'#FFD84D'}"></i></span><b>${fmt(r,0)}/${fmt(m.meta,0)}</b></div>`}).join('');
+    return `<div class="tv-col a-${a} tv-placar" style="${borda}"><h2>${t}</h2>
+      <div class="tv-topo"><div class="tv-pct" style="color:${cor}">${pct}%</div><div class="tv-tot">${fmt(real,0)} de ${fmt(totMeta,0)} ${un}</div>${status}
+      <div class="tv-barG"><i style="width:${pct}%;background:${cor}"></i></div></div>
+      <div class="tv-det">${linhas}</div></div>`;
   };
+  const grupos={};
+  (paDados.data||[]).forEach(p=>{const g=p.linha||'Outros';(grupos[g]=grupos[g]||[]).push(p)});
+  const slidePA='<div style="margin:16px 0 2px;font-size:22px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#C9B99F">🫙 Estoque de produto acabado</div>'+
+    '<div class="tv-grid" id="tvGrid">'+Object.keys(grupos).sort().map(g=>{
+      const L=grupos[g].slice().sort((x,y)=>Number(y.saldo_potes||0)-Number(x.saldo_potes||0));
+      const tot=L.reduce((s,p)=>s+Number(p.saldo_potes||0),0);
+      return `<div class="tv-col"><h2 style="background:linear-gradient(90deg,#B8862B,#8A6420);color:#fff;display:flex;justify-content:space-between;gap:10px"><span>${g}</span><span style="font-variant-numeric:tabular-nums">${fmt(tot,0)}</span></h2>${L.map(p=>`<div class="pa-row"><span>${p.nome}${p.embalagem?' · '+p.embalagem:''}</span><b style="color:${Number(p.saldo_potes)>0?'#FFD84D':'#FF7B7B'}">${fmt(p.saldo_potes||0,0)}</b></div>`).join('')}</div>`;
+    }).join('')+'</div>';
+  const slideMetas=`<div class="tv-grid" id="tvGrid">${areas.map(([a,t])=>cardArea(a,t)).join('')}</div>
+    ${(tarefas.data||[]).length?`<div class="card" style="margin-top:16px;background:#3A281A;border-color:#5A4630">
+      <b style="color:#fff">✅ Tarefas de hoje</b>
+      ${tarefas.data.map(t=>`<div class="item-row" style="border-color:#5A4630"><span style="color:${t.concluido?'#8FE39A':'#F0E6D6'}">${t.concluido?'☑':'☐'} ${t.descricao}${t.responsavel_designado?` <b>(${t.responsavel_designado})</b>`:''}</span>${t.concluido?`<small style="color:#8FE39A">${t.concluido_por||''}</small>`:''}</div>`).join('')}
+    </div>`:''}`;
   document.getElementById('app').innerHTML=`
   <div class="tv">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">
@@ -770,16 +813,12 @@ async function tvRender(){
       <button onclick="tela('inicio')" style="border:1px solid #5A4630;background:transparent;color:#C9B99F;border-radius:10px;padding:8px 14px;cursor:pointer">sair</button></div>
     </div>
     ${rec.data?.recado?`<div class="recado">📌 ${rec.data.recado}</div>`:''}
-    <div class="tv-grid" id="tvGrid">
-      ${areas.map(([a,t])=>`<div class="tv-col a-${a}"><h2>${t}</h2>${col(a)}</div>`).join('')}
-    </div>
-    ${(tarefas.data||[]).length?`<div class="card" style="margin-top:16px;background:#3A281A;border-color:#5A4630">
-      <b style="color:#fff">✅ Tarefas de hoje</b>
-      ${tarefas.data.map(t=>`<div class="item-row" style="border-color:#5A4630"><span style="color:${t.concluido?'#8FE39A':'#F0E6D6'}">${t.concluido?'☑':'☐'} ${t.descricao}${t.responsavel_designado?` <b>(${t.responsavel_designado})</b>`:''}</span>${t.concluido?`<small style="color:#8FE39A">${t.concluido_por||''}</small>`:''}</div>`).join('')}
-    </div>`:''}
-    <p style="margin-top:14px;color:#8A7A64;font-size:13px">atualiza sozinho a cada 45 s · para a TV, abra ${location.origin+location.pathname}#tv</p>
+    ${EST.tvSlide===1?slidePA:slideMetas}
+    <div style="display:flex;gap:10px;justify-content:center;margin-top:16px">${[0,1].map(i=>`<span onclick="tvSetSlide(${i})" style="width:13px;height:13px;border-radius:99px;cursor:pointer;background:${EST.tvSlide===i?'#FFD84D':'#5A4630'}"></span>`).join('')}</div>
+    <p style="margin-top:10px;color:#8A7A64;font-size:13px">alterna sozinho a cada 20 s · dados a cada 45 s · para a TV, abra ${location.origin+location.pathname}#tv</p>
   </div>`;
 }
+function tvSetSlide(i){EST.tvSlide=i;tvRender()}
 
 boot();
 </script>
