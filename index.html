@@ -122,7 +122,7 @@ let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 function hoje(){return new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}
-function loteSugestao(seq){const d=new Date();const s=String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');return s+'-'+(seq||1)}
+function loteSugestao(seq){const d=new Date();const dia=Math.floor((d-new Date(d.getFullYear(),0,0))/864e5);const s=String(d.getFullYear()).slice(2)+String(dia).padStart(3,'0');return s+'-'+(seq||1)}
 function msg(t,erro){const m=el(`<div class="msg ${erro?'erro':''}">${t}</div>`);document.body.appendChild(m);setTimeout(()=>m.remove(),3800)}
 const brData=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR');
 function trilha(atual){const etapas=['Programação','Compra','Receber','Pesagem','Moinho','Balde','Envase','Estoque'];return '<div class="trilha">'+etapas.map(e=>`<span class="${e===atual?'atual':''}">${e}</span>`).join('')+'</div>'}
