@@ -210,7 +210,7 @@ async function tPainel(){
     sb.from('itens').select('nome,saldo_atual,estoque_minimo'),
     sb.from('compras').select('id,status,data_prevista_entrega').in('status',['pendente','aguardando_pagamento','liberado']),
     sb.from('estoque_balde').select('quantidade_kg,produtos(nome)').gt('quantidade_kg',0),
-    sb.from('produto_acabado').select('saldo_potes'),
+    sb.from('produto_acabado').select('nome,linha,saldo_potes,ativo'),
     sb.from('atividades').select('*').order('criado_em',{ascending:false}).limit(15),
     sb.rpc('fn_alerta_entregas')
   ]);
@@ -219,6 +219,10 @@ async function tPainel(){
   const potes=(pa.data||[]).reduce((a,b)=>a+Number(b.saldo_potes),0);
   const hj=new Date().toISOString().slice(0,10);
   const chegaHoje=(compras.data||[]).filter(c=>c.data_prevista_entrega===hj).length;
+  const paAtivos=(pa.data||[]).filter(p=>p.ativo!==false);
+  const topMais=[...paAtivos].sort((a,b)=>Number(b.saldo_potes||0)-Number(a.saldo_potes||0)).slice(0,10);
+  const topMenos=[...paAtivos].sort((a,b)=>Number(a.saldo_potes||0)-Number(b.saldo_potes||0)).slice(0,10);
+  const rankRow=p=>`<div class="item-row"><span>${p.linha?p.linha+' · ':''}${p.nome}</span><span class="saldo mono">${fmt(p.saldo_potes||0,0)}${Number(p.saldo_potes)===0?' <span class="chip ver">zerado</span>':''}</span></div>`;
   document.getElementById('app').innerHTML=`
   ${trilha('')}${topo('Painel','Nutríssima agora · '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}))}
   <main>
@@ -231,6 +235,12 @@ async function tPainel(){
     ${(alertas.data||[]).length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-top:12px"><b style="color:var(--morango)">⚠️ Insumo chega depois da produção</b>${alertas.data.slice(0,5).map(al=>`<div class="item-row baixo"><span>${al.item} · prod. ${brData(al.data_producao)}</span><span class="saldo mono" style="color:var(--morango)">falta ${fmt(al.falta)}</span></div>`).join('')}</div>`:''}
     ${abaixo.length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-top:12px"><b style="color:var(--morango)">Precisa de atenção</b>${abaixo.slice(0,8).map(i=>`<div class="item-row baixo"><span>${i.nome}</span><span class="saldo mono">${fmt(i.saldo_atual)}</span></div>`).join('')}</div>`:''}
     ${(balde.data||[]).length?`<div class="card" style="margin-top:12px"><b>Baldes com saldo</b>${balde.data.map(b=>`<div class="item-row"><span>${b.produtos.nome}</span><span class="saldo mono">${fmt(b.quantidade_kg)} kg</span></div>`).join('')}</div>`:''}
+    <div class="card" style="margin-top:12px"><b>🫙 Potes — ranking de estoque</b>
+      <small style="color:#7A6A57;display:block;margin:8px 0 4px">🔝 Mais em estoque</small>
+      ${topMais.map(rankRow).join('')}
+      <small style="color:#7A6A57;display:block;margin:12px 0 4px">🔻 Menos em estoque</small>
+      ${topMenos.map(rankRow).join('')}
+    </div>
     <div class="card" style="margin-top:12px"><b>Atividade da fábrica</b><small style="color:#7A6A57;display:block;margin-bottom:10px">tudo que aconteceu, com quem fez e o lote</small>
       <div class="feed">${(ativ.data&&ativ.data.length)?ativ.data.map(a=>{
         const ic={recebimento:'📦',pesagem:'⚖️',refino:'🌀',envase:'🫙',compra:'🛒',ajuste:'✏️'}[a.tipo]||'•';
@@ -627,6 +637,11 @@ function mudaSemana(deltaDias){
   const d=new Date((EST.metaDia||hojeLocal())+'T12:00');d.setDate(d.getDate()+deltaDias);
   EST.metaDia=d.toISOString().slice(0,10);tela('metas');
 }
+function mudaDia(delta){
+  const d=new Date((EST.metaDia||hojeLocal())+'T12:00');d.setDate(d.getDate()+delta);
+  EST.metaDia=d.toISOString().slice(0,10);tela('metas');
+}
+function irHoje(){EST.metaDia=hojeLocal();tela('metas');}
 async function tMetas(){
   if(!EST.gestor){
     const pin=prompt('PIN do gestor:');
@@ -635,11 +650,13 @@ async function tMetas(){
     if(!ok){msg('PIN do gestor incorreto',true);return tela('inicio')}
     EST.gestor=true;
   }
+  const view=EST.metaView||'dia';EST.metaView=view;
   const dia=EST.metaDia||hojeLocal();EST.metaDia=dia;
   const semana=diasDaSemana(dia);const hoje=hojeLocal();
-  const [metas,tarefas,rec,pa,prods]=await Promise.all([
+  const [metas,tarefas,prog,rec,pa,prods]=await Promise.all([
     sb.from('metas_dia').select('*').in('data',semana).order('area'),
     sb.from('tarefas').select('*').in('data',semana).order('criado_em'),
+    sb.from('programacao_refino').select('id,data,quantidade_kg,status,produtos(nome),equipamentos(nome)').in('data',semana).order('data'),
     sb.from('quadro_recado').select('recado').eq('data',dia).maybeSingle(),
     sb.from('produto_acabado').select('id,nome,linha').eq('ativo',true).order('linha').order('nome'),
     sb.from('produtos').select('id,nome').eq('ativo',true).order('nome')
@@ -650,15 +667,50 @@ async function tMetas(){
     :EST.cache.mProds.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('');
   const metasPorDia={};(metas.data||[]).forEach(m=>{(metasPorDia[m.data]=metasPorDia[m.data]||[]).push(m)});
   const tarefasPorDia={};(tarefas.data||[]).forEach(t=>{(tarefasPorDia[t.data]=tarefasPorDia[t.data]||[]).push(t)});
+  const progPorDia={};(prog.data||[]).forEach(p=>{(progPorDia[p.data]=progPorDia[p.data]||[]).push(p)});
+  const stMap={programado:['mel','programado'],pesado:['azul','pesado'],no_balde:['ok','no balde']};
+  const cardDia=(d,grande)=>{
+    const dt=new Date(d+'T12:00');const ms=metasPorDia[d]||[];const ts=tarefasPorDia[d]||[];const ps=progPorDia[d]||[];
+    const tit=`${dt.toLocaleDateString('pt-BR',{weekday:'long'})} · ${brData(d)}${d===hoje?' <span class="chip ok">hoje</span>':''}`;
+    return `<div class="card"${d===hoje?' style="border-color:var(--pistache)"':''}>
+      <b style="text-transform:capitalize;${grande?'font-size:20px':''}">${tit}</b>
+      ${ps.length?`<small style="color:#7A6A57;display:block;margin:10px 0 4px">Programação nos moinhos</small>`:''}
+      ${ps.map(p=>{
+        const eq=(p.equipamentos&&p.equipamentos.nome)||'';const selEq=/2/.test(eq)?'azul':'mel';
+        const st=stMap[p.status]||['mel',p.status];
+        return `<div class="item-row"><span><span class="chip ${selEq}">${eq?eq.replace('Moinho ','M'):'—'}</span> ${p.produtos?p.produtos.nome:''}</span>
+          <span style="display:flex;gap:8px;align-items:center"><b class="mono">${fmt(p.quantidade_kg,0)} kg</b><span class="chip ${st[0]}">${st[1]}</span></span></div>`;
+      }).join('')}
+      ${ms.length?`<small style="color:#7A6A57;display:block;margin:10px 0 4px">Metas</small>`:''}
+      ${ms.map(m=>`<div class="item-row"><span><span class="chip ${m.area==='envase'?'ok':m.area==='refino'?'azul':'mel'}">${m.area}</span> ${m.ref_nome}</span>
+        <span style="display:flex;gap:10px;align-items:center"><b class="mono">${fmt(m.meta,0)} ${m.unidade}</b>
+        <button onclick="delMeta('${m.id}')" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer">🗑</button></span></div>`).join('')}
+      ${ts.length?`<small style="color:#7A6A57;display:block;margin:10px 0 4px">Tarefas</small>`:''}
+      ${ts.map(t=>`<div class="item-row"><span style="display:flex;align-items:center;gap:8px"><input type="checkbox" ${t.concluido?'checked':''} onchange="toggleTarefa('${t.id}',this.checked)" style="width:22px;height:22px;flex-shrink:0"><span style="${t.concluido?'text-decoration:line-through;color:#A99A82':''}">${t.descricao}${t.responsavel_designado?` <b>(${t.responsavel_designado})</b>`:''}</span></span>
+        <span style="display:flex;gap:10px;align-items:center">${t.concluido?`<small style="color:#5FBF6A">✅ ${t.concluido_por||''}</small>`:''}<button onclick="delTarefa('${t.id}')" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer">🗑</button></span></div>`).join('')}
+      ${!ps.length&&!ms.length&&!ts.length?'<p style="color:#A99A82;font-size:14px;margin:8px 0 0">Nada neste dia.</p>':''}
+    </div>`;
+  };
+  const nav = view==='dia'
+    ? `<div class="card" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+         <button class="btnSec" style="flex:1;margin-top:0" onclick="mudaDia(-1)">‹ dia anterior</button>
+         <button class="btnSec" style="flex:0 0 auto;margin-top:0${dia===hoje?';background:var(--pistache);color:#fff;border-color:var(--pistache)':''}" onclick="irHoje()">Hoje</button>
+         <button class="btnSec" style="flex:1;margin-top:0" onclick="mudaDia(1)">dia seguinte ›</button>
+       </div>`
+    : `<div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+         <button class="btnSec" style="flex:1;margin-top:0" onclick="mudaSemana(-7)">‹ semana anterior</button>
+         <b style="flex:1;text-align:center;min-width:140px">${brData(semana[0])} – ${brData(semana[6])}</b>
+         <button class="btnSec" style="flex:1;margin-top:0" onclick="mudaSemana(7)">semana seguinte ›</button>
+       </div>`;
   document.getElementById('app').innerHTML=`
-  ${trilha('')}${topo('Metas da semana','quadro que aparece na TV')}
+  ${trilha('')}${topo('Metas & programação','quadro que aparece na TV')}
   <main>
-    <div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <button class="btnSec" onclick="mudaSemana(-7)">‹ semana anterior</button>
-      <b style="flex:1;text-align:center">${brData(semana[0])} – ${brData(semana[6])}</b>
-      <button class="btnSec" onclick="mudaSemana(7)">semana seguinte ›</button>
-    </div>
-    <div class="card"><label style="margin-top:0">Adicionar no dia</label>
+    <div class="card" style="padding:12px"><div class="chips">
+      <button class="${view==='dia'?'sel':''}" onclick="EST.metaView='dia';tela('metas')">📅 Dia</button>
+      <button class="${view==='semana'?'sel':''}" onclick="EST.metaView='semana';tela('metas')">🗓️ Semana</button>
+    </div></div>
+    ${nav}
+    <div class="card"><label style="margin-top:0">Dia para adicionar / editar</label>
       <input type="date" id="mDia" value="${dia}" onchange="EST.metaDia=this.value;tela('metas')">
       <label>Recado deste dia (aparece em destaque na TV)</label>
       <input id="mRecado" value="${(rec.data?.recado||'').replace(/"/g,'&quot;')}" placeholder="ex.: prioridade hoje é o pedido da loja X">
@@ -676,18 +728,7 @@ async function tMetas(){
       <label>Responsável (opcional)</label><input id="tResp" placeholder="ex.: Lucia — deixe em branco se for de todos">
       <button class="btnP" onclick="salvarTarefa()">Adicionar tarefa</button>
     </div>
-    ${semana.map(d=>{
-      const dt=new Date(d+'T12:00');const ms=metasPorDia[d]||[];const ts=tarefasPorDia[d]||[];
-      return `<div class="card"${d===hoje?' style="border-color:var(--pistache)"':''}>
-        <b>${dt.toLocaleDateString('pt-BR',{weekday:'long'})} · ${brData(d)}${d===hoje?' <span class="chip ok">hoje</span>':''}</b>
-        ${ms.map(m=>`<div class="item-row"><span><span class="chip ${m.area==='envase'?'ok':m.area==='refino'?'azul':'mel'}">${m.area}</span> ${m.ref_nome}</span>
-          <span style="display:flex;gap:10px;align-items:center"><b class="mono">${fmt(m.meta,0)} ${m.unidade}</b>
-          <button onclick="delMeta('${m.id}')" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer">🗑</button></span></div>`).join('')}
-        ${ts.map(t=>`<div class="item-row"><span style="display:flex;align-items:center;gap:8px"><input type="checkbox" ${t.concluido?'checked':''} onchange="toggleTarefa('${t.id}',this.checked)" style="width:22px;height:22px;flex-shrink:0"><span style="${t.concluido?'text-decoration:line-through;color:#A99A82':''}">${t.descricao}${t.responsavel_designado?` <b>(${t.responsavel_designado})</b>`:''}</span></span>
-          <span style="display:flex;gap:10px;align-items:center">${t.concluido?`<small style="color:#5FBF6A">✅ ${t.concluido_por||''}</small>`:''}<button onclick="delTarefa('${t.id}')" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer">🗑</button></span></div>`).join('')}
-        ${!ms.length&&!ts.length?'<p style="color:#A99A82;font-size:14px;margin:8px 0 0">Nada neste dia.</p>':''}
-      </div>`;
-    }).join('')}
+    ${(view==='dia'?[dia]:semana).map(d=>cardDia(d,view==='dia')).join('')}
     <button class="btnSec" onclick="tela('tv')">📺 Ver como fica na TV</button>
   </main>`;
 }
@@ -748,7 +789,7 @@ async function tTV(){
   if(EST.tvSlideTimer){clearInterval(EST.tvSlideTimer);EST.tvSlideTimer=null}
   EST.tvSlide=EST.tvSlide||0;
   await tvRender();
-  EST.tvSlideTimer=setInterval(()=>{if(document.getElementById('tvGrid')){EST.tvSlide=(EST.tvSlide+1)%2;tvRender()}else{clearInterval(EST.tvSlideTimer);EST.tvSlideTimer=null}},20000);
+  EST.tvSlideTimer=setInterval(()=>{if(document.getElementById('tvGrid')){EST.tvSlide=(EST.tvSlide+1)%3;tvRender()}else{clearInterval(EST.tvSlideTimer);EST.tvSlideTimer=null}},20000);
   EST.tvTimer=setInterval(()=>{if(document.getElementById('tvGrid'))tvRender();else{clearInterval(EST.tvTimer);EST.tvTimer=null}},45000);
   EST.tvRelogio=setInterval(()=>{const r=document.getElementById('tvClock');if(r)r.textContent=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});else{clearInterval(EST.tvRelogio);EST.tvRelogio=null}},1000);
 }
@@ -762,7 +803,7 @@ async function tvRender(){
     sb.from('estoque_balde_movimentos').select('produto_id,quantidade_kg,lote').eq('tipo','entrada').gte('criado_em',iniISO),
     sb.from('programacao_refino').select('produto_id,quantidade_kg,status').eq('data',dia).in('status',['pesado','no_balde']),
     sb.from('tarefas').select('*').eq('data',dia).order('criado_em'),
-    sb.from('produto_acabado').select('nome,linha,embalagem,saldo_potes')
+    sb.from('produto_acabado').select('nome,linha,embalagem,saldo_potes,ativo')
   ]);
   const soma={};
   (envMov.data||[]).filter(m=>m.lote!=='AJUSTE').forEach(m=>soma['envase'+m.produto_acabado_id]=(soma['envase'+m.produto_acabado_id]||0)+Number(m.quantidade));
@@ -800,6 +841,15 @@ async function tvRender(){
       const tot=L.reduce((s,p)=>s+Number(p.saldo_potes||0),0);
       return `<div class="tv-col"><h2 style="background:linear-gradient(90deg,#B8862B,#8A6420);color:#fff;display:flex;justify-content:space-between;gap:10px"><span>${g}</span><span style="font-variant-numeric:tabular-nums">${fmt(tot,0)}</span></h2>${L.map(p=>`<div class="pa-row"><span>${p.nome}${p.embalagem?' · '+p.embalagem:''}</span><b style="color:${Number(p.saldo_potes)>0?'#FFD84D':'#FF7B7B'}">${fmt(p.saldo_potes||0,0)}</b></div>`).join('')}</div>`;
     }).join('')+'</div>';
+  const paAtiv=(paDados.data||[]).filter(p=>p.ativo!==false);
+  const tvMais=[...paAtiv].sort((a,b)=>Number(b.saldo_potes||0)-Number(a.saldo_potes||0)).slice(0,10);
+  const tvMenos=[...paAtiv].sort((a,b)=>Number(a.saldo_potes||0)-Number(b.saldo_potes||0)).slice(0,10);
+  const tvRankRow=p=>`<div class="pa-row"><span>${p.nome}${p.embalagem?' · '+p.embalagem:''}</span><b style="color:${Number(p.saldo_potes)>0?'#FFD84D':'#FF7B7B'}">${fmt(p.saldo_potes||0,0)}</b></div>`;
+  const slideTop='<div style="margin:16px 0 2px;font-size:22px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#C9B99F">🫙 Potes — top 10</div>'+
+    '<div class="tv-grid" id="tvGrid">'+
+    `<div class="tv-col"><h2 style="background:linear-gradient(90deg,#3E7C45,#2E5F34);color:#fff">🔝 Mais em estoque</h2>${tvMais.map(tvRankRow).join('')}</div>`+
+    `<div class="tv-col"><h2 style="background:linear-gradient(90deg,#C63A3A,#9A2A2A);color:#fff">🔻 Menos em estoque</h2>${tvMenos.map(tvRankRow).join('')}</div>`+
+    '</div>';
   const slideMetas=`<div class="tv-grid" id="tvGrid">${areas.map(([a,t])=>cardArea(a,t)).join('')}</div>
     ${(tarefas.data||[]).length?`<div class="card" style="margin-top:16px;background:#3A281A;border-color:#5A4630">
       <b style="color:#fff">✅ Tarefas de hoje</b>
@@ -813,8 +863,8 @@ async function tvRender(){
       <button onclick="tela('inicio')" style="border:1px solid #5A4630;background:transparent;color:#C9B99F;border-radius:10px;padding:8px 14px;cursor:pointer">sair</button></div>
     </div>
     ${rec.data?.recado?`<div class="recado">📌 ${rec.data.recado}</div>`:''}
-    ${EST.tvSlide===1?slidePA:slideMetas}
-    <div style="display:flex;gap:10px;justify-content:center;margin-top:16px">${[0,1].map(i=>`<span onclick="tvSetSlide(${i})" style="width:13px;height:13px;border-radius:99px;cursor:pointer;background:${EST.tvSlide===i?'#FFD84D':'#5A4630'}"></span>`).join('')}</div>
+    ${EST.tvSlide===2?slideTop:(EST.tvSlide===1?slidePA:slideMetas)}
+    <div style="display:flex;gap:10px;justify-content:center;margin-top:16px">${[0,1,2].map(i=>`<span onclick="tvSetSlide(${i})" style="width:13px;height:13px;border-radius:99px;cursor:pointer;background:${EST.tvSlide===i?'#FFD84D':'#5A4630'}"></span>`).join('')}</div>
     <p style="margin-top:10px;color:#8A7A64;font-size:13px">alterna sozinho a cada 20 s · dados a cada 45 s · para a TV, abra ${location.origin+location.pathname}#tv</p>
   </div>`;
 }
