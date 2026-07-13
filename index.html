@@ -93,22 +93,13 @@ label{display:block;font-size:13px;font-weight:700;color:#7A6A57;margin:12px 0 5
 .tv-item.atrasado{border-color:#FF5A5A;animation:alerta 1.2s infinite}
 .tv-item.atrasado .pct{color:#FF7B7B}
 .tv-item.atrasado .nome::after{content:"  ⏰ ACELERA!";color:#FF7B7B;font-size:17px}
+.tv-item.critico{border-color:#FF5A5A}
+.tv-item.critico .pct{color:#FF7B7B}
+.tv-desp{background:#00000038;border-radius:22px;padding:18px 20px;margin-top:16px;border:1px solid #ffffff14}
+.tv-desp h2{font-size:24px;letter-spacing:.06em;text-transform:uppercase;font-weight:900;color:#FFD84D}
+.tv-desp .item-row{border-color:#5A4630;padding:10px 0;font-size:18px}
 @keyframes alerta{50%{border-color:#FF5A5A22;box-shadow:0 0 22px #FF5A5A33}}
 .tv .semmeta{color:#8A7A64;font-size:18px;padding:0 18px 8px}
-.tv .pa-row{display:flex;justify-content:space-between;gap:12px;padding:7px 18px;font-size:19px;font-weight:700;border-bottom:1px solid #ffffff12}.tv .pa-row b{font-variant-numeric:tabular-nums;font-size:21px;flex:none}
-.tv .tv-placar{border-width:2px}
-.tv .tv-topo{padding:14px 16px 4px;text-align:center}
-.tv .tv-pct{font-size:64px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
-.tv .tv-tot{font-size:22px;font-weight:800;color:#E8DECF;margin-top:6px;font-variant-numeric:tabular-nums}
-.tv .tv-status{font-size:17px;font-weight:800;margin-top:2px}
-.tv .tv-barG{height:18px;background:#00000055;border-radius:99px;overflow:hidden;margin:10px 0 12px;border:1px solid #ffffff22}
-.tv .tv-barG i{display:block;height:100%;border-radius:99px;transition:width 1.2s ease}
-.tv .tv-det{border-top:1px solid #ffffff12;padding:8px 16px 6px}
-.tv .tv-mini{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:16px;font-weight:700;color:#F0E6D6}
-.tv .tv-mini .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tv .tv-mini .b{width:80px;height:8px;background:#00000055;border-radius:99px;overflow:hidden;flex:none}
-.tv .tv-mini .b i{display:block;height:100%;border-radius:99px}
-.tv .tv-mini b{font-variant-numeric:tabular-nums;flex:none;font-size:17px}
 </style>
 </head>
 <body>
@@ -116,13 +107,12 @@ label{display:block;font-size:13px;font-weight:700;color:#7A6A57;margin:12px 0 5
 <script>
 /* ================= CONFIG ================= */
 const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
-const SUPA_KEY_PADRAO='sb_publishable_tNe4G9C0re2YDN9lsnRQXg_zQgFLmzn';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 function hoje(){return new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}
-function loteSugestao(seq){const d=new Date();const dia=Math.floor((d-new Date(d.getFullYear(),0,0))/864e5);const s=String(d.getFullYear()).slice(2)+String(dia).padStart(3,'0');return s+'-'+(seq||1)}
+function loteSugestao(seq){const d=new Date();const s=String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');return s+'-'+(seq||1)}
 function msg(t,erro){const m=el(`<div class="msg ${erro?'erro':''}">${t}</div>`);document.body.appendChild(m);setTimeout(()=>m.remove(),3800)}
 const brData=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR');
 function trilha(atual){const etapas=['Programação','Compra','Receber','Pesagem','Moinho','Balde','Envase','Estoque'];return '<div class="trilha">'+etapas.map(e=>`<span class="${e===atual?'atual':''}">${e}</span>`).join('')+'</div>'}
@@ -131,7 +121,7 @@ function precisaOperador(){if(!EST.operador){msg('Escolha primeiro quem é você
 
 /* ================= BOOT / AUTH ================= */
 async function boot(){
-  const key=localStorage.getItem('nf_key')||SUPA_KEY_PADRAO;
+  const key=localStorage.getItem('nf_key');
   if(!key){return telaConfig()}
   sb=window.supabase.createClient(SUPA_URL,key);
   const {data:{session}}=await sb.auth.getSession();
@@ -210,7 +200,7 @@ async function tPainel(){
     sb.from('itens').select('nome,saldo_atual,estoque_minimo'),
     sb.from('compras').select('id,status,data_prevista_entrega').in('status',['pendente','aguardando_pagamento','liberado']),
     sb.from('estoque_balde').select('quantidade_kg,produtos(nome)').gt('quantidade_kg',0),
-    sb.from('produto_acabado').select('nome,linha,saldo_potes,ativo'),
+    sb.from('produto_acabado').select('saldo_potes'),
     sb.from('atividades').select('*').order('criado_em',{ascending:false}).limit(15),
     sb.rpc('fn_alerta_entregas')
   ]);
@@ -219,10 +209,6 @@ async function tPainel(){
   const potes=(pa.data||[]).reduce((a,b)=>a+Number(b.saldo_potes),0);
   const hj=new Date().toISOString().slice(0,10);
   const chegaHoje=(compras.data||[]).filter(c=>c.data_prevista_entrega===hj).length;
-  const paAtivos=(pa.data||[]).filter(p=>p.ativo!==false);
-  const topMais=[...paAtivos].sort((a,b)=>Number(b.saldo_potes||0)-Number(a.saldo_potes||0)).slice(0,10);
-  const topMenos=[...paAtivos].sort((a,b)=>Number(a.saldo_potes||0)-Number(b.saldo_potes||0)).slice(0,10);
-  const rankRow=p=>`<div class="item-row"><span>${p.linha?p.linha+' · ':''}${p.nome}</span><span class="saldo mono">${fmt(p.saldo_potes||0,0)}${Number(p.saldo_potes)===0?' <span class="chip ver">zerado</span>':''}</span></div>`;
   document.getElementById('app').innerHTML=`
   ${trilha('')}${topo('Painel','Nutríssima agora · '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}))}
   <main>
@@ -235,12 +221,6 @@ async function tPainel(){
     ${(alertas.data||[]).length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-top:12px"><b style="color:var(--morango)">⚠️ Insumo chega depois da produção</b>${alertas.data.slice(0,5).map(al=>`<div class="item-row baixo"><span>${al.item} · prod. ${brData(al.data_producao)}</span><span class="saldo mono" style="color:var(--morango)">falta ${fmt(al.falta)}</span></div>`).join('')}</div>`:''}
     ${abaixo.length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-top:12px"><b style="color:var(--morango)">Precisa de atenção</b>${abaixo.slice(0,8).map(i=>`<div class="item-row baixo"><span>${i.nome}</span><span class="saldo mono">${fmt(i.saldo_atual)}</span></div>`).join('')}</div>`:''}
     ${(balde.data||[]).length?`<div class="card" style="margin-top:12px"><b>Baldes com saldo</b>${balde.data.map(b=>`<div class="item-row"><span>${b.produtos.nome}</span><span class="saldo mono">${fmt(b.quantidade_kg)} kg</span></div>`).join('')}</div>`:''}
-    <div class="card" style="margin-top:12px"><b>🫙 Potes — ranking de estoque</b>
-      <small style="color:#7A6A57;display:block;margin:8px 0 4px">🔝 Mais em estoque</small>
-      ${topMais.map(rankRow).join('')}
-      <small style="color:#7A6A57;display:block;margin:12px 0 4px">🔻 Menos em estoque</small>
-      ${topMenos.map(rankRow).join('')}
-    </div>
     <div class="card" style="margin-top:12px"><b>Atividade da fábrica</b><small style="color:#7A6A57;display:block;margin-bottom:10px">tudo que aconteceu, com quem fez e o lote</small>
       <div class="feed">${(ativ.data&&ativ.data.length)?ativ.data.map(a=>{
         const ic={recebimento:'📦',pesagem:'⚖️',refino:'🌀',envase:'🫙',compra:'🛒',ajuste:'✏️'}[a.tipo]||'•';
@@ -637,11 +617,6 @@ function mudaSemana(deltaDias){
   const d=new Date((EST.metaDia||hojeLocal())+'T12:00');d.setDate(d.getDate()+deltaDias);
   EST.metaDia=d.toISOString().slice(0,10);tela('metas');
 }
-function mudaDia(delta){
-  const d=new Date((EST.metaDia||hojeLocal())+'T12:00');d.setDate(d.getDate()+delta);
-  EST.metaDia=d.toISOString().slice(0,10);tela('metas');
-}
-function irHoje(){EST.metaDia=hojeLocal();tela('metas');}
 async function tMetas(){
   if(!EST.gestor){
     const pin=prompt('PIN do gestor:');
@@ -650,16 +625,16 @@ async function tMetas(){
     if(!ok){msg('PIN do gestor incorreto',true);return tela('inicio')}
     EST.gestor=true;
   }
-  const view=EST.metaView||'dia';EST.metaView=view;
   const dia=EST.metaDia||hojeLocal();EST.metaDia=dia;
   const semana=diasDaSemana(dia);const hoje=hojeLocal();
-  const [metas,tarefas,prog,rec,pa,prods]=await Promise.all([
+  const [metas,tarefas,rec,pa,prods,prog,desp]=await Promise.all([
     sb.from('metas_dia').select('*').in('data',semana).order('area'),
     sb.from('tarefas').select('*').in('data',semana).order('criado_em'),
-    sb.from('programacao_refino').select('id,data,quantidade_kg,status,produtos(nome),equipamentos(nome)').in('data',semana).order('data'),
     sb.from('quadro_recado').select('recado').eq('data',dia).maybeSingle(),
     sb.from('produto_acabado').select('id,nome,linha').eq('ativo',true).order('linha').order('nome'),
-    sb.from('produtos').select('id,nome').eq('ativo',true).order('nome')
+    sb.from('produtos').select('id,nome').eq('ativo',true).order('nome'),
+    sb.from('programacao_refino').select('*, produtos(nome), equipamentos(nome)').in('data',semana).order('data'),
+    sb.from('despachos_ecommerce').select('conteudo').eq('id',1).maybeSingle()
   ]);
   EST.cache.mPa=pa.data||[];EST.cache.mProds=prods.data||[];
   const opts=a=>a==='envase'
@@ -668,49 +643,16 @@ async function tMetas(){
   const metasPorDia={};(metas.data||[]).forEach(m=>{(metasPorDia[m.data]=metasPorDia[m.data]||[]).push(m)});
   const tarefasPorDia={};(tarefas.data||[]).forEach(t=>{(tarefasPorDia[t.data]=tarefasPorDia[t.data]||[]).push(t)});
   const progPorDia={};(prog.data||[]).forEach(p=>{(progPorDia[p.data]=progPorDia[p.data]||[]).push(p)});
-  const stMap={programado:['mel','programado'],pesado:['azul','pesado'],no_balde:['ok','no balde']};
-  const cardDia=(d,grande)=>{
-    const dt=new Date(d+'T12:00');const ms=metasPorDia[d]||[];const ts=tarefasPorDia[d]||[];const ps=progPorDia[d]||[];
-    const tit=`${dt.toLocaleDateString('pt-BR',{weekday:'long'})} · ${brData(d)}${d===hoje?' <span class="chip ok">hoje</span>':''}`;
-    return `<div class="card"${d===hoje?' style="border-color:var(--pistache)"':''}>
-      <b style="text-transform:capitalize;${grande?'font-size:20px':''}">${tit}</b>
-      ${ps.length?`<small style="color:#7A6A57;display:block;margin:10px 0 4px">Programação nos moinhos</small>`:''}
-      ${ps.map(p=>{
-        const eq=(p.equipamentos&&p.equipamentos.nome)||'';const selEq=/2/.test(eq)?'azul':'mel';
-        const st=stMap[p.status]||['mel',p.status];
-        return `<div class="item-row"><span><span class="chip ${selEq}">${eq?eq.replace('Moinho ','M'):'—'}</span> ${p.produtos?p.produtos.nome:''}</span>
-          <span style="display:flex;gap:8px;align-items:center"><b class="mono">${fmt(p.quantidade_kg,0)} kg</b><span class="chip ${st[0]}">${st[1]}</span></span></div>`;
-      }).join('')}
-      ${ms.length?`<small style="color:#7A6A57;display:block;margin:10px 0 4px">Metas</small>`:''}
-      ${ms.map(m=>`<div class="item-row"><span><span class="chip ${m.area==='envase'?'ok':m.area==='refino'?'azul':'mel'}">${m.area}</span> ${m.ref_nome}</span>
-        <span style="display:flex;gap:10px;align-items:center"><b class="mono">${fmt(m.meta,0)} ${m.unidade}</b>
-        <button onclick="delMeta('${m.id}')" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer">🗑</button></span></div>`).join('')}
-      ${ts.length?`<small style="color:#7A6A57;display:block;margin:10px 0 4px">Tarefas</small>`:''}
-      ${ts.map(t=>`<div class="item-row"><span style="display:flex;align-items:center;gap:8px"><input type="checkbox" ${t.concluido?'checked':''} onchange="toggleTarefa('${t.id}',this.checked)" style="width:22px;height:22px;flex-shrink:0"><span style="${t.concluido?'text-decoration:line-through;color:#A99A82':''}">${t.descricao}${t.responsavel_designado?` <b>(${t.responsavel_designado})</b>`:''}</span></span>
-        <span style="display:flex;gap:10px;align-items:center">${t.concluido?`<small style="color:#5FBF6A">✅ ${t.concluido_por||''}</small>`:''}<button onclick="delTarefa('${t.id}')" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer">🗑</button></span></div>`).join('')}
-      ${!ps.length&&!ms.length&&!ts.length?'<p style="color:#A99A82;font-size:14px;margin:8px 0 0">Nada neste dia.</p>':''}
-    </div>`;
-  };
-  const nav = view==='dia'
-    ? `<div class="card" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-         <button class="btnSec" style="flex:1;margin-top:0" onclick="mudaDia(-1)">‹ dia anterior</button>
-         <button class="btnSec" style="flex:0 0 auto;margin-top:0${dia===hoje?';background:var(--pistache);color:#fff;border-color:var(--pistache)':''}" onclick="irHoje()">Hoje</button>
-         <button class="btnSec" style="flex:1;margin-top:0" onclick="mudaDia(1)">dia seguinte ›</button>
-       </div>`
-    : `<div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-         <button class="btnSec" style="flex:1;margin-top:0" onclick="mudaSemana(-7)">‹ semana anterior</button>
-         <b style="flex:1;text-align:center;min-width:140px">${brData(semana[0])} – ${brData(semana[6])}</b>
-         <button class="btnSec" style="flex:1;margin-top:0" onclick="mudaSemana(7)">semana seguinte ›</button>
-       </div>`;
+  const statusChip={programado:['mel','a pesar'],pesado:['azul','pesado'],no_balde:['ok','no balde']};
   document.getElementById('app').innerHTML=`
-  ${trilha('')}${topo('Metas & programação','quadro que aparece na TV')}
+  ${trilha('')}${topo('Metas da semana','quadro que aparece na TV')}
   <main>
-    <div class="card" style="padding:12px"><div class="chips">
-      <button class="${view==='dia'?'sel':''}" onclick="EST.metaView='dia';tela('metas')">📅 Dia</button>
-      <button class="${view==='semana'?'sel':''}" onclick="EST.metaView='semana';tela('metas')">🗓️ Semana</button>
-    </div></div>
-    ${nav}
-    <div class="card"><label style="margin-top:0">Dia para adicionar / editar</label>
+    <div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btnSec" onclick="mudaSemana(-7)">‹ semana anterior</button>
+      <b style="flex:1;text-align:center">${brData(semana[0])} – ${brData(semana[6])}</b>
+      <button class="btnSec" onclick="mudaSemana(7)">semana seguinte ›</button>
+    </div>
+    <div class="card"><label style="margin-top:0">Adicionar no dia</label>
       <input type="date" id="mDia" value="${dia}" onchange="EST.metaDia=this.value;tela('metas')">
       <label>Recado deste dia (aparece em destaque na TV)</label>
       <input id="mRecado" value="${(rec.data?.recado||'').replace(/"/g,'&quot;')}" placeholder="ex.: prioridade hoje é o pedido da loja X">
@@ -728,9 +670,57 @@ async function tMetas(){
       <label>Responsável (opcional)</label><input id="tResp" placeholder="ex.: Lucia — deixe em branco se for de todos">
       <button class="btnP" onclick="salvarTarefa()">Adicionar tarefa</button>
     </div>
-    ${(view==='dia'?[dia]:semana).map(d=>cardDia(d,view==='dia')).join('')}
+    <div class="card"><b>📦 Despachos e-commerce pendentes (aparece na TV)</b>
+      <p style="font-size:13px;color:#7A6A57;margin:4px 0 8px">Cole a lista (uma linha por produto, quantidade primeiro). Isso substitui a lista atual — é só o painel visual, não mexe no estoque.</p>
+      <textarea id="dConteudo" rows="6" style="width:100%;font-family:monospace;font-size:13px;border:1px solid var(--linha);border-radius:10px;padding:10px" placeholder="400 Creme de Avelã Chocolate La Ben 1kg
+381 Creme Ganache Chocolate Branco e Avelã La Ben 1kg">${(desp.data?.conteudo||'').replace(/</g,'&lt;')}</textarea>
+      <button class="btnP" style="margin-top:8px" onclick="salvarDespachos()">Salvar lista</button>
+      ${desp.data?.atualizado_em?`<p style="font-size:12px;color:#A99A82;margin-top:6px">última atualização: ${new Date(desp.data.atualizado_em).toLocaleString('pt-BR')}${desp.data.atualizado_por?' · '+desp.data.atualizado_por:''}</p>`:''}
+    </div>
+    ${semana.map(d=>{
+      const dt=new Date(d+'T12:00');const ms=metasPorDia[d]||[];const ts=tarefasPorDia[d]||[];const ps=progPorDia[d]||[];
+      (EST.metaImpressao=EST.metaImpressao||{})[d]={dt:dt.toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'}),ms,ts,ps,statusChip};
+      return `<div class="card"${d===hoje?' style="border-color:var(--pistache)"':''}>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+          <b>${dt.toLocaleDateString('pt-BR',{weekday:'long'})} · ${brData(d)}${d===hoje?' <span class="chip ok">hoje</span>':''}</b>
+          ${(ms.length||ts.length||ps.length)?`<button class="btnSec" style="padding:6px 12px;min-height:auto;font-size:13px" onclick="imprimirDia('${d}')">🖨️ Imprimir</button>`:''}
+        </div>
+        ${ps.length?`<div style="margin:8px 0"><small style="color:#7A6A57">⚖️ Programação de pesagem</small>
+        ${ps.map(p=>{const sc=statusChip[p.status]||['','?'];return `<div class="item-row"><span><span class="chip ${sc[0]}">${p.equipamentos?.nome||''}</span> ${p.produtos?.nome||'—'}</span><span style="display:flex;gap:10px;align-items:center"><b class="mono">${fmt(p.quantidade_kg,0)} kg</b><small style="color:#7A6A57">${sc[1]}</small></span></div>`}).join('')}
+        </div>`:''}
+        ${ms.map(m=>`<div class="item-row"><span><span class="chip ${m.area==='envase'?'ok':m.area==='refino'?'azul':'mel'}">${m.area}</span> ${m.ref_nome}</span>
+          <span style="display:flex;gap:10px;align-items:center"><b class="mono">${fmt(m.meta,0)} ${m.unidade}</b>
+          <button onclick="delMeta('${m.id}')" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer">🗑</button></span></div>`).join('')}
+        ${ts.map(t=>`<div class="item-row"><span style="display:flex;align-items:center;gap:8px"><input type="checkbox" ${t.concluido?'checked':''} onchange="toggleTarefa('${t.id}',this.checked)" style="width:22px;height:22px;flex-shrink:0"><span style="${t.concluido?'text-decoration:line-through;color:#A99A82':''}">${t.descricao}${t.responsavel_designado?` <b>(${t.responsavel_designado})</b>`:''}</span></span>
+          <span style="display:flex;gap:10px;align-items:center">${t.concluido?`<small style="color:#5FBF6A">✅ ${t.concluido_por||''}</small>`:''}<button onclick="delTarefa('${t.id}')" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer">🗑</button></span></div>`).join('')}
+        ${!ms.length&&!ts.length&&!ps.length?'<p style="color:#A99A82;font-size:14px;margin:8px 0 0">Nada neste dia.</p>':''}
+      </div>`;
+    }).join('')}
     <button class="btnSec" onclick="tela('tv')">📺 Ver como fica na TV</button>
   </main>`;
+}
+function imprimirDia(d){
+  const c=EST.metaImpressao&&EST.metaImpressao[d];if(!c)return;
+  const {dt,ms,ts,ps,statusChip}=c;
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Nutríssima — ${dt}</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;color:#221507;padding:24px;max-width:720px;margin:0 auto}
+    h1{font-size:22px;margin:0 0 2px}h1 small{display:block;font-size:14px;font-weight:400;color:#555}
+    h2{font-size:15px;text-transform:uppercase;letter-spacing:.04em;color:#33200F;border-bottom:2px solid #33200F;padding-bottom:4px;margin:22px 0 8px}
+    .linha{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #ddd;font-size:15px}
+    .tag{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;background:#eee;border-radius:6px;padding:2px 8px;margin-right:8px}
+    .box{width:20px;height:20px;border:2px solid #221507;display:inline-block;margin-right:10px;vertical-align:middle;flex-shrink:0}
+    .vazio{color:#888;font-size:14px}
+    @media print{body{padding:0}}
+  </style></head><body>
+    <h1>🏭 Nutríssima<small>${dt}</small></h1>
+    ${ps.length?`<h2>⚖️ Programação de pesagem</h2>${ps.map(p=>{const sc=statusChip[p.status]||['','?'];return `<div class="linha"><span><span class="tag">${p.equipamentos?.nome||''}</span>${p.produtos?.nome||'—'}</span><b>${fmt(p.quantidade_kg,0)} kg <span style="font-weight:400;color:#666">(${sc[1]})</span></b></div>`}).join('')}`:''}
+    ${ms.length?`<h2>🎯 Metas</h2>${ms.map(m=>`<div class="linha"><span><span class="tag">${m.area}</span>${m.ref_nome}</span><b>${fmt(m.meta,0)} ${m.unidade}</b></div>`).join('')}`:''}
+    ${ts.length?`<h2>✅ Tarefas</h2>${ts.map(t=>`<div class="linha"><span><span class="box"></span>${t.descricao}${t.responsavel_designado?` <b>(${t.responsavel_designado})</b>`:''}</span></div>`).join('')}`:''}
+    ${!ps.length&&!ms.length&&!ts.length?'<p class="vazio">Nada neste dia.</p>':''}
+  </body></html>`;
+  const w=window.open('','_blank');w.document.write(html);w.document.close();
+  w.onload=()=>{w.print()};setTimeout(()=>{try{w.print()}catch(e){}},300);
 }
 async function salvarTarefa(){
   const descricao=document.getElementById('tDesc').value.trim();
@@ -751,6 +741,12 @@ async function toggleTarefa(id,checked){
     if(error)return msg(error.message,true);
   }
   tela('metas');
+}
+async function salvarDespachos(){
+  const conteudo=document.getElementById('dConteudo').value.trim();
+  const {error}=await sb.from('despachos_ecommerce').upsert({id:1,conteudo,atualizado_em:new Date().toISOString(),atualizado_por:EST.operador||'gestor'});
+  if(error)return msg(error.message,true);
+  msg('✅ Lista de despachos salva');tela('metas');
 }
 async function delTarefa(id){
   const {error}=await sb.from('tarefas').delete().eq('id',id);
@@ -786,75 +782,70 @@ async function delMeta(id){
 async function tTV(){
   if(EST.tvTimer){clearInterval(EST.tvTimer);EST.tvTimer=null}
   if(EST.tvRelogio){clearInterval(EST.tvRelogio);EST.tvRelogio=null}
-  if(EST.tvSlideTimer){clearInterval(EST.tvSlideTimer);EST.tvSlideTimer=null}
-  EST.tvSlide=EST.tvSlide||0;
+  if(EST.tvPainelTimer){clearInterval(EST.tvPainelTimer);EST.tvPainelTimer=null}
+  EST.tvIdx=0;
   await tvRender();
-  EST.tvSlideTimer=setInterval(()=>{if(document.getElementById('tvGrid')){EST.tvSlide=(EST.tvSlide+1)%3;tvRender()}else{clearInterval(EST.tvSlideTimer);EST.tvSlideTimer=null}},20000);
-  EST.tvTimer=setInterval(()=>{if(document.getElementById('tvGrid'))tvRender();else{clearInterval(EST.tvTimer);EST.tvTimer=null}},45000);
+  EST.tvTimer=setInterval(()=>{if(document.getElementById('tvPainelAtual'))tvRender();else{clearInterval(EST.tvTimer);EST.tvTimer=null}},45000);
   EST.tvRelogio=setInterval(()=>{const r=document.getElementById('tvClock');if(r)r.textContent=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});else{clearInterval(EST.tvRelogio);EST.tvRelogio=null}},1000);
+  EST.tvPainelTimer=setInterval(()=>{
+    const el=document.getElementById('tvPainelAtual');
+    if(!el||!EST.tvPaineis||EST.tvPaineis.length<2){if(!el){clearInterval(EST.tvPainelTimer);EST.tvPainelTimer=null}return}
+    EST.tvIdx=(EST.tvIdx+1)%EST.tvPaineis.length;
+    el.innerHTML=EST.tvPaineis[EST.tvIdx];
+    document.querySelectorAll('.tv-dots span').forEach((d,i)=>{d.style.width=i===EST.tvIdx?'18px':'6px';d.style.background=i===EST.tvIdx?'#F0DFA0':'#5A4630'});
+  },18000);
 }
 async function tvRender(){
   const dia=hojeLocal();
   const ini=new Date();ini.setHours(0,0,0,0);const iniISO=ini.toISOString();
-  const [metas,rec,envMov,refMov,pesag,tarefas,paDados]=await Promise.all([
+  const [metas,rec,envMov,refMov,pesag,tarefas,desp,itens]=await Promise.all([
     sb.from('metas_dia').select('*').eq('data',dia),
     sb.from('quadro_recado').select('recado').eq('data',dia).maybeSingle(),
     sb.from('produto_acabado_movimentos').select('produto_acabado_id,quantidade,lote').eq('tipo','entrada').gte('criado_em',iniISO),
     sb.from('estoque_balde_movimentos').select('produto_id,quantidade_kg,lote').eq('tipo','entrada').gte('criado_em',iniISO),
     sb.from('programacao_refino').select('produto_id,quantidade_kg,status').eq('data',dia).in('status',['pesado','no_balde']),
     sb.from('tarefas').select('*').eq('data',dia).order('criado_em'),
-    sb.from('produto_acabado').select('nome,linha,embalagem,saldo_potes,ativo')
+    sb.from('despachos_ecommerce').select('conteudo').eq('id',1).maybeSingle(),
+    sb.from('itens').select('nome,saldo_atual,estoque_minimo,unidade')
   ]);
   const soma={};
   (envMov.data||[]).filter(m=>m.lote!=='AJUSTE').forEach(m=>soma['envase'+m.produto_acabado_id]=(soma['envase'+m.produto_acabado_id]||0)+Number(m.quantidade));
   (refMov.data||[]).filter(m=>m.lote!=='AJUSTE').forEach(m=>soma['refino'+m.produto_id]=(soma['refino'+m.produto_id]||0)+Number(m.quantidade_kg));
   (pesag.data||[]).forEach(m=>soma['pesagem'+m.produto_id]=(soma['pesagem'+m.produto_id]||0)+Number(m.quantidade_kg));
   const h=new Date().getHours()+new Date().getMinutes()/60;
-  const ritmo=Math.min(1,Math.max(0,(h-7)/10)); // expediente 7h–17h
+  const ritmo=Math.min(1,Math.max(0,(h-7)/10));
   const areas=[['pesagem','⚖️ Pesagem'],['refino','🌀 Refino'],['envase','🫙 Envase']];
-  const cardArea=(a,t)=>{
+  const col=a=>{
     const L=(metas.data||[]).filter(m=>m.area===a);
-    if(!L.length)return `<div class="tv-col a-${a}"><h2>${t}</h2><div class="semmeta">— sem meta hoje —</div></div>`;
-    const un=L[0].unidade;
-    const totMeta=L.reduce((s,m)=>s+Number(m.meta),0);
-    const real=L.reduce((s,m)=>s+(soma[a+m.ref_id]||0),0);
-    const capped=L.reduce((s,m)=>s+Math.min(Number(m.meta),soma[a+m.ref_id]||0),0);
-    const pct=totMeta>0?Math.min(100,Math.round(capped/totMeta*100)):0;
-    const atras=pct<100&&pct/100<ritmo-0.15;
-    const cor=pct>=100?'#7ED957':(atras?'#FF7B7B':'#FFD84D');
-    const borda=pct>=100?'border-color:#7ED957;box-shadow:0 0 24px #7ED95733':(atras?'border-color:#FF5A5A':'');
-    const status=pct>=100?'<div class="tv-status" style="color:#7ED957">🎉 meta batida!</div>'
-      :(atras?`<div class="tv-status" style="color:#FF7B7B">faltam ${fmt(totMeta-capped,0)} ${un}</div>`
-      :'<div class="tv-status" style="color:#8FE39A">✔ no ritmo do dia</div>');
-    const linhas=L.map(m=>{const r=soma[a+m.ref_id]||0;const p=Math.min(100,Math.round(r/Number(m.meta)*100));
-      return `<div class="tv-mini"><span class="n">${m.ref_nome}</span><span class="b"><i style="width:${p}%;background:${p>=100?'#7ED957':'#FFD84D'}"></i></span><b>${fmt(r,0)}/${fmt(m.meta,0)}</b></div>`}).join('');
-    return `<div class="tv-col a-${a} tv-placar" style="${borda}"><h2>${t}</h2>
-      <div class="tv-topo"><div class="tv-pct" style="color:${cor}">${pct}%</div><div class="tv-tot">${fmt(real,0)} de ${fmt(totMeta,0)} ${un}</div>${status}
-      <div class="tv-barG"><i style="width:${pct}%;background:${cor}"></i></div></div>
-      <div class="tv-det">${linhas}</div></div>`;
+    if(!L.length)return '<div class="semmeta">— sem meta hoje —</div>';
+    return L.map(m=>{
+      const real=soma[a+m.ref_id]||0, pct=Math.min(100,Math.round(real/Number(m.meta)*100));
+      const cls=pct>=100?'feito':(pct/100<ritmo-0.15?'atrasado':'');
+      return `<div class="tv-item ${cls}"><div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px"><div><div class="nome">${m.ref_nome}</div><div class="nums">${fmt(real,0)} de ${fmt(m.meta,0)} ${m.unidade}</div></div><div class="pct">${pct}%</div></div>
+        <div class="tv-bar"><i style="width:${pct}%"></i></div></div>`;
+    }).join('');
   };
-  const grupos={};
-  (paDados.data||[]).forEach(p=>{const g=p.linha||'Outros';(grupos[g]=grupos[g]||[]).push(p)});
-  const slidePA='<div style="margin:16px 0 2px;font-size:22px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#C9B99F">🫙 Estoque de produto acabado</div>'+
-    '<div class="tv-grid" id="tvGrid">'+Object.keys(grupos).sort().map(g=>{
-      const L=grupos[g].slice().sort((x,y)=>Number(y.saldo_potes||0)-Number(x.saldo_potes||0));
-      const tot=L.reduce((s,p)=>s+Number(p.saldo_potes||0),0);
-      return `<div class="tv-col"><h2 style="background:linear-gradient(90deg,#B8862B,#8A6420);color:#fff;display:flex;justify-content:space-between;gap:10px"><span>${g}</span><span style="font-variant-numeric:tabular-nums">${fmt(tot,0)}</span></h2>${L.map(p=>`<div class="pa-row"><span>${p.nome}${p.embalagem?' · '+p.embalagem:''}</span><b style="color:${Number(p.saldo_potes)>0?'#FFD84D':'#FF7B7B'}">${fmt(p.saldo_potes||0,0)}</b></div>`).join('')}</div>`;
-    }).join('')+'</div>';
-  const paAtiv=(paDados.data||[]).filter(p=>p.ativo!==false);
-  const tvMais=[...paAtiv].sort((a,b)=>Number(b.saldo_potes||0)-Number(a.saldo_potes||0)).slice(0,10);
-  const tvMenos=[...paAtiv].sort((a,b)=>Number(a.saldo_potes||0)-Number(b.saldo_potes||0)).slice(0,10);
-  const tvRankRow=p=>`<div class="pa-row"><span>${p.nome}${p.embalagem?' · '+p.embalagem:''}</span><b style="color:${Number(p.saldo_potes)>0?'#FFD84D':'#FF7B7B'}">${fmt(p.saldo_potes||0,0)}</b></div>`;
-  const slideTop='<div style="margin:16px 0 2px;font-size:22px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#C9B99F">🫙 Potes — top 10</div>'+
-    '<div class="tv-grid" id="tvGrid">'+
-    `<div class="tv-col"><h2 style="background:linear-gradient(90deg,#3E7C45,#2E5F34);color:#fff">🔝 Mais em estoque</h2>${tvMais.map(tvRankRow).join('')}</div>`+
-    `<div class="tv-col"><h2 style="background:linear-gradient(90deg,#C63A3A,#9A2A2A);color:#fff">🔻 Menos em estoque</h2>${tvMenos.map(tvRankRow).join('')}</div>`+
-    '</div>';
-  const slideMetas=`<div class="tv-grid" id="tvGrid">${areas.map(([a,t])=>cardArea(a,t)).join('')}</div>
-    ${(tarefas.data||[]).length?`<div class="card" style="margin-top:16px;background:#3A281A;border-color:#5A4630">
-      <b style="color:#fff">✅ Tarefas de hoje</b>
+  const painelMetas=`<div class="tv-grid" id="tvGrid">${areas.map(([a,t])=>`<div class="tv-col a-${a}"><h2>${t}</h2>${col(a)}</div>`).join('')}</div>`;
+  const linhasDesp=(desp.data?.conteudo||'').split('\n').map(l=>l.trim()).filter(Boolean)
+    .map(l=>{const mm=l.match(/^(\d+)\s+(.+)$/);return mm?{qtd:Number(mm[1]),nome:mm[2]}:null})
+    .filter(x=>x&&!/^total/i.test(x.nome));
+  const totalDesp=linhasDesp.reduce((s,x)=>s+x.qtd,0);
+  const painelDesp=linhasDesp.length?`<div class="tv-desp">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h2 style="margin:0">📦 Despachos e-commerce pendentes</h2><span class="chip mel" style="font-size:16px">${fmt(totalDesp,0)} peças</span></div>
+      ${linhasDesp.slice(0,10).map(x=>`<div class="tv-item"><div style="display:flex;justify-content:space-between;gap:10px"><div class="nome">${x.nome}</div><div class="pct" style="font-size:20px">${fmt(x.qtd,0)}</div></div></div>`).join('')}
+      ${linhasDesp.length>10?`<p style="color:#8A7A64;text-align:center;margin-top:8px">+ ${linhasDesp.length-10} produtos</p>`:''}
+    </div>`:null;
+  const abaixo=(itens.data||[]).filter(i=>i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo));
+  const painelEstoque=abaixo.length?`<div class="tv-desp">
+      <h2 style="margin:0 0 12px">🔴 Estoque abaixo do mínimo</h2>
+      ${abaixo.slice(0,10).map(i=>`<div class="tv-item critico"><div style="display:flex;justify-content:space-between;gap:10px"><div class="nome">${i.nome}</div><div class="pct" style="font-size:20px">${fmt(i.saldo_atual)} ${i.unidade||''}</div></div></div>`).join('')}
+    </div>`:null;
+  const painelTarefas=(tarefas.data||[]).length?`<div class="tv-desp">
+      <h2 style="margin:0 0 12px">✅ Tarefas de hoje</h2>
       ${tarefas.data.map(t=>`<div class="item-row" style="border-color:#5A4630"><span style="color:${t.concluido?'#8FE39A':'#F0E6D6'}">${t.concluido?'☑':'☐'} ${t.descricao}${t.responsavel_designado?` <b>(${t.responsavel_designado})</b>`:''}</span>${t.concluido?`<small style="color:#8FE39A">${t.concluido_por||''}</small>`:''}</div>`).join('')}
-    </div>`:''}`;
+    </div>`:null;
+  EST.tvPaineis=[painelMetas,painelDesp,painelEstoque,painelTarefas].filter(Boolean);
+  if(EST.tvIdx==null||EST.tvIdx>=EST.tvPaineis.length)EST.tvIdx=0;
   document.getElementById('app').innerHTML=`
   <div class="tv">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">
@@ -863,12 +854,11 @@ async function tvRender(){
       <button onclick="tela('inicio')" style="border:1px solid #5A4630;background:transparent;color:#C9B99F;border-radius:10px;padding:8px 14px;cursor:pointer">sair</button></div>
     </div>
     ${rec.data?.recado?`<div class="recado">📌 ${rec.data.recado}</div>`:''}
-    ${EST.tvSlide===2?slideTop:(EST.tvSlide===1?slidePA:slideMetas)}
-    <div style="display:flex;gap:10px;justify-content:center;margin-top:16px">${[0,1,2].map(i=>`<span onclick="tvSetSlide(${i})" style="width:13px;height:13px;border-radius:99px;cursor:pointer;background:${EST.tvSlide===i?'#FFD84D':'#5A4630'}"></span>`).join('')}</div>
-    <p style="margin-top:10px;color:#8A7A64;font-size:13px">alterna sozinho a cada 20 s · dados a cada 45 s · para a TV, abra ${location.origin+location.pathname}#tv</p>
+    <div id="tvPainelAtual">${EST.tvPaineis[EST.tvIdx]||''}</div>
+    ${EST.tvPaineis.length>1?`<div class="tv-dots" style="display:flex;justify-content:center;gap:6px;margin-top:14px">${EST.tvPaineis.map((_,i)=>`<span style="width:${i===EST.tvIdx?18:6}px;height:6px;border-radius:3px;background:${i===EST.tvIdx?'#F0DFA0':'#5A4630'};display:inline-block"></span>`).join('')}</div>`:''}
+    <p style="margin-top:14px;color:#8A7A64;font-size:13px">${EST.tvPaineis.length>1?'troca de painel a cada 18s · ':''}atualiza sozinho a cada 45 s · para a TV, abra ${location.origin+location.pathname}#tv</p>
   </div>`;
 }
-function tvSetSlide(i){EST.tvSlide=i;tvRender()}
 
 boot();
 </script>
