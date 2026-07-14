@@ -636,7 +636,7 @@ async function tMRP(){
     sb.from('compras').select('*, itens(nome,unidade)').in('status',['pendente','aguardando_pagamento','liberado']).order('data_prevista_entrega'),
     sb.from('fornecedores').select('id,nome').order('nome')
   ]);
-  EST.cache.forns=forns.data||[];EST.cache.mrp=mrp.data||[];
+  EST.cache.forns=forns.data||[];EST.cache.mrp=mrp.data||[];EST.cache.pedidos=pedidos.data||[];
   const sug=(mrp.data||[]).filter(m=>m.a_comprar>0||m.status==='faltam dados');
   // decomposição do "comprar" + grade de criticidade — só apresentação, não muda a conta
   const grade=m=>{
@@ -678,7 +678,7 @@ async function tMRP(){
     </div>
     <div class="card"><b>Pedidos em andamento</b>
     ${(pedidos.data||[]).length?pedidos.data.map(c=>`
-      <div class="item-row"><span>${c.itens.nome} — ${fmt(c.quantidade_solicitada)} ${c.itens.unidade}<br><small style="color:#7A6A57">${c.fornecedor_nome||'—'} · entrega ${c.data_prevista_entrega?brData(c.data_prevista_entrega):'—'}</small></span><span style="display:flex;gap:8px;align-items:center"><span class="chip azul">${c.status.replace('_',' ')}</span><button onclick="mudarEntrega('${c.id}','${(c.itens.nome||'').replace(/'/g,"\\'")}','${c.data_prevista_entrega||''}')" style="border:1px solid var(--linha);background:#fff;border-radius:8px;padding:8px 11px;font-size:15px" title="Alterar entrega prevista">✏️</button></span></div>`).join(''):'<div class="center">Nenhum pedido em aberto.</div>'}
+      <div class="item-row"><span>${c.itens.nome} — ${fmt(c.quantidade_solicitada)} ${c.itens.unidade}<br><small style="color:#7A6A57">${c.fornecedor_nome||'—'} · entrega ${c.data_prevista_entrega?brData(c.data_prevista_entrega):'—'}</small></span><span style="display:flex;gap:8px;align-items:center"><span class="chip azul">${c.status.replace('_',' ')}</span><button onclick="editarPedido('${c.id}')" style="border:1px solid var(--linha);background:#fff;border-radius:8px;padding:8px 11px;font-size:15px" title="Editar pedido">✏️</button></span></div>`).join(''):'<div class="center">Nenhum pedido em aberto.</div>'}
     <button class="btnSec" onclick="tela('receber')">📦 Ir para Receber</button></div>
   </main>`;
 }
@@ -694,6 +694,47 @@ async function novoPedido(itemId,nome,qtd){
   if(error)return msg(error.message,true);
   await sb.from('atividades').insert({tipo:'compra',descricao:'Pedido criado — '+fmt(Number(String(q).replace(',','.')))+' de '+nome+' ('+fi.nome+')',responsavel:EST.operador});
   msg('✅ Pedido criado');tela('mrp');
+}
+async function editarPedido(id){
+  if(precisaOperador())return;
+  const c=(EST.cache.pedidos||[]).find(x=>x.id===id); if(!c)return msg('Pedido não encontrado',true);
+  const nome=(c.itens&&c.itens.nome)||'item'; const un=(c.itens&&c.itens.unidade)||'';
+  const op=prompt('Editar pedido — '+nome+'\n\nqtd: '+fmt(c.quantidade_solicitada)+' '+un+'\nfornecedor: '+(c.fornecedor_nome||'—')+'\nentrega: '+(c.data_prevista_entrega?brData(c.data_prevista_entrega):'—')+'\nstatus: '+String(c.status).replace('_',' ')+'\n\n1) Quantidade\n2) Fornecedor\n3) Data de entrega\n4) Status\n5) Cancelar pedido\n\nDigite o número:','1');
+  if(op==null)return; const o=op.trim();
+  if(o==='1'){
+    const q=prompt('Nova quantidade ('+un+'):',fmt(c.quantidade_solicitada)); if(q==null)return;
+    const n=Number(String(q).replace(',','.')); if(!(n>0))return msg('Quantidade inválida',true);
+    const {error}=await sb.from('compras').update({quantidade_solicitada:n}).eq('id',id); if(error)return msg(error.message,true);
+    await sb.from('atividades').insert({tipo:'compra',descricao:'Pedido editado — '+nome+': quantidade para '+fmt(n)+' '+un,responsavel:EST.operador});
+    msg('✅ Quantidade alterada');
+  }else if(o==='2'){
+    const f=EST.cache.forns; if(!f.length)return msg('Cadastre um fornecedor antes',true);
+    const nomes=f.map((x,i)=>(i+1)+') '+x.nome).join('\n');
+    const esc=prompt('Novo fornecedor para '+nome+':\n'+nomes+'\n\nDigite o número:','1'); if(esc==null)return;
+    const fi=f[parseInt(esc)-1]; if(!fi)return msg('Fornecedor inválido',true);
+    const {error}=await sb.from('compras').update({fornecedor_id:fi.id,fornecedor_nome:fi.nome}).eq('id',id); if(error)return msg(error.message,true);
+    await sb.from('atividades').insert({tipo:'compra',descricao:'Pedido editado — '+nome+': fornecedor para '+fi.nome,responsavel:EST.operador});
+    msg('✅ Fornecedor alterado');
+  }else if(o==='3'){
+    const nova=prompt('Nova entrega prevista de '+nome+' (AAAA-MM-DD):',c.data_prevista_entrega||''); if(nova==null)return;
+    const v=nova.trim(); if(!/^\d{4}-\d{2}-\d{2}$/.test(v))return msg('Data inválida — use AAAA-MM-DD',true);
+    const {error}=await sb.from('compras').update({data_prevista_entrega:v}).eq('id',id); if(error)return msg(error.message,true);
+    await sb.from('atividades').insert({tipo:'compra',descricao:'Pedido editado — '+nome+': entrega para '+brData(v),responsavel:EST.operador});
+    msg('✅ Entrega remarcada');
+  }else if(o==='4'){
+    const mapa={'1':'pendente','2':'aguardando_pagamento','3':'liberado'};
+    const s=prompt('Novo status de '+nome+':\n1) pendente\n2) aguardando pagamento\n3) liberado\n\n(dar entrada é feito na tela Receber)\n\nDigite o número:','3'); if(s==null)return;
+    const ns=mapa[s.trim()]; if(!ns)return msg('Status inválido',true);
+    const {error}=await sb.from('compras').update({status:ns}).eq('id',id); if(error)return msg(error.message,true);
+    await sb.from('atividades').insert({tipo:'compra',descricao:'Pedido editado — '+nome+': status para '+ns.replace('_',' '),responsavel:EST.operador});
+    msg('✅ Status alterado');
+  }else if(o==='5'){
+    if(!confirm('Cancelar o pedido de '+nome+' ('+fmt(c.quantidade_solicitada)+' '+un+')?\nEle sai da lista de pedidos em aberto.'))return;
+    const {error}=await sb.from('compras').update({status:'cancelado'}).eq('id',id); if(error)return msg(error.message,true);
+    await sb.from('atividades').insert({tipo:'compra',descricao:'Pedido cancelado — '+nome+' ('+fmt(c.quantidade_solicitada)+' '+un+')',responsavel:EST.operador});
+    msg('✅ Pedido cancelado');
+  }else{return;}
+  tela('mrp');
 }
 
 /* ================= PESAGEM ================= */
