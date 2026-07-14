@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Nutríssima Fábrica</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{--cacau:#33200F;--leite:#FFFDF9;--casca:#EFE7DC;--pistache:#3E7C45;--pistache-esc:#2E5F34;--morango:#C63A3A;--mel:#B8862B;--linha:#DCD2C4;--raio:14px}
 *{box-sizing:border-box;margin:0}
@@ -790,9 +790,32 @@ async function tVendas(){
     </div>
   </main>`;
 }
+function carregarXLSX(){
+  if(typeof XLSX!=='undefined')return Promise.resolve(true);
+  if(window._xlsxP)return window._xlsxP;
+  const urls=['https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js','https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js','https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js'];
+  window._xlsxP=new Promise(res=>{
+    let i=0;
+    const tenta=()=>{
+      if(typeof XLSX!=='undefined')return res(true);
+      if(i>=urls.length)return res(false);
+      const s=document.createElement('script');
+      s.src=urls[i++];
+      s.onload=()=>res(typeof XLSX!=='undefined');
+      s.onerror=tenta;
+      document.head.appendChild(s);
+    };
+    tenta();
+  });
+  return window._xlsxP;
+}
 async function importarUpSeller(file){
   if(precisaOperador())return;
-  if(typeof XLSX==='undefined')return msg('Leitor de planilha ainda carregando — tente de novo',true);
+  if(typeof XLSX==='undefined'){
+    msg('⏳ Carregando leitor de planilha…');
+    const ok=await carregarXLSX();
+    if(!ok)return msg('Não consegui carregar o leitor de planilha — verifique a internet e tente de novo',true);
+  }
   msg('⏳ Lendo planilha…');
   let linhas=[];
   try{
