@@ -100,6 +100,45 @@ label{display:block;font-size:13px;font-weight:700;color:#7A6A57;margin:12px 0 5
 .tv-desp .item-row{border-color:#5A4630;padding:10px 0;font-size:18px}
 @keyframes alerta{50%{border-color:#FF5A5A22;box-shadow:0 0 22px #FF5A5A33}}
 .tv .semmeta{color:#8A7A64;font-size:18px;padding:0 18px 8px}
+.calweek{display:flex;align-items:center;gap:8px;margin:6px 0 10px}
+.calweek>button{flex:none;min-width:52px;height:44px;border:1.5px solid var(--linha);background:#fff;border-radius:12px;font-size:20px;font-weight:900;cursor:pointer;color:var(--cacau);display:flex;align-items:center;justify-content:center;gap:4px}
+.calweek>button i{font-size:11px;font-style:normal;background:var(--mel);color:#fff;border-radius:99px;padding:1px 6px}
+.calweek-t{flex:1;text-align:center}
+.calweek-t>b{display:block;font-size:15px;text-transform:capitalize}
+.calhoje{margin-top:2px;border:none;background:none;color:var(--pistache);font-weight:800;font-size:12px;cursor:pointer;text-decoration:underline}
+.calscroll{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 12px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
+.calday{flex:none;width:158px;scroll-snap-align:start;background:#FAF6EF;border:1.5px solid var(--linha);border-radius:14px;padding:8px;min-height:96px}
+.calday.hoje{border-color:var(--pistache);box-shadow:0 0 0 2px #3E7C4522;background:#F1F7EE}
+.calday>header{display:flex;align-items:baseline;justify-content:space-between;padding:2px 4px 8px;border-bottom:1px dashed var(--linha);margin-bottom:8px}
+.calday>header b{font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:#8A7A64}
+.calday>header span{font-size:20px;font-weight:900;font-variant-numeric:tabular-nums}
+.calday.hoje>header span{color:var(--pistache)}
+.calvazio{color:#C3B8A6;text-align:center;font-size:20px;padding:8px 0}
+.calgrp{background:#fff;border:1.5px solid var(--linha);border-radius:12px;padding:8px;margin-bottom:8px}
+.calgrp-h{display:flex;gap:7px;align-items:center;margin-bottom:7px}
+.calgrp-h b{font-size:14px;line-height:1.15;display:block}
+.calgrp-h small{font-size:11px;color:#7A6A57}
+.calmo{flex:none;font-size:12px;font-weight:900;padding:3px 8px;border-radius:8px}
+.calmo.m1{background:#F3EAD8;color:#7A5A14}.calmo.m2{background:#E4EDF2;color:#2B5A78}
+.calbat{border-top:1px solid #EFE7DC;padding-top:7px;margin-top:7px}
+.calgrp .calbat:first-of-type{border-top:none;padding-top:0;margin-top:0}
+details.calgrp{padding:0}
+details.calgrp>summary{list-style:none;cursor:pointer;padding:8px;margin-bottom:0}
+details.calgrp>summary::-webkit-details-marker{display:none}
+details.calgrp>summary::after{content:'▾';margin-left:4px;color:#B8A88F;font-size:13px;transition:transform .15s ease}
+details.calgrp[open]>summary{border-bottom:1px solid var(--linha);margin-bottom:6px}
+details.calgrp[open]>summary::after{transform:rotate(180deg)}
+details.calgrp>.calbat{padding-left:8px;padding-right:8px}
+details.calgrp>.calbat:last-child{padding-bottom:8px}
+.calbat-h{display:flex;justify-content:space-between;align-items:center;font-size:13px;gap:4px}
+.calbat-h .lote{font-size:10px;color:#7A6A57}
+.calbat .chip{margin:4px 0;font-size:10px;padding:2px 8px}
+.calbtn{width:100%;min-height:42px;font-size:14px;font-weight:800;border:none;border-radius:10px;background:var(--pistache);color:#fff;cursor:pointer;font-family:inherit;margin-top:4px}
+.calbtn.mel{background:var(--mel)}
+.calmini{display:flex;gap:5px;margin-top:5px}
+.calmini button{flex:1;min-height:34px;font-size:12px;font-weight:700;border:1.5px solid var(--linha);background:#fff;border-radius:9px;cursor:pointer;color:var(--cacau);font-family:inherit}
+.calprev{font-size:13px;color:#7A5A14;background:#F6ECD6;border-radius:10px;padding:8px 10px;margin:8px 0}
+.calprev:empty{display:none}
 </style>
 </head>
 <body>
@@ -112,7 +151,7 @@ let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 function hoje(){return new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}
-function loteSugestao(seq){const d=new Date();const s=String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');return s+'-'+(seq||1)}
+function loteSugestao(seq){const d=new Date();const dia=Math.floor((d-new Date(d.getFullYear(),0,0))/864e5);const s=String(d.getFullYear()).slice(2)+String(dia).padStart(3,'0');return s+'-'+(seq||1)}
 function msg(t,erro){const m=el(`<div class="msg ${erro?'erro':''}">${t}</div>`);document.body.appendChild(m);setTimeout(()=>m.remove(),3800)}
 const brData=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR');
 function trilha(atual){const etapas=['Programação','Compra','Receber','Pesagem','Moinho','Balde','Envase','Estoque'];return '<div class="trilha">'+etapas.map(e=>`<span class="${e===atual?'atual':''}">${e}</span>`).join('')+'</div>'}
@@ -341,6 +380,25 @@ async function confReceber(id){
 }
 
 /* ================= PROGRAMAÇÃO ================= */
+/* --- bateladas por moinho: M1=70kg, M2=100kg --- */
+const CAP_BATELADA={m1:70,m2:100};
+function moinhoTipo(nome){return (nome||'').includes('2')?'m2':'m1'}
+function capDe(nome){return CAP_BATELADA[moinhoTipo(nome)]}
+function dividirBateladas(total,cap){const out=[];let r=Math.round(Number(total)*1000)/1000;while(r>cap+1e-9){out.push(cap);r=Math.round((r-cap)*1000)/1000}out.push(r);return out}
+function mondayOf(dStr){const d=dStr?new Date(dStr+'T12:00'):new Date();const wd=(d.getDay()+6)%7;d.setDate(d.getDate()-wd);return d.toISOString().slice(0,10)}
+function addDias(dStr,n){const d=new Date(dStr+'T12:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10)}
+function progSemana(delta){EST.progSemana=addDias(EST.progSemana||mondayOf(),delta);tela('programacao')}
+function progHoje(){EST.progSemana=mondayOf();tela('programacao')}
+function previewBat(){
+  const kgEl=document.getElementById('pKg');if(!kgEl)return;
+  const kg=Number((kgEl.value||'').replace(',','.'));
+  const eqSel=document.getElementById('pEquip');
+  const eqNome=(EST.cache.equip.find(e=>e.id===eqSel.value)||{}).nome||'';
+  const cap=capDe(eqNome);const box=document.getElementById('pPreview');
+  if(!kg||kg<=0){box.innerHTML='';return}
+  const bs=dividirBateladas(kg,cap);
+  box.innerHTML='= <b>'+bs.length+' batelada'+(bs.length>1?'s':'')+'</b> (máx '+cap+' kg/batelada no '+eqNome+'): <span class="mono">'+bs.map(x=>fmt(x,0)).join(' + ')+' kg</span>';
+}
 async function tProg(){
   const [prog,prods,equip,alertas]=await Promise.all([
     sb.from('programacao_refino').select('*, produtos(nome,estocavel_balde), equipamentos(nome)').neq('status','no_balde').order('data'),
@@ -349,43 +407,71 @@ async function tProg(){
     sb.rpc('fn_alerta_entregas')
   ]);
   EST.cache.prods=prods.data||[];EST.cache.equip=equip.data||[];
-  const porDia={};(prog.data||[]).forEach(p=>{(porDia[p.data]=porDia[p.data]||[]).push(p)});
+  const linhas=prog.data||[];
+  if(!EST.progSemana)EST.progSemana=mondayOf();
+  const ini=EST.progSemana, fim=addDias(ini,6);
+  const dias=[0,1,2,3,4,5,6].map(i=>addDias(ini,i));
+  const hojeStr=new Date().toISOString().slice(0,10);
+  const porDia={};linhas.forEach(p=>{(porDia[p.data]=porDia[p.data]||[]).push(p)});
+  const antes=linhas.filter(p=>p.data<ini).length, depois=linhas.filter(p=>p.data>fim).length;
+  const wname=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR',{weekday:'short'}).replace('.','');
+  const dnum=d=>new Date(d+'T12:00').getDate();
+  const mesNome=new Date(ini+'T12:00').toLocaleDateString('pt-BR',{month:'long'});
+
+  const colHTML=d=>{
+    const itens=porDia[d]||[];
+    const grupos={};itens.forEach(p=>{const k=p.produto_id+'|'+p.equipamento_id;(grupos[k]=grupos[k]||[]).push(p)});
+    const body=Object.values(grupos).map(g=>{
+      g.sort((x,y)=>new Date(x.criado_em)-new Date(y.criado_em));
+      const nome=g[0].produtos?.nome||'—';const eq=g[0].equipamentos?.nome||'';const m=moinhoTipo(eq);
+      const total=g.reduce((a,p)=>a+Number(p.quantidade_kg),0);
+      const nomeEsc=nome.replace(/'/g,"\\'");
+      const bats=g.map((p,ix)=>{
+        const ehProg=p.status==='programado';
+        const acao=ehProg
+          ?'<button class="calbtn" onclick="tela(\''+'pesagem\',\''+p.id+'\')">⚖️ Pesar</button><div class="calmini"><button onclick="mudarDataProg(\''+p.id+'\',\''+nomeEsc+'\',\''+p.data+'\')">🗓️</button><button onclick="mudarQtdProg(\''+p.id+'\',\''+nomeEsc+'\','+p.quantidade_kg+')">⚖️ kg</button></div>'
+          :'<button class="calbtn mel" onclick="pedirRefino(\''+p.id+'\',\''+nomeEsc+'\','+p.quantidade_kg+')">🌀 → balde</button>';
+        return '<div class="calbat"><div class="calbat-h"><span>B'+(ix+1)+' · <b class="mono">'+fmt(p.quantidade_kg,0)+'</b> kg</span>'+(p.lote?'<span class="mono lote">'+p.lote+'</span>':'')+'</div><span class="chip '+(ehProg?'mel':'azul')+'">'+(ehProg?'a pesar':'no moinho')+'</span>'+acao+'</div>';
+      }).join('');
+      const nProg=g.filter(p=>p.status==='programado').length;const nPes=g.length-nProg;const cnt=[];if(nProg)cnt.push(nProg+' a pesar');if(nPes)cnt.push(nPes+' no moinho');
+      return '<details class="calgrp"><summary class="calgrp-h"><span class="calmo '+m+'">'+(m==='m1'?'M1':'M2')+'</span><div style="flex:1"><b>'+nome+'</b><small>'+fmt(total,0)+' kg · '+g.length+' bat · '+cnt.join(' · ')+'</small></div></summary>'+bats+'</details>';
+    }).join('')||'<div class="calvazio">—</div>';
+    return '<div class="calday '+(d===hojeStr?'hoje':'')+'"><header><b>'+wname(d)+'</b><span>'+dnum(d)+'</span></header>'+body+'</div>';
+  };
+
   document.getElementById('app').innerHTML=`
   ${trilha('Programação')}${topo('Programação','Moinhos 1 e 2 em paralelo')}
   <main>
     ${(alertas.data||[]).length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-bottom:12px"><b style="color:var(--morango)">⚠️ Insumo chega depois da produção</b>${alertas.data.map(al=>`<p style="font-size:14px;margin-top:6px"><b>${al.item}</b> · produção de ${brData(al.data_producao)}: precisa <b class="mono">${fmt(al.necessario_ate)}</b> acumulado, terá <b class="mono">${fmt(al.disponivel_ate)}</b> — falta <b class="mono" style="color:var(--morango)">${fmt(al.falta)} ${al.unidade||''}</b>${al.proxima_entrega?` · próxima entrega ${brData(al.proxima_entrega)}`:' · sem pedido a caminho'}</p>`).join('')}<small style="color:#7A6A57">solução: remarcar a produção (🗓️ no cartão) ou a entrega do pedido (✏️ em Compras)</small></div>`:''}
-    ${Object.keys(porDia).sort().map(d=>{
-      const dt=new Date(d+'T12:00');const itens=porDia[d];
-      return `<div class="dia"><b>${dt.getDate()}</b><div><b style="color:#fff;font-size:15px">${dt.toLocaleDateString('pt-BR',{weekday:'long'}).toUpperCase()}</b> · ${itens.length} produto(s) · ${fmt(itens.reduce((a,p)=>a+Number(p.quantidade_kg),0))} kg</div></div>`+
-      itens.map(p=>{
-        const m=(p.equipamentos?.nome||'').includes('2')?'m2':'m1';
-        const acao=p.status==='programado'
-          ?`<button class="btnP" style="min-height:48px;font-size:16px" onclick="tela('pesagem','${p.id}')">⚖️ Pesar</button><button class="btnSec" style="margin-top:8px" onclick="mudarDataProg('${p.id}','${(p.produtos.nome||'').replace(/'/g,"\\'")}','${p.data}')">🗓️ Alterar data</button><button class="btnSec" style="margin-top:8px" onclick="mudarQtdProg('${p.id}','${(p.produtos.nome||'').replace(/'/g,"\\'")}',${p.quantidade_kg})">⚖️ Alterar quantidade</button>`
-          :`<button class="btnP" style="min-height:48px;font-size:16px;background:var(--mel)" onclick="pedirRefino('${p.id}','${p.produtos.nome}',${p.quantidade_kg})">🌀 Concluir refino → balde</button>`;
-        return `<div class="card" style="display:flex;gap:12px;align-items:flex-start">
-          <div class="mo ${m}"><small>Moinho</small><b>${m==='m1'?'1':'2'}</b></div>
-          <div style="flex:1"><b style="font-size:17px">${p.produtos.nome}</b>
-            <p style="font-size:14px;color:#7A6A57">${fmt(p.quantidade_kg)} kg · <span class="chip ${p.status==='programado'?'mel':'azul'}">${p.status==='programado'?'a pesar':'pesado — no moinho'}</span> ${p.lote?`<span class="mono" style="font-size:12px">· ${p.lote}</span>`:''}</p>
-            ${acao}
-          </div></div>`
-      }).join('')
-    }).join('')||'<div class="center">Nada programado. Programe o primeiro produto abaixo. 👇</div>'}
+    <div class="calweek">
+      <button onclick="progSemana(-7)">‹${antes?` <i>${antes}</i>`:''}</button>
+      <div class="calweek-t"><b>${dnum(ini)}–${dnum(fim)} ${mesNome}</b><button class="calhoje" onclick="progHoje()">Hoje</button></div>
+      <button onclick="progSemana(7)">${depois?`<i>${depois}</i> `:''}›</button>
+    </div>
+    <div class="calscroll">${dias.map(colHTML).join('')}</div>
     <div class="card" style="margin-top:14px"><b>＋ Programar produto</b>
       <label>Produto</label><select id="pProd">${EST.cache.prods.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('')}</select>
-      <label>Moinho</label><select id="pEquip">${EST.cache.equip.map(e=>`<option value="${e.id}">${e.nome}</option>`).join('')}</select>
-      <label>Data</label><input type="date" id="pData" value="${new Date().toISOString().slice(0,10)}">
-      <label>Quantidade (kg)</label><input class="campoG" id="pKg" inputmode="decimal" placeholder="300">
+      <label>Moinho</label><select id="pEquip" onchange="previewBat()">${EST.cache.equip.map(e=>`<option value="${e.id}">${e.nome}</option>`).join('')}</select>
+      <label>Data</label><input type="date" id="pData" value="${hojeStr}">
+      <label>Quantidade total (kg)</label><input class="campoG" id="pKg" inputmode="decimal" placeholder="300" oninput="previewBat()">
+      <div id="pPreview" class="calprev"></div>
       <button class="btnP" onclick="criarProg()">Programar</button>
     </div>
   </main>`;
+  previewBat();
 }
 async function criarProg(){
   if(precisaOperador())return;
   const kg=Number(document.getElementById('pKg').value.replace(',','.'));
   if(!kg||kg<=0)return msg('Informe os kg',true);
-  const {error}=await sb.from('programacao_refino').insert({produto_id:pProd.value,equipamento_id:pEquip.value,data:pData.value,quantidade_kg:kg});
+  const eqNome=(EST.cache.equip.find(e=>e.id===pEquip.value)||{}).nome||'';
+  const cap=capDe(eqNome);
+  const bats=dividirBateladas(kg,cap);
+  const linhas=bats.map(q=>({produto_id:pProd.value,equipamento_id:pEquip.value,data:pData.value,quantidade_kg:q}));
+  const {error}=await sb.from('programacao_refino').insert(linhas);
   if(error)return msg(error.message,true);
-  msg('✅ Programado');tela('programacao');
+  msg('✅ Programado — '+bats.length+' batelada'+(bats.length>1?'s':'')+' ('+bats.map(x=>fmt(x,0)).join('+')+' kg)');
+  tela('programacao');
 }
 async function pedirRefino(id,nome,kg){
   const q=prompt(`Quantos kg de ${nome} saíram do moinho para o balde?`,kg);
