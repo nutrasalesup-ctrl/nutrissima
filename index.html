@@ -770,7 +770,7 @@ async function tVendas(){
   document.getElementById('app').innerHTML=`
   ${topo('Vendas / Despacho','demanda dos marketplaces × estoque de potes')}
   <main>
-    <input type="file" id="upFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="if(this.files[0])importarUpSeller(this.files[0])">
+    <input type="file" id="upFile" accept=".xlsx,.xls,.csv" multiple style="display:none" onchange="if(this.files.length){importarUpSeller(Array.from(this.files));this.value='';}">
     <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
       <div style="font-size:15px"><b class="mono">${fmt(totPot,0)}</b> potes a despachar · <b class="mono" style="color:var(--morango)">${fmt(totFalta,0)}</b> a envasar</div>
       <button class="btnP" style="min-height:44px" onclick="document.getElementById('upFile').click()">⬆️ Importar Up Seller</button>
@@ -809,19 +809,23 @@ function carregarXLSX(){
   });
   return window._xlsxP;
 }
-async function importarUpSeller(file){
+async function importarUpSeller(files){
   if(precisaOperador())return;
+  const arq=Array.isArray(files)?files:[files];
+  if(!arq.length)return;
   if(typeof XLSX==='undefined'){
     msg('⏳ Carregando leitor de planilha…');
     const ok=await carregarXLSX();
     if(!ok)return msg('Não consegui carregar o leitor de planilha — verifique a internet e tente de novo',true);
   }
-  msg('⏳ Lendo planilha…');
+  msg('⏳ Lendo '+arq.length+(arq.length>1?' planilhas…':' planilha…'));
   let linhas=[];
   try{
-    const buf=await file.arrayBuffer();
-    const wb=XLSX.read(buf,{type:'array'});
-    wb.SheetNames.forEach(sn=>{linhas=linhas.concat(XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:''}));});
+    for(const file of arq){
+      const buf=await file.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'array'});
+      wb.SheetNames.forEach(sn=>{linhas=linhas.concat(XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:''}));});
+    }
   }catch(e){return msg('Erro ao ler o arquivo: '+e.message,true);}
   const {data:dep}=await sb.from('depara_sku').select('codigo,produto_acabado_id');
   const mapa={};(dep||[]).forEach(d=>{if(d.produto_acabado_id)mapa[String(d.codigo).trim()]=d.produto_acabado_id;});
@@ -844,9 +848,9 @@ async function importarUpSeller(file){
   await sb.from('demanda_vendas').delete().eq('origem','import_upseller').eq('status','aberto');
   const rows=Object.values(agg).map(a=>({produto_acabado_id:a.produto_acabado_id,data_despacho:a.data_despacho,plataforma:a.plataforma,qtd_potes:a.qtd_potes,status:'aberto',origem:'import_upseller',criado_por:EST.operador}));
   if(rows.length){const {error}=await sb.from('demanda_vendas').insert(rows);if(error)return msg(error.message,true);}
-  await sb.from('atividades').insert({tipo:'compra',descricao:'Demanda de vendas importada — '+rows.length+' linhas, '+Object.keys(nao).length+' a mapear',responsavel:EST.operador});
+  await sb.from('atividades').insert({tipo:'compra',descricao:'Demanda de vendas importada — '+arq.length+(arq.length>1?' planilhas, ':' planilha, ')+rows.length+' linhas, '+Object.keys(nao).length+' a mapear',responsavel:EST.operador});
   EST.cache.naoMapeados=Object.values(nao);
-  msg('✅ '+rows.length+' linhas importadas'+(Object.keys(nao).length?' · '+Object.keys(nao).length+' a mapear':''));
+  msg('✅ '+rows.length+' linhas importadas de '+arq.length+(arq.length>1?' planilhas':' planilha')+(Object.keys(nao).length?' · '+Object.keys(nao).length+' a mapear':''));
   tela('vendas');
 }
 async function mapearCodigo(cod){
