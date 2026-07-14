@@ -155,6 +155,45 @@ details.calgrp>.calbat:last-child{padding-bottom:8px}
 .leque .chips2{display:flex;gap:6px;flex-wrap:wrap}
 .leque .chips2 span{font-size:12px;background:#fff;border:1px solid var(--linha);padding:3px 9px;border-radius:8px}
 .leque .cav{font-size:11px;color:#7A5A14;margin-top:8px;line-height:1.5}
+/* ===== Responsivo: PC de produção (maior) + TV em tela cheia ===== */
+body{overflow-x:hidden}
+@media (min-width:820px){
+  .app{max-width:900px}
+  main{padding:8px 28px}
+  .topo{padding:22px 28px}
+  .topo h1{font-size:30px}
+  .topo p{font-size:15px}
+  .acoes{grid-template-columns:1fr 1fr;gap:16px}
+  .acoes button{min-height:88px;padding:22px}
+  .acoes .ico{width:52px;height:52px;font-size:26px}
+  .acoes b{font-size:20px}
+  .acoes small{font-size:14.5px}
+  .card{padding:22px}
+  .btnP{min-height:64px;font-size:20px}
+  .btnSec{min-height:56px;font-size:17px}
+  .chips button{font-size:17px;min-height:52px}
+  .calday{width:190px}
+  .calweek-t>b{font-size:17px}
+}
+@media (min-width:1200px){
+  .app{max-width:1040px}
+  .acoes{grid-template-columns:repeat(3,1fr)}
+}
+/* TV sai do container e ocupa a tela inteira */
+.tv{width:100vw;position:relative;left:50%;transform:translateX(-50%);max-width:none}
+@media (min-width:1100px){
+  .tv{padding:3.2vh 3vw}
+  .tv h1{font-size:clamp(38px,3.1vw,60px)}
+  .tv .relogio{font-size:clamp(40px,3.3vw,64px)}
+  .tv .recado{font-size:clamp(28px,2.3vw,44px)}
+  .tv-grid{grid-template-columns:repeat(auto-fit,minmax(min(30vw,440px),1fr));gap:2vw}
+  .tv-col h2{font-size:clamp(24px,1.8vw,34px)}
+  .tv-item .nome{font-size:clamp(23px,1.8vw,32px)}
+  .tv-item .pct{font-size:clamp(56px,4.4vw,88px)}
+  .tv-item .nums{font-size:clamp(20px,1.4vw,28px)}
+  .tv-desp h2{font-size:clamp(24px,1.8vw,34px)}
+  .tv-desp .item-row{font-size:clamp(18px,1.3vw,24px)}
+}
 </style>
 </head>
 <body>
