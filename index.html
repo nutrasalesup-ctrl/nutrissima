@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Nutríssima Fábrica</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/package/dist/xlsx.full.min.js"></script>
 <style>
 :root{--cacau:#33200F;--leite:#FFFDF9;--casca:#EFE7DC;--pistache:#3E7C45;--pistache-esc:#2E5F34;--morango:#C63A3A;--mel:#B8862B;--linha:#DCD2C4;--raio:14px}
 *{box-sizing:border-box;margin:0}
@@ -250,7 +251,7 @@ async function login(){
 }
 
 /* ================= NAVEGAÇÃO ================= */
-const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,mrp:tMRP,metas:tMetas,tv:tTV,lote:tLote};
+const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote};
 function tela(n,arg){TELAS[n](arg)}
 
 /* ================= INÍCIO ================= */
@@ -267,6 +268,7 @@ async function tInicio(){
       <button onclick="tela('painel')"><span class="ico" style="background:#EFE7DC">📊</span><span><b>Painel</b><small>A empresa agora — números e atividade</small></span></button>
       <button onclick="tela('programacao')"><span class="ico" style="background:#F3EAD8">🗓️</span><span><b>Programação</b><small>Moinhos 1 e 2 — pesar e lançar no balde</small></span></button>
       <button onclick="tela('mrp')"><span class="ico" style="background:#FBEAEA">🛒</span><span><b>Compras / MRP</b><small>O que comprar, quanto e até quando</small></span></button>
+      <button onclick="tela('vendas')"><span class="ico" style="background:#EAF3EA">🛍️</span><span><b>Vendas / Despacho</b><small>Demanda dos marketplaces — o que envasar</small></span></button>
       <button onclick="tela('receber')"><span class="ico" style="background:#E7F0E4">📦</span><span><b>Receber mercadoria</b><small>Confirmar chegada das compras</small></span></button>
       <button onclick="tela('envase')"><span class="ico" style="background:#EAE4F2">🫙</span><span><b>Envasar</b><small>Do balde para os potes</small></span></button>
       <button onclick="tela('estoque')"><span class="ico" style="background:#E4EDF2">📋</span><span><b>Conferir estoque</b><small>Matéria-prima, balde e potes</small></span></button>
@@ -735,6 +737,105 @@ async function editarPedido(id){
     msg('✅ Pedido cancelado');
   }else{return;}
   tela('mrp');
+}
+/* ================= VENDAS / DESPACHO ================= */
+async function tVendas(){
+  document.getElementById('app').innerHTML=topo('Vendas / Despacho','carregando demanda…')+'<main><div class="center">Carregando…</div></main>';
+  const [dem,pa]=await Promise.all([
+    sb.from('demanda_vendas').select('produto_acabado_id,qtd_potes,data_despacho,plataforma,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto'),
+    sb.from('produto_acabado').select('id,nome').eq('ativo',true).order('nome')
+  ]);
+  EST.cache.paLista=pa.data||[];
+  const byPa={};
+  (dem.data||[]).forEach(d=>{
+    const pid=d.produto_acabado_id, info=d.produto_acabado||{};
+    if(!byPa[pid]) byPa[pid]={nome:info.nome||'—',saldo:Number(info.saldo_potes)||0,dem:0,prazo:null,plats:{}};
+    byPa[pid].dem+=Number(d.qtd_potes)||0;
+    if(d.data_despacho&&(!byPa[pid].prazo||d.data_despacho<byPa[pid].prazo)) byPa[pid].prazo=d.data_despacho;
+    if(d.plataforma) byPa[pid].plats[d.plataforma]=(byPa[pid].plats[d.plataforma]||0)+(Number(d.qtd_potes)||0);
+  });
+  const hj=new Date().toISOString().slice(0,10);
+  const grade=x=>{
+    const falta=Math.max(0,x.dem-x.saldo), venc=x.prazo&&x.prazo<=hj;
+    let rank,cor,bg,tag;
+    if(falta>0&&venc){rank=1;cor='#C63A3A';bg='#FDECEC';tag='ENVASAR JÁ';}
+    else if(falta>0){rank=2;cor='#D9772B';bg='#FBEEE2';tag='ENVASAR';}
+    else{rank=3;cor='#3E7C45';bg='#EAF3EA';tag='EM ESTOQUE';}
+    return {falta,rank,cor,bg,tag};
+  };
+  const lista=Object.values(byPa).map(x=>({...x,g:grade(x)}));
+  lista.sort((a,b)=>a.g.rank-b.g.rank||((a.prazo||'9')<(b.prazo||'9')?-1:1));
+  const totPot=lista.reduce((s,x)=>s+x.dem,0), totFalta=lista.reduce((s,x)=>s+x.g.falta,0);
+  const nm=EST.cache.naoMapeados||[];
+  document.getElementById('app').innerHTML=`
+  ${topo('Vendas / Despacho','demanda dos marketplaces × estoque de potes')}
+  <main>
+    <input type="file" id="upFile" accept=".xlsx,.xls,.csv" style="display:none" onchange="if(this.files[0])importarUpSeller(this.files[0])">
+    <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+      <div style="font-size:15px"><b class="mono">${fmt(totPot,0)}</b> potes a despachar · <b class="mono" style="color:var(--morango)">${fmt(totFalta,0)}</b> a envasar</div>
+      <button class="btnP" style="min-height:44px" onclick="document.getElementById('upFile').click()">⬆️ Importar Up Seller</button>
+    </div>
+    ${nm.length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7"><b style="color:var(--morango)">Códigos a mapear (${nm.length})</b><small style="color:#7A6A57;display:block;margin:4px 0 8px">vieram na planilha mas não estão no de-para — aponte o SKU e reimporte</small>${nm.map(x=>`<div class="item-row"><span>${x.codigo} <small style="color:#7A6A57">· ${fmt(x.qtd,0)} potes<br>${(x.nome||'').slice(0,48)}</small></span><button onclick="mapearCodigo('${String(x.codigo).replace(/'/g,"\\'")}')" style="border:1px solid var(--linha);background:#fff;border-radius:8px;padding:8px 12px">mapear</button></div>`).join('')}</div>`:''}
+    <div class="card"><b>Demanda por produto</b><small style="color:#7A6A57;display:block;margin-bottom:6px">🔴 envasar já (prazo vencido/hoje) · 🟠 envasar · 🟢 em estoque</small>
+    ${lista.length?lista.map(x=>{const g=x.g;const plats=Object.keys(x.plats).map(p=>p+' '+fmt(x.plats[p],0)).join(' · ');return `
+      <div style="border-top:1px solid var(--linha);border-left:4px solid ${g.cor};padding:12px 0 12px 12px;margin-top:2px">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+          <b style="font-size:16.5px">${x.nome}</b><span class="chip" style="background:${g.bg};color:${g.cor};font-weight:700">${g.tag}</span></div>
+        <div style="font-size:14px;color:#5A4C3C;margin-top:6px;line-height:1.55">
+          <div style="display:flex;justify-content:space-between;gap:10px"><span>Despachar${x.prazo?(' · prazo '+new Date(x.prazo+'T12:00').toLocaleDateString('pt-BR')):''}</span><b class="mono">${fmt(x.dem,0)} potes</b></div>
+          <div style="display:flex;justify-content:space-between;gap:10px"><span>Em estoque</span><span class="mono">${fmt(x.saldo,0)} potes · ${g.falta>0?'<b style="color:var(--morango)">⚠ envasar '+fmt(g.falta,0)+'</b>':'<b style="color:var(--pistache)">✓ cobre</b>'}</span></div>
+          ${plats?`<div style="color:#7A6A57;font-size:12.5px;margin-top:2px">${plats}</div>`:''}
+        </div>
+      </div>`;}).join(''):'<div class="center">Sem demanda importada. Toque em “Importar Up Seller”. 🛍️</div>'}
+    </div>
+  </main>`;
+}
+async function importarUpSeller(file){
+  if(precisaOperador())return;
+  if(typeof XLSX==='undefined')return msg('Leitor de planilha ainda carregando — tente de novo',true);
+  msg('⏳ Lendo planilha…');
+  let linhas=[];
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array'});
+    wb.SheetNames.forEach(sn=>{linhas=linhas.concat(XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:''}));});
+  }catch(e){return msg('Erro ao ler o arquivo: '+e.message,true);}
+  const {data:dep}=await sb.from('depara_sku').select('codigo,produto_acabado_id');
+  const mapa={};(dep||[]).forEach(d=>{if(d.produto_acabado_id)mapa[String(d.codigo).trim()]=d.produto_acabado_id;});
+  const agg={},nao={};let ign=0;
+  for(const r of linhas){
+    const enviado=String(r['Enviado']||'').trim();
+    const canc=String(r['Pós-venda/Cancelado/Devolvido']||'').toLowerCase();
+    if(enviado){ign++;continue;}
+    if(canc.includes('cancel')||canc.includes('devolv')){ign++;continue;}
+    const cod=String(r['SKU']||'').trim();if(!cod){ign++;continue;}
+    const q=Number(r['Qtd. do Produto'])||0;if(!q)continue;
+    const plat=String(r['Plataformas']||'').trim();
+    const prazo=String(r['Prazo de Envio']||'').slice(0,10)||null;
+    const pid=mapa[cod];
+    if(!pid){nao[cod]=nao[cod]||{codigo:cod,plataforma:plat,nome:String(r['Nome do Anúncio']||''),qtd:0};nao[cod].qtd+=q;continue;}
+    const k=pid+'|'+(prazo||'')+'|'+plat;
+    agg[k]=agg[k]||{produto_acabado_id:pid,data_despacho:prazo,plataforma:plat,qtd_potes:0};
+    agg[k].qtd_potes+=q;
+  }
+  await sb.from('demanda_vendas').delete().eq('origem','import_upseller').eq('status','aberto');
+  const rows=Object.values(agg).map(a=>({produto_acabado_id:a.produto_acabado_id,data_despacho:a.data_despacho,plataforma:a.plataforma,qtd_potes:a.qtd_potes,status:'aberto',origem:'import_upseller',criado_por:EST.operador}));
+  if(rows.length){const {error}=await sb.from('demanda_vendas').insert(rows);if(error)return msg(error.message,true);}
+  await sb.from('atividades').insert({tipo:'compra',descricao:'Demanda de vendas importada — '+rows.length+' linhas, '+Object.keys(nao).length+' a mapear',responsavel:EST.operador});
+  EST.cache.naoMapeados=Object.values(nao);
+  msg('✅ '+rows.length+' linhas importadas'+(Object.keys(nao).length?' · '+Object.keys(nao).length+' a mapear':''));
+  tela('vendas');
+}
+async function mapearCodigo(cod){
+  if(precisaOperador())return;
+  const pas=EST.cache.paLista||[];if(!pas.length)return msg('Recarregue a tela',true);
+  const nomes=pas.map((p,i)=>(i+1)+') '+p.nome).join('\n');
+  const esc=prompt('SKU interno para o código '+cod+':\n'+nomes+'\n\nDigite o número:');if(esc==null)return;
+  const p=pas[parseInt(esc)-1];if(!p)return msg('Número inválido',true);
+  const {error}=await sb.from('depara_sku').insert({codigo:cod,produto_acabado_id:p.id,criado_por:EST.operador});
+  if(error)return msg(error.message,true);
+  EST.cache.naoMapeados=(EST.cache.naoMapeados||[]).filter(x=>String(x.codigo)!==String(cod));
+  msg('✅ Mapeado para '+p.nome+'. Reimporte a planilha pra puxar a demanda.');tela('vendas');
 }
 
 /* ================= PESAGEM ================= */
