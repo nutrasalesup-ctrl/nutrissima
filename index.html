@@ -137,6 +137,7 @@ details.calgrp>.calbat:last-child{padding-bottom:8px}
 .calbtn.mel{background:var(--mel)}
 .calmini{display:flex;gap:5px;margin-top:5px}
 .calmini button{flex:1;min-height:34px;font-size:12px;font-weight:700;border:1.5px solid var(--linha);background:#fff;border-radius:9px;cursor:pointer;color:var(--cacau);font-family:inherit}
+.calmini button.del{flex:0 0 auto;padding:0 11px;color:var(--morango);border-color:#E8C4C4}
 .calprev{font-size:13px;color:#7A5A14;background:#F6ECD6;border-radius:10px;padding:8px 10px;margin:8px 0}
 .calprev:empty{display:none}
 .caltrilha{width:100%;min-height:32px;font-size:12px;font-weight:700;border:1px solid var(--linha);background:#fff;border-radius:9px;cursor:pointer;color:#7A6A57;font-family:inherit;margin-top:5px}
@@ -484,7 +485,7 @@ async function tProg(){
       const bats=g.map((p,ix)=>{
         const ehProg=p.status==='programado';
         const acao=ehProg
-          ?'<button class="calbtn" onclick="tela(\''+'pesagem\',\''+p.id+'\')">⚖️ Pesar</button><div class="calmini"><button onclick="mudarDataProg(\''+p.id+'\',\''+nomeEsc+'\',\''+p.data+'\')">🗓️</button><button onclick="mudarQtdProg(\''+p.id+'\',\''+nomeEsc+'\','+p.quantidade_kg+')">⚖️ kg</button></div>'
+          ?'<button class="calbtn" onclick="tela(\''+'pesagem\',\''+p.id+'\')">⚖️ Pesar</button><div class="calmini"><button onclick="mudarDataProg(\''+p.id+'\',\''+nomeEsc+'\',\''+p.data+'\')">🗓️</button><button onclick="mudarQtdProg(\''+p.id+'\',\''+nomeEsc+'\','+p.quantidade_kg+')">⚖️ kg</button><button class="del" onclick="excluirProg(\''+p.id+'\',\''+nomeEsc+'\','+p.quantidade_kg+')">🗑️</button></div>'
           :'<button class="calbtn mel" onclick="pedirRefino(\''+p.id+'\',\''+nomeEsc+'\','+p.quantidade_kg+')">🌀 → balde</button>';
         return '<div class="calbat"><div class="calbat-h"><span>B'+(ix+1)+' · <b class="mono">'+fmt(p.quantidade_kg,0)+'</b> kg</span>'+(p.lote?'<span class="mono lote">'+p.lote+'</span>':'')+'</div><span class="chip '+(ehProg?'mel':'azul')+'">'+(ehProg?'a pesar':'no moinho')+'</span>'+acao+'<button class="caltrilha" onclick="tela(\''+'lote\',\''+p.id+'\')">🔎 trilha</button></div>';
       }).join('');
@@ -573,6 +574,15 @@ async function tLote(progId){
       <button class="btnSec" onclick="tela('programacao')">← Voltar ao calendário</button>
     </div>
   </main>`;
+}
+async function excluirProg(id,nome,kg){
+  if(precisaOperador())return;
+  if(!confirm('Excluir a programação de '+fmt(kg,0)+' kg de '+nome+'?\n(só antes de pesar · não dá pra desfazer)'))return;
+  const {data,error}=await sb.from('programacao_refino').delete().eq('id',id).eq('status','programado').select();
+  if(error)return msg(error.message,true);
+  if(!data||!data.length)return msg('Não deu pra excluir (já foi pesada?)',true);
+  msg('🗑️ Programação excluída');
+  tela('programacao');
 }
 async function pedirRefino(id,nome,kg){
   const q=prompt(`Quantos kg de ${nome} saíram do moinho para o balde?`,kg);
