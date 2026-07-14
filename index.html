@@ -139,6 +139,22 @@ details.calgrp>.calbat:last-child{padding-bottom:8px}
 .calmini button{flex:1;min-height:34px;font-size:12px;font-weight:700;border:1.5px solid var(--linha);background:#fff;border-radius:9px;cursor:pointer;color:var(--cacau);font-family:inherit}
 .calprev{font-size:13px;color:#7A5A14;background:#F6ECD6;border-radius:10px;padding:8px 10px;margin:8px 0}
 .calprev:empty{display:none}
+.caltrilha{width:100%;min-height:32px;font-size:12px;font-weight:700;border:1px solid var(--linha);background:#fff;border-radius:9px;cursor:pointer;color:#7A6A57;font-family:inherit;margin-top:5px}
+.tl{position:relative;padding-left:34px;margin-top:8px}
+.tl::before{content:'';position:absolute;left:13px;top:10px;bottom:28px;width:2px;background:var(--linha)}
+.tl .no{position:relative;margin-bottom:18px}
+.tl .no:last-child{margin-bottom:0}
+.tl .pt{position:absolute;left:-34px;top:-2px;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;border:2px solid var(--linha);background:#fff;color:#B8A88F}
+.tl .no.ok .pt{background:var(--pistache);border-color:var(--pistache);color:#fff}
+.tl .no>b{font-size:15px}
+.tl .no small{display:block;font-size:13px;color:#7A6A57;margin-top:2px}
+.tl-mp{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.tl-mp span{font-size:11px;font-family:ui-monospace,Menlo,monospace;background:#F6F1E8;border:1px solid var(--linha);padding:3px 8px;border-radius:8px}
+.leque{background:#F6ECD6;border-radius:12px;padding:12px 14px;margin:10px 0}
+.leque .lq-h{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#7A5A14;margin-bottom:8px;font-weight:700}
+.leque .chips2{display:flex;gap:6px;flex-wrap:wrap}
+.leque .chips2 span{font-size:12px;background:#fff;border:1px solid var(--linha);padding:3px 9px;border-radius:8px}
+.leque .cav{font-size:11px;color:#7A5A14;margin-top:8px;line-height:1.5}
 </style>
 </head>
 <body>
@@ -194,7 +210,7 @@ async function login(){
 }
 
 /* ================= NAVEGAÇÃO ================= */
-const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,mrp:tMRP,metas:tMetas,tv:tTV};
+const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,mrp:tMRP,metas:tMetas,tv:tTV,lote:tLote};
 function tela(n,arg){TELAS[n](arg)}
 
 /* ================= INÍCIO ================= */
@@ -431,7 +447,7 @@ async function tProg(){
         const acao=ehProg
           ?'<button class="calbtn" onclick="tela(\''+'pesagem\',\''+p.id+'\')">⚖️ Pesar</button><div class="calmini"><button onclick="mudarDataProg(\''+p.id+'\',\''+nomeEsc+'\',\''+p.data+'\')">🗓️</button><button onclick="mudarQtdProg(\''+p.id+'\',\''+nomeEsc+'\','+p.quantidade_kg+')">⚖️ kg</button></div>'
           :'<button class="calbtn mel" onclick="pedirRefino(\''+p.id+'\',\''+nomeEsc+'\','+p.quantidade_kg+')">🌀 → balde</button>';
-        return '<div class="calbat"><div class="calbat-h"><span>B'+(ix+1)+' · <b class="mono">'+fmt(p.quantidade_kg,0)+'</b> kg</span>'+(p.lote?'<span class="mono lote">'+p.lote+'</span>':'')+'</div><span class="chip '+(ehProg?'mel':'azul')+'">'+(ehProg?'a pesar':'no moinho')+'</span>'+acao+'</div>';
+        return '<div class="calbat"><div class="calbat-h"><span>B'+(ix+1)+' · <b class="mono">'+fmt(p.quantidade_kg,0)+'</b> kg</span>'+(p.lote?'<span class="mono lote">'+p.lote+'</span>':'')+'</div><span class="chip '+(ehProg?'mel':'azul')+'">'+(ehProg?'a pesar':'no moinho')+'</span>'+acao+'<button class="caltrilha" onclick="tela(\''+'lote\',\''+p.id+'\')">🔎 trilha</button></div>';
       }).join('');
       const nProg=g.filter(p=>p.status==='programado').length;const nPes=g.length-nProg;const cnt=[];if(nProg)cnt.push(nProg+' a pesar');if(nPes)cnt.push(nPes+' no moinho');
       return '<details class="calgrp"><summary class="calgrp-h"><span class="calmo '+m+'">'+(m==='m1'?'M1':'M2')+'</span><div style="flex:1"><b>'+nome+'</b><small>'+fmt(total,0)+' kg · '+g.length+' bat · '+cnt.join(' · ')+'</small></div></summary>'+bats+'</details>';
@@ -472,6 +488,52 @@ async function criarProg(){
   if(error)return msg(error.message,true);
   msg('✅ Programado — '+bats.length+' batelada'+(bats.length>1?'s':'')+' ('+bats.map(x=>fmt(x,0)).join('+')+' kg)');
   tela('programacao');
+}
+async function tLote(progId){
+  const {data:pr,error:e0}=await sb.from('programacao_refino').select('*, produtos(nome), equipamentos(nome)').eq('id',progId).single();
+  if(e0||!pr){msg('Lote não encontrado',true);return tela('programacao');}
+  const lote=pr.lote;
+  const pesou=pr.status==='pesado'||pr.status==='no_balde';
+  const noBalde=pr.status==='no_balde';
+  const [mpR,ativR,baldeR,recR,itensR]=await Promise.all([
+    lote?sb.from('pesagem_lotes_mp').select('lotes,item_id').eq('programacao_id',progId):Promise.resolve({data:[]}),
+    lote?sb.from('atividades').select('tipo,responsavel,criado_em').eq('lote',lote):Promise.resolve({data:[]}),
+    lote?sb.from('estoque_balde_movimentos').select('quantidade_kg,responsavel,criado_em').eq('lote',lote).eq('tipo','entrada'):Promise.resolve({data:[]}),
+    sb.from('receita_itens').select('produto_id').eq('componente_produto_id',pr.produto_id).eq('componente_tipo','produto'),
+    sb.from('itens').select('id,nome')
+  ]);
+  const itById=Object.fromEntries((itensR.data||[]).map(i=>[i.id,i.nome]));
+  const ativ=(ativR.data||[]);
+  const pesAtiv=ativ.find(a=>a.tipo==='pesagem');
+  const baldeMov=(baldeR.data||[])[0];
+  const mp=(mpR.data||[]).filter(x=>x.lotes&&x.lotes.trim());
+  const blendIds=(recR.data||[]).map(r=>r.produto_id);
+  const destIds=[pr.produto_id,...blendIds];
+  const {data:skus}=await sb.from('produto_acabado').select('nome,peso_pote_kg,produto_id').in('produto_id',destIds).eq('ativo',true).order('nome');
+  const m=moinhoTipo(pr.equipamentos?.nome);
+  const pesoTxt=k=>k>=1?fmt(k,2)+' kg':fmt(k*1000,0)+' g';
+  document.getElementById('app').innerHTML=`
+  ${trilha('Programação')}${topo('Trilha do lote',pr.produtos.nome)}
+  <main>
+    <div class="card">
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">
+        <span class="calmo ${m}">${m==='m1'?'M1':'M2'}</span>
+        <div style="flex:1"><b style="font-size:17px">${pr.produtos.nome}</b><p style="font-size:13px;color:#7A6A57">${brData(pr.data)} · ${fmt(pr.quantidade_kg,0)} kg${lote?` · <span class="mono">${lote}</span>`:' · sem lote ainda'}</p></div>
+      </div>
+      <div class="tl">
+        <div class="no ok"><div class="pt">✓</div><b>Programado</b><small>${pr.equipamentos?.nome||''} · ${fmt(pr.quantidade_kg,0)} kg · ${brData(pr.data)}</small></div>
+        <div class="no ${pesou?'ok':'pend'}"><div class="pt">${pesou?'✓':'2'}</div><b>Pesado</b>${pesou?`<small>${pesAtiv?.responsavel?'por '+pesAtiv.responsavel+' · ':''}lote <span class="mono">${lote}</span></small>${mp.length?`<div class="tl-mp">${mp.map(x=>`<span>${itById[x.item_id]?itById[x.item_id]+': ':''}${x.lotes}</span>`).join('')}</div>`:'<small style="color:#9A8B77">sem lote de MP anotado</small>'}`:'<small>aguardando pesagem</small>'}</div>
+        <div class="no ${noBalde||baldeMov?'ok':'pend'}"><div class="pt">${noBalde||baldeMov?'✓':'3'}</div><b>No balde</b>${baldeMov?`<small>${fmt(baldeMov.quantidade_kg,0)} kg entraram no tanque${baldeMov.responsavel?' · por '+baldeMov.responsavel:''}</small>`:'<small>aguardando refino</small>'}</div>
+        <div class="no pend"><div class="pt">4</div><b style="color:#9A8B77">Envase</b><small>puxa do tanque compartilhado →</small></div>
+      </div>
+      <div class="leque">
+        <div class="lq-h">Leque de destino do balde</div>
+        ${skus&&skus.length?`<div class="chips2">${skus.map(s=>`<span>${s.nome}${s.peso_pote_kg?' · '+pesoTxt(Number(s.peso_pote_kg)):''}</span>`).join('')}</div>`:'<small style="color:#7A5A14">nenhum SKU amarrado a esta base ainda</small>'}
+        <div class="cav">Estes potes saem do tanque compartilhado, não deste lote específico. O vínculo lote→pote é a evolução B/C.</div>
+      </div>
+      <button class="btnSec" onclick="tela('programacao')">← Voltar ao calendário</button>
+    </div>
+  </main>`;
 }
 async function pedirRefino(id,nome,kg){
   const q=prompt(`Quantos kg de ${nome} saíram do moinho para o balde?`,kg);
