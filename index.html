@@ -638,22 +638,43 @@ async function tMRP(){
   ]);
   EST.cache.forns=forns.data||[];EST.cache.mrp=mrp.data||[];
   const sug=(mrp.data||[]).filter(m=>m.a_comprar>0||m.status==='faltam dados');
-  const cor=st=>st==='PEDIR AGORA'?'ver':st==='esta semana'?'mel':st==='faltam dados'?'azul':'ok';
+  // decomposição do "comprar" + grade de criticidade — só apresentação, não muda a conta
+  const grade=m=>{
+    const dem=Number(m.necessidade)||0, sal=Number(m.saldo)||0, cam=Number(m.a_caminho)||0, comp=Number(m.a_comprar)||0;
+    const disp=sal+cam;                        // disponível hoje + o que vem a caminho
+    const faltaProd=Math.max(0,dem-disp);      // o que falta só pra produzir
+    const reporMin=Math.max(0,comp-faltaProd); // o resto é recomposição do mínimo
+    const sobra=disp-dem;
+    let rank,cor,bg,tag;
+    if(m.status==='faltam dados'){rank=5;cor='#2B5A78';bg='#E9F1F6';tag='FALTAM DADOS';}
+    else if(faltaProd>0){rank=1;cor='#C63A3A';bg='#FDECEC';tag='FALTA PRA PRODUZIR';}
+    else if(m.status==='PEDIR AGORA'){rank=2;cor='#D9772B';bg='#FBEEE2';tag='ATRASADO';}
+    else if(m.status==='esta semana'){rank=3;cor='#B8862B';bg='#FBF3E0';tag='ESTA SEMANA';}
+    else{rank=4;cor='#3E7C45';bg='#EAF3EA';tag='COM FOLGA';}
+    const cobreHtml=faltaProd>0
+      ? '<b style="color:var(--morango)">⚠ falta '+fmt(faltaProd)+' pra produzir</b>'
+      : '<b style="color:var(--pistache)">✓ cobre'+(sobra>0.05?' (sobram '+fmt(sobra)+')':'')+'</b>';
+    return {faltaProd,reporMin,rank,cor,bg,tag,cobreHtml};
+  };
+  sug.sort((a,b)=>{const ga=grade(a),gb=grade(b);return ga.rank-gb.rank||((a.pedir_ate||'9')<(b.pedir_ate||'9')?-1:1);});
   document.getElementById('app').innerHTML=`
   ${trilha('Compra')}${topo('Compras / MRP','necessidade calculada da programação dos moinhos')}
   <main>
-    <div class="card"><b>Sugestões de compra</b><small style="color:#7A6A57;display:block;margin-bottom:6px">demanda dos refinos programados + estoque mínimo − saldo · prazo pelo lead time</small>
-    ${sug.length?sug.map((m,ix)=>`
-      <div style="border-top:1px solid var(--linha);padding:12px 0">
+    <div class="card"><b>Sugestões de compra</b><small style="color:#7A6A57;display:block;margin-bottom:6px">demanda dos refinos + reposição do mínimo − saldo · ordenado por criticidade: <b style="color:#C63A3A">falta produzir</b> › <b style="color:#D9772B">atrasado</b> › <b style="color:#B8862B">esta semana</b> › <b style="color:#3E7C45">com folga</b></small>
+    ${sug.length?sug.map(m=>{const g=grade(m);const u=m.unidade||'';return `
+      <div style="border-top:1px solid var(--linha);border-left:4px solid ${g.cor};padding:12px 0 12px 12px;margin-top:2px">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
-          <b style="font-size:16.5px">${m.nome}</b><span class="chip ${cor(m.status)}">${m.status}</span></div>
-        <p style="font-size:14px;color:#7A6A57;margin-top:4px">
-          precisa <b class="mono">${fmt(m.necessidade)} ${m.unidade}</b> · saldo ${fmt(m.saldo)}${Number(m.a_caminho)>0?' · <b style="color:#2B5A78">a caminho '+fmt(m.a_caminho)+'</b>':''} · mín. ${m.estoque_minimo!=null?fmt(m.estoque_minimo):'—'}
-          → comprar <b class="mono" style="color:var(--cacau)">${fmt(m.a_comprar)} ${m.unidade}</b><br>
-          ${m.pedir_ate?('pedir até <b>'+new Date(m.pedir_ate+'T12:00').toLocaleDateString('pt-BR')+'</b> (produção '+new Date(m.data_producao+'T12:00').toLocaleDateString('pt-BR')+', entrega '+fmt(m.lead_time_dias,0)+'d)'):'sem lead time cadastrado — preencha no item'}
-        </p>
-        ${m.a_comprar>0?`<button class="btnP" style="min-height:44px;font-size:15px;background:${m.status==='PEDIR AGORA'?'var(--morango)':'var(--pistache)'}" onclick="novoPedido('${m.item_id}','${m.nome.replace(/'/g,"\\'")}',${m.a_comprar})">Criar pedido de ${fmt(m.a_comprar)} ${m.unidade}</button>`:''}
-      </div>`).join(''):'<div class="center">Nenhuma compra necessária para a programação atual. ✅</div>'}
+          <b style="font-size:16.5px">${m.nome}</b><span class="chip" style="background:${g.bg};color:${g.cor};font-weight:700">${g.tag}</span></div>
+        <div style="font-size:14px;color:#5A4C3C;margin-top:6px;line-height:1.55">
+          <div style="display:flex;justify-content:space-between;gap:10px"><span>Programação precisa</span><b class="mono">${fmt(m.necessidade)} ${u}</b></div>
+          <div style="display:flex;justify-content:space-between;gap:10px"><span>Em estoque${Number(m.a_caminho)>0?' <span style="color:#2B5A78">(+ a caminho '+fmt(m.a_caminho)+')</span>':''}</span><span class="mono">${fmt(m.saldo)} ${u} · ${g.cobreHtml}</span></div>
+          <div style="display:flex;justify-content:space-between;gap:10px"><span>Repor o mínimo${m.estoque_minimo!=null?' ('+fmt(m.estoque_minimo)+')':''}</span><b class="mono">+${fmt(g.reporMin)} ${u}</b></div>
+        </div>
+        <div style="border-top:1px dashed var(--linha);margin-top:8px;padding-top:8px;font-size:14px">
+          <b>Comprar <span class="mono" style="color:${g.cor}">${fmt(m.a_comprar)} ${u}</span></b><span style="color:#7A6A57"> · ${m.pedir_ate?('pedir até <b>'+new Date(m.pedir_ate+'T12:00').toLocaleDateString('pt-BR')+'</b> (produção '+new Date(m.data_producao+'T12:00').toLocaleDateString('pt-BR')+', entrega '+fmt(m.lead_time_dias,0)+'d)'):'sem lead time cadastrado — preencha no item'}</span>
+        </div>
+        ${m.a_comprar>0?`<button class="btnP" style="min-height:44px;font-size:15px;margin-top:8px;background:${g.cor}" onclick="novoPedido('${m.item_id}','${m.nome.replace(/'/g,"\\'")}',${m.a_comprar})">Criar pedido de ${fmt(m.a_comprar)} ${u}</button>`:''}
+      </div>`;}).join(''):'<div class="center">Nenhuma compra necessária para a programação atual. ✅</div>'}
     </div>
     <div class="card"><b>Pedidos em andamento</b>
     ${(pedidos.data||[]).length?pedidos.data.map(c=>`
