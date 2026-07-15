@@ -548,6 +548,7 @@ async function tLote(progId){
   const ativ=(ativR.data||[]);
   const pesAtiv=ativ.find(a=>a.tipo==='pesagem');
   const baldeMov=(baldeR.data||[])[0];
+  const refinou=noBalde||!!baldeMov;
   const mp=(mpR.data||[]).filter(x=>x.lotes&&x.lotes.trim());
   const blendIds=(recR.data||[]).map(r=>r.produto_id);
   const destIds=[pr.produto_id,...blendIds];
@@ -565,8 +566,10 @@ async function tLote(progId){
       <div class="tl">
         <div class="no ok"><div class="pt">✓</div><b>Programado</b><small>${pr.equipamentos?.nome||''} · ${fmt(pr.quantidade_kg,0)} kg · ${brData(pr.data)}</small></div>
         <div class="no ${pesou?'ok':'pend'}"><div class="pt">${pesou?'✓':'2'}</div><b>Pesado</b>${pesou?`<small>${pesAtiv?.responsavel?'por '+pesAtiv.responsavel+' · ':''}lote <span class="mono">${lote}</span></small>${mp.length?`<div class="tl-mp">${mp.map(x=>`<span>${itById[x.item_id]?itById[x.item_id]+': ':''}${x.lotes}</span>`).join('')}</div>`:'<small style="color:#9A8B77">sem lote de MP anotado</small>'}`:'<small>aguardando pesagem</small>'}</div>
-        <div class="no ${noBalde||baldeMov?'ok':'pend'}"><div class="pt">${noBalde||baldeMov?'✓':'3'}</div><b>No balde</b>${baldeMov?`<small>${fmt(baldeMov.quantidade_kg,0)} kg entraram no tanque${baldeMov.responsavel?' · por '+baldeMov.responsavel:''}</small>`:'<small>aguardando refino</small>'}</div>
-        <div class="no pend"><div class="pt">4</div><b style="color:#9A8B77">Envase</b><small>puxa do tanque compartilhado →</small></div>
+        <div class="no ${refinou?'ok':'pend'}"><div class="pt">${refinou?'✓':'3'}</div><b>Dispersor</b><small>${refinou?'massa dispersada antes do moinho':'aguardando o dispersor'}</small></div>
+        <div class="no ${refinou?'ok':'pend'}"><div class="pt">${refinou?'✓':'4'}</div><b>Refino</b><small>${refinou?(pr.equipamentos?.nome||'moinho')+' · refino concluído':'aguardando refino em '+(pr.equipamentos?.nome||'moinho')}</small></div>
+        <div class="no ${refinou?'ok':'pend'}"><div class="pt">${refinou?'✓':'5'}</div><b>No balde</b>${baldeMov?`<small>${fmt(baldeMov.quantidade_kg,0)} kg entraram no tanque${baldeMov.responsavel?' · por '+baldeMov.responsavel:''}</small>`:'<small>aguardando refino</small>'}</div>
+        <div class="no pend"><div class="pt">6</div><b style="color:#9A8B77">Envase</b><small>puxa do tanque compartilhado →</small></div>
       </div>
       <div class="leque">
         <div class="lq-h">Leque de destino do balde</div>
