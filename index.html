@@ -767,6 +767,34 @@ async function tVendas(){
   lista.sort((a,b)=>a.g.rank-b.g.rank||((a.prazo||'9')<(b.prazo||'9')?-1:1));
   const totPot=lista.reduce((s,x)=>s+x.dem,0), totFalta=lista.reduce((s,x)=>s+x.g.falta,0);
   const nm=EST.cache.naoMapeados||[];
+  const urgentes=lista.filter(x=>x.g.rank===1);
+  const envasar=lista.filter(x=>x.g.rank===2);
+  const emEstoque=lista.filter(x=>x.g.rank===3);
+  const banner=x=>{const plats=Object.keys(x.plats).map(p=>p+' '+fmt(x.plats[p],0)).join(' · ');return `
+    <div style="background:linear-gradient(135deg,${x.g.cor},${x.g.cor}CC);border-radius:16px;padding:16px 18px;margin-bottom:10px;color:#fff;box-shadow:0 3px 10px ${x.g.cor}55">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+        <b style="font-size:19px;line-height:1.25">${x.nome}</b>
+        <span style="background:#ffffff30;border-radius:20px;padding:4px 12px;font-size:11.5px;font-weight:800;white-space:nowrap">${x.g.tag}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:12px">
+        <div>
+          <div style="font-size:12px;opacity:.85">faltam envasar${x.prazo?(' · prazo '+new Date(x.prazo+'T12:00').toLocaleDateString('pt-BR')):''}</div>
+          <div style="font-size:34px;font-weight:900;line-height:1.1">${fmt(x.g.falta,0)} <span style="font-size:16px;font-weight:600">potes</span></div>
+        </div>
+        <div style="text-align:right;font-size:12px;opacity:.9">estoque ${fmt(x.saldo,0)}<br>demanda ${fmt(x.dem,0)}</div>
+      </div>
+      ${plats?`<div style="opacity:.85;font-size:12px;margin-top:8px;border-top:1px solid #ffffff30;padding-top:6px">${plats}</div>`:''}
+    </div>`;};
+  const linhaCompacta=x=>{const g=x.g;const plats=Object.keys(x.plats).map(p=>p+' '+fmt(x.plats[p],0)).join(' · ');return `
+    <div style="border-top:1px solid var(--linha);border-left:4px solid ${g.cor};padding:12px 0 12px 12px;margin-top:2px">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+        <b style="font-size:16.5px">${x.nome}</b><span class="chip" style="background:${g.bg};color:${g.cor};font-weight:700">${g.tag}</span></div>
+      <div style="font-size:14px;color:#5A4C3C;margin-top:6px;line-height:1.55">
+        <div style="display:flex;justify-content:space-between;gap:10px"><span>Despachar${x.prazo?(' · prazo '+new Date(x.prazo+'T12:00').toLocaleDateString('pt-BR')):''}</span><b class="mono">${fmt(x.dem,0)} potes</b></div>
+        <div style="display:flex;justify-content:space-between;gap:10px"><span>Em estoque</span><span class="mono">${fmt(x.saldo,0)} potes · ${g.falta>0?'<b style="color:var(--morango)">⚠ envasar '+fmt(g.falta,0)+'</b>':'<b style="color:var(--pistache)">✓ cobre</b>'}</span></div>
+        ${plats?`<div style="color:#7A6A57;font-size:12.5px;margin-top:2px">${plats}</div>`:''}
+      </div>
+    </div>`;};
   document.getElementById('app').innerHTML=`
   ${topo('Vendas / Despacho','demanda dos marketplaces × estoque de potes')}
   <main>
@@ -776,18 +804,10 @@ async function tVendas(){
       <button class="btnP" style="min-height:44px" onclick="document.getElementById('upFile').click()">⬆️ Importar Up Seller</button>
     </div>
     ${nm.length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7"><b style="color:var(--morango)">Códigos a mapear (${nm.length})</b><small style="color:#7A6A57;display:block;margin:4px 0 8px">vieram na planilha mas não estão no de-para — aponte o SKU e reimporte</small>${nm.map(x=>`<div class="item-row"><span>${x.codigo} <small style="color:#7A6A57">· ${fmt(x.qtd,0)} potes<br>${(x.nome||'').slice(0,48)}</small></span><button onclick="mapearCodigo('${String(x.codigo).replace(/'/g,"\\'")}')" style="border:1px solid var(--linha);background:#fff;border-radius:8px;padding:8px 12px">mapear</button></div>`).join('')}</div>`:''}
-    <div class="card"><b>Demanda por produto</b><small style="color:#7A6A57;display:block;margin-bottom:6px">🔴 envasar já (prazo vencido/hoje) · 🟠 envasar · 🟢 em estoque</small>
-    ${lista.length?lista.map(x=>{const g=x.g;const plats=Object.keys(x.plats).map(p=>p+' '+fmt(x.plats[p],0)).join(' · ');return `
-      <div style="border-top:1px solid var(--linha);border-left:4px solid ${g.cor};padding:12px 0 12px 12px;margin-top:2px">
-        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
-          <b style="font-size:16.5px">${x.nome}</b><span class="chip" style="background:${g.bg};color:${g.cor};font-weight:700">${g.tag}</span></div>
-        <div style="font-size:14px;color:#5A4C3C;margin-top:6px;line-height:1.55">
-          <div style="display:flex;justify-content:space-between;gap:10px"><span>Despachar${x.prazo?(' · prazo '+new Date(x.prazo+'T12:00').toLocaleDateString('pt-BR')):''}</span><b class="mono">${fmt(x.dem,0)} potes</b></div>
-          <div style="display:flex;justify-content:space-between;gap:10px"><span>Em estoque</span><span class="mono">${fmt(x.saldo,0)} potes · ${g.falta>0?'<b style="color:var(--morango)">⚠ envasar '+fmt(g.falta,0)+'</b>':'<b style="color:var(--pistache)">✓ cobre</b>'}</span></div>
-          ${plats?`<div style="color:#7A6A57;font-size:12.5px;margin-top:2px">${plats}</div>`:''}
-        </div>
-      </div>`;}).join(''):'<div class="center">Sem demanda importada. Toque em “Importar Up Seller”. 🛍️</div>'}
-    </div>
+    ${urgentes.length?`<div style="margin-top:4px"><b style="font-size:13px;letter-spacing:.03em;color:var(--morango);text-transform:uppercase">🔴 Prioridade máxima — envasar já</b><div style="margin-top:8px">${urgentes.map(banner).join('')}</div></div>`:''}
+    ${envasar.length?`<div class="card" style="margin-top:${urgentes.length?'14px':'0'}"><b>🟠 Envasar em breve</b>${envasar.map(linhaCompacta).join('')}</div>`:''}
+    ${emEstoque.length?`<div class="card"><b>🟢 Em estoque, cobre a demanda</b>${emEstoque.map(linhaCompacta).join('')}</div>`:''}
+    ${!lista.length?'<div class="card"><div class="center">Sem demanda importada. Toque em “Importar Up Seller”. 🛍️</div></div>':''}
   </main>`;
 }
 function carregarXLSX(){
