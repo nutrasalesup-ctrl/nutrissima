@@ -772,13 +772,14 @@ async function tVendas(){
   const urgentes=lista.filter(x=>x.g.rank===1);
   const envasar=lista.filter(x=>x.g.rank===2);
   const emEstoque=lista.filter(x=>x.g.rank===3);
-  const cartao=x=>{const g=x.g;return `
+  const cartao=x=>{const g=x.g;const plats=Object.entries(x.plats).sort((a,b)=>b[1]-a[1]).map(([p,q])=>p+' '+fmt(q,0)).join(' · ');return `
     <div style="background:#fff;border:1.5px solid var(--linha);border-left:4px solid ${g.cor};border-radius:10px;padding:10px 12px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
         <b style="font-size:14.5px;line-height:1.3">${x.nome}</b>
         ${g.falta>0?`<b class="mono" style="color:${g.cor};font-size:16px;white-space:nowrap">${fmt(g.falta,0)}</b>`:'<span style="color:var(--pistache);font-size:13px;white-space:nowrap">✓ cobre</span>'}
       </div>
-      <div style="font-size:12px;color:#7A6A57;margin-top:3px">demanda ${fmt(x.dem,0)} · estoque ${fmt(x.saldo,0)}${x.prazo?' · prazo '+new Date(x.prazo+'T12:00').toLocaleDateString('pt-BR'):''}</div>
+      <div style="font-size:12px;color:#7A6A57;margin-top:3px">demanda ${fmt(x.dem,0)} · estoque ${fmt(x.saldo,0)}${x.prazo?(x.prazo<=hj?` · <b style="color:var(--morango)">⏰ prazo ${new Date(x.prazo+'T12:00').toLocaleDateString('pt-BR')}</b>`:' · prazo '+new Date(x.prazo+'T12:00').toLocaleDateString('pt-BR')):''}</div>
+      ${plats?`<div style="font-size:11.5px;color:#8A6B3D;margin-top:4px;background:#F7F1E3;border-radius:6px;padding:3px 7px;display:inline-block">${plats}</div>`:''}
     </div>`;};
   const coluna=(titulo,cor,items)=>`
     <div style="background:${cor}0D;border:1px solid ${cor}33;border-radius:14px;padding:12px;min-width:0">
