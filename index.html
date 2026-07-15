@@ -548,7 +548,6 @@ async function tLote(progId){
   const ativ=(ativR.data||[]);
   const pesAtiv=ativ.find(a=>a.tipo==='pesagem');
   const baldeMov=(baldeR.data||[])[0];
-  const refinou=noBalde||!!baldeMov;
   const mp=(mpR.data||[]).filter(x=>x.lotes&&x.lotes.trim());
   const blendIds=(recR.data||[]).map(r=>r.produto_id);
   const destIds=[pr.produto_id,...blendIds];
@@ -566,10 +565,8 @@ async function tLote(progId){
       <div class="tl">
         <div class="no ok"><div class="pt">✓</div><b>Programado</b><small>${pr.equipamentos?.nome||''} · ${fmt(pr.quantidade_kg,0)} kg · ${brData(pr.data)}</small></div>
         <div class="no ${pesou?'ok':'pend'}"><div class="pt">${pesou?'✓':'2'}</div><b>Pesado</b>${pesou?`<small>${pesAtiv?.responsavel?'por '+pesAtiv.responsavel+' · ':''}lote <span class="mono">${lote}</span></small>${mp.length?`<div class="tl-mp">${mp.map(x=>`<span>${itById[x.item_id]?itById[x.item_id]+': ':''}${x.lotes}</span>`).join('')}</div>`:'<small style="color:#9A8B77">sem lote de MP anotado</small>'}`:'<small>aguardando pesagem</small>'}</div>
-        <div class="no ${refinou?'ok':'pend'}"><div class="pt">${refinou?'✓':'3'}</div><b>Dispersor</b><small>${refinou?'massa dispersada antes do moinho':'aguardando o dispersor'}</small></div>
-        <div class="no ${refinou?'ok':'pend'}"><div class="pt">${refinou?'✓':'4'}</div><b>Refino</b><small>${refinou?(pr.equipamentos?.nome||'moinho')+' · refino concluído':'aguardando refino em '+(pr.equipamentos?.nome||'moinho')}</small></div>
-        <div class="no ${refinou?'ok':'pend'}"><div class="pt">${refinou?'✓':'5'}</div><b>No balde</b>${baldeMov?`<small>${fmt(baldeMov.quantidade_kg,0)} kg entraram no tanque${baldeMov.responsavel?' · por '+baldeMov.responsavel:''}</small>`:'<small>aguardando refino</small>'}</div>
-        <div class="no pend"><div class="pt">6</div><b style="color:#9A8B77">Envase</b><small>puxa do tanque compartilhado →</small></div>
+        <div class="no ${noBalde||baldeMov?'ok':'pend'}"><div class="pt">${noBalde||baldeMov?'✓':'3'}</div><b>No balde</b>${baldeMov?`<small>${fmt(baldeMov.quantidade_kg,0)} kg entraram no tanque${baldeMov.responsavel?' · por '+baldeMov.responsavel:''}</small>`:'<small>aguardando refino</small>'}</div>
+        <div class="no pend"><div class="pt">4</div><b style="color:#9A8B77">Envase</b><small>puxa do tanque compartilhado →</small></div>
       </div>
       <div class="leque">
         <div class="lq-h">Leque de destino do balde</div>
@@ -802,12 +799,16 @@ async function tVendas(){
   ${topo('Vendas / Despacho','demanda dos marketplaces × estoque de potes')}
   <main>
     <input type="file" id="upFile" accept=".xlsx,.xls,.csv" multiple style="display:none" onchange="if(this.files.length){importarUpSeller(Array.from(this.files));this.value='';}">
+    <input type="file" id="upFileSimples" accept=".xlsx,.xls,.csv" multiple style="display:none" onchange="if(this.files.length){importarSimplificada(Array.from(this.files));this.value='';}">
     <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
       <div class="kpis" style="flex:1;min-width:220px">
         <div class="kpi"><b>${fmt(totPot,0)}</b><p>potes a despachar</p></div>
         <div class="kpi alerta"><b>${fmt(totFalta,0)}</b><p>a envasar</p></div>
       </div>
-      <button class="btnP" style="min-height:44px" onclick="document.getElementById('upFile').click()">⬆️ Importar Up Seller</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btnP" style="min-height:44px" onclick="document.getElementById('upFile').click()">⬆️ Importar Up Seller</button>
+        <button class="btnSec" style="min-height:44px" onclick="document.getElementById('upFileSimples').click()">📋 Importar planilha simplificada</button>
+      </div>
     </div>
     ${canais.length?`<div class="card" style="padding:12px 14px"><small style="color:#7A6A57;font-weight:700;letter-spacing:.02em">NECESSIDADE POR CANAL</small>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${canais.map(([nome,q])=>{const[bg,fg]=corCanal(nome);return `<span style="background:${bg};color:${fg};border-radius:20px;padding:5px 14px;font-weight:800;font-size:13px">${nome} · ${fmt(q,0)}</span>`}).join('')}</div>
@@ -881,6 +882,57 @@ async function importarUpSeller(files){
   await sb.from('atividades').insert({tipo:'compra',descricao:'Demanda de vendas importada — '+arq.length+(arq.length>1?' planilhas, ':' planilha, ')+rows.length+' linhas, '+Object.keys(nao).length+' a mapear',responsavel:EST.operador});
   EST.cache.naoMapeados=Object.values(nao);
   msg('✅ '+rows.length+' linhas importadas de '+arq.length+(arq.length>1?' planilhas':' planilha')+(Object.keys(nao).length?' · '+Object.keys(nao).length+' a mapear':''));
+  tela('vendas');
+}
+async function importarSimplificada(files){
+  if(precisaOperador())return;
+  const arq=Array.isArray(files)?files:[files];
+  if(!arq.length)return;
+  if(typeof XLSX==='undefined'){
+    msg('⏳ Carregando leitor de planilha…');
+    const ok=await carregarXLSX();
+    if(!ok)return msg('Não consegui carregar o leitor de planilha — verifique a internet e tente de novo',true);
+  }
+  msg('⏳ Lendo planilha…');
+  let linhas=[];
+  try{
+    for(const file of arq){
+      const buf=await file.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'array'});
+      wb.SheetNames.forEach(sn=>{linhas=linhas.concat(XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:''}));});
+    }
+  }catch(e){return msg('Erro ao ler o arquivo: '+e.message,true);}
+  if(!linhas.length)return msg('Planilha vazia ou em formato inesperado',true);
+  const chaveCanal={};Object.keys(linhas[0]).forEach(k=>{
+    const nk=k.trim().toLowerCase();
+    if(nk.includes('tik')||nk.includes('tiktok'))chaveCanal[k]='TikTok Shop';
+    else if(nk.includes('mercado'))chaveCanal[k]='Mercado Livre';
+    else if(nk.includes('shopee'))chaveCanal[k]='Shopee';
+    else if(nk==='site')chaveCanal[k]='Site';
+  });
+  const colProd=Object.keys(linhas[0]).find(k=>k.trim().toLowerCase()==='produto')||Object.keys(linhas[0])[0];
+  const {data:dep}=await sb.from('depara_sku').select('codigo,produto_acabado_id');
+  const mapa={};(dep||[]).forEach(d=>{if(d.produto_acabado_id)mapa[String(d.codigo).trim()]=d.produto_acabado_id;});
+  const hoje=hojeLocal();
+  const agg={},nao={};
+  for(const r of linhas){
+    const nome=String(r[colProd]||'').trim();if(!nome)continue;
+    const pid=mapa[nome];
+    for(const col in chaveCanal){
+      const q=Number(r[col])||0;if(!q)continue;
+      const plat=chaveCanal[col];
+      if(!pid){nao[nome]=nao[nome]||{codigo:nome,plataforma:plat,nome:nome,qtd:0};nao[nome].qtd+=q;continue;}
+      const k=pid+'|'+plat;
+      agg[k]=agg[k]||{produto_acabado_id:pid,plataforma:plat,qtd_potes:0};
+      agg[k].qtd_potes+=q;
+    }
+  }
+  await sb.from('demanda_vendas').delete().eq('origem','import_simplificado').eq('status','aberto');
+  const rows=Object.values(agg).map(a=>({produto_acabado_id:a.produto_acabado_id,data_despacho:hoje,plataforma:a.plataforma,qtd_potes:a.qtd_potes,status:'aberto',origem:'import_simplificado',criado_por:EST.operador}));
+  if(rows.length){const {error}=await sb.from('demanda_vendas').insert(rows);if(error)return msg(error.message,true);}
+  await sb.from('atividades').insert({tipo:'compra',descricao:'Demanda de vendas (planilha simplificada) — '+rows.length+' linhas, '+Object.keys(nao).length+' a mapear',responsavel:EST.operador});
+  EST.cache.naoMapeados=Object.values(nao);
+  msg('✅ '+rows.length+' linhas importadas'+(Object.keys(nao).length?' · '+Object.keys(nao).length+' a mapear':''));
   tela('vendas');
 }
 async function mapearCodigo(cod){
