@@ -772,14 +772,20 @@ async function tVendas(){
   const urgentes=lista.filter(x=>x.g.rank===1);
   const envasar=lista.filter(x=>x.g.rank===2);
   const emEstoque=lista.filter(x=>x.g.rank===3);
-  const cartao=x=>{const g=x.g;const plats=Object.entries(x.plats).sort((a,b)=>b[1]-a[1]).map(([p,q])=>p+' '+fmt(q,0)).join(' · ');return `
+  const corCanal=nome=>{const n=(nome||'').toLowerCase();
+    if(n.includes('tiktok'))return['#000','#fff'];
+    if(n.includes('shopee'))return['#EE4D2D','#fff'];
+    if(n.includes('mercado'))return['#FFE600','#5A4A00'];
+    return['#8A6B3D','#fff'];
+  };
+  const cartao=x=>{const g=x.g;const platsArr=Object.entries(x.plats).sort((a,b)=>b[1]-a[1]);return `
     <div style="background:#fff;border:1.5px solid var(--linha);border-left:4px solid ${g.cor};border-radius:10px;padding:10px 12px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
         <b style="font-size:14.5px;line-height:1.3">${x.nome}</b>
         ${g.falta>0?`<b class="mono" style="color:${g.cor};font-size:16px;white-space:nowrap">${fmt(g.falta,0)}</b>`:'<span style="color:var(--pistache);font-size:13px;white-space:nowrap">✓ cobre</span>'}
       </div>
-      <div style="font-size:12px;color:#7A6A57;margin-top:3px">demanda ${fmt(x.dem,0)} · estoque ${fmt(x.saldo,0)}${x.prazo?(x.prazo<=hj?` · <b style="color:var(--morango)">⏰ prazo ${new Date(x.prazo+'T12:00').toLocaleDateString('pt-BR')}</b>`:' · prazo '+new Date(x.prazo+'T12:00').toLocaleDateString('pt-BR')):''}</div>
-      ${plats?`<div style="font-size:11.5px;color:#8A6B3D;margin-top:4px;background:#F7F1E3;border-radius:6px;padding:3px 7px;display:inline-block">${plats}</div>`:''}
+      <div style="font-size:12px;color:#7A6A57;margin-top:3px">demanda <b>${fmt(x.dem,0)}</b> · estoque ${fmt(x.saldo,0)}${x.prazo?(x.prazo<=hj?` · <b style="color:var(--morango)">⏰ prazo ${new Date(x.prazo+'T12:00').toLocaleDateString('pt-BR')}</b>`:' · prazo '+new Date(x.prazo+'T12:00').toLocaleDateString('pt-BR')):''}</div>
+      ${platsArr.length?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">${platsArr.map(([p,q])=>{const[bg,fg]=corCanal(p);return `<span style="background:${bg};color:${fg};font-size:11px;font-weight:800;border-radius:20px;padding:3px 10px;white-space:nowrap">${p} · ${fmt(q,0)}</span>`}).join('')}</div>`:''}
     </div>`;};
   const coluna=(titulo,cor,items)=>`
     <div style="background:${cor}0D;border:1px solid ${cor}33;border-radius:14px;padding:12px;min-width:0">
@@ -801,7 +807,7 @@ async function tVendas(){
       <button class="btnP" style="min-height:44px" onclick="document.getElementById('upFile').click()">⬆️ Importar Up Seller</button>
     </div>
     ${canais.length?`<div class="card" style="padding:12px 14px"><small style="color:#7A6A57;font-weight:700;letter-spacing:.02em">NECESSIDADE POR CANAL</small>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${canais.map(([nome,q])=>`<span class="chip" style="background:#F0EBDD;font-weight:700">${nome} · ${fmt(q,0)}</span>`).join('')}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${canais.map(([nome,q])=>{const[bg,fg]=corCanal(nome);return `<span style="background:${bg};color:${fg};border-radius:20px;padding:5px 14px;font-weight:800;font-size:13px">${nome} · ${fmt(q,0)}</span>`}).join('')}</div>
     </div>`:''}
     ${nm.length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7"><b style="color:var(--morango)">Códigos a mapear (${nm.length})</b><small style="color:#7A6A57;display:block;margin:4px 0 8px">vieram na planilha mas não estão no de-para — aponte o SKU e reimporte</small>${nm.map(x=>`<div class="item-row"><span>${x.codigo} <small style="color:#7A6A57">· ${fmt(x.qtd,0)} potes<br>${(x.nome||'').slice(0,48)}</small></span><button onclick="mapearCodigo('${String(x.codigo).replace(/'/g,"\\'")}')" style="border:1px solid var(--linha);background:#fff;border-radius:8px;padding:8px 12px">mapear</button></div>`).join('')}</div>`:''}
     ${lista.length?`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:12px">
