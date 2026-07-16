@@ -1093,19 +1093,19 @@ async function tMovimento(){
   }
   EST.cache.mvLista=lista;
   const p=lista.find(x=>x.id===EST.mv.prodId);
-  const chipM=(k,l)=>`<button class="${EST.mv.material===k?'sel':''}" onclick="mvSetMaterial('${k}')">${l}</button>`;
-  const chipD=(k,l)=>`<button class="${EST.mv.dir===k?'sel':''}" onclick="mvSetDir('${k}')">${l}</button>`;
+  const chipM=(k,l)=>`<button style="min-height:auto;padding:7px 14px;font-size:13px" class="${EST.mv.material===k?'sel':''}" onclick="mvSetMaterial('${k}')">${l}</button>`;
+  const chipD=(k,l)=>`<button style="min-height:auto;padding:7px 14px;font-size:13px" class="${EST.mv.dir===k?'sel':''}" onclick="mvSetDir('${k}')">${l}</button>`;
   let corpo;
   if(!p){
     if(EST.mv.material==='pote'){
       const porLinha={};lista.forEach(x=>{(porLinha[x.linha||'Outros']=porLinha[x.linha||'Outros']||[]).push(x)});
       corpo=`<div class="card" style="margin-top:0"><span class="step-label">toca no produto</span></div>`+
         (lista.length?Object.entries(porLinha).map(([linha,items])=>`<div class="card"><small style="color:#7A6A57;font-weight:700">${linha}</small><div class="chips" style="margin-top:8px">
-        ${items.map(x=>`<button onclick="mvEscolhe('${x.id}')">${x.nome}${x.extra?' <small>('+x.extra+')</small>':''}</button>`).join('')}
+        ${items.map(x=>`<button style="min-height:auto;padding:7px 14px;font-size:13px" onclick="mvEscolhe('${x.id}')">${x.nome}${x.extra?' <small>('+x.extra+')</small>':''}</button>`).join('')}
         </div></div>`).join(''):'<div class="card"><div class="center">Nada disponível.</div></div>');
     }else{
       corpo=`<div class="card" style="margin-top:0"><span class="step-label">toca no produto</span><div class="chips">
-        ${lista.length?lista.map(x=>`<button onclick="mvEscolhe('${x.id}')">${x.nome}${x.extra?' <small>('+x.extra+')</small>':''}</button>`).join(''):'<p style="color:var(--morango)">Nada disponível.</p>'}
+        ${lista.length?lista.map(x=>`<button style="min-height:auto;padding:7px 14px;font-size:13px" onclick="mvEscolhe('${x.id}')">${x.nome}${x.extra?' <small>('+x.extra+')</small>':''}</button>`).join(''):'<p style="color:var(--morango)">Nada disponível.</p>'}
       </div></div>`;
     }
   }else{
@@ -1115,16 +1115,16 @@ async function tMovimento(){
       <span class="step-label">produto</span><b style="font-size:20px">${p.nome}</b>
       ${p.mix?'':`<p style="color:#7A6A57;margin:10px 0 0;font-size:12.5px">em estoque agora</p><b class="mono">${fmt(p.saldoAtual||0,conf.decimal?1:0)} ${p.saldoUnidade||''}</b>`}
       <span class="step-label" style="margin-top:18px">conte ${conf.decimal?'em kg':'em unidades'}</span>
-      <div style="font-size:60px;font-weight:900;margin:2px 0 2px;color:${conf.cor};line-height:1">${fmt(EST.mv.valor||0,conf.decimal?1:0)}</div>
+      <div style="font-size:46px;font-weight:900;margin:2px 0 2px;color:${conf.cor};line-height:1">${fmt(EST.mv.valor||0,conf.decimal?1:0)}</div>
       <p style="color:#7A6A57;margin:0 0 16px;font-size:12.5px">${conf.unidade}</p>
-      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-        <button class="btnP" style="min-height:64px;font-size:19px;padding:0 22px;background:${conf.cor};border-color:${conf.cor}" onclick="mvAdd(${passo})">${passoLabel}</button>
-        <button class="btnSec" style="min-height:64px;font-size:19px;padding:0 20px" onclick="mvAdd(1)">+1${conf.decimal?' kg':' pote'}</button>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <button class="btnP" style="min-height:auto;font-size:13px;padding:9px 16px;background:${conf.cor};border-color:${conf.cor}" onclick="mvAdd(${passo})">${passoLabel}</button>
+        <button class="btnSec" style="min-height:auto;font-size:13px;padding:9px 16px" onclick="mvAdd(1)">+1${conf.decimal?' kg':' pote'}</button>
       </div>
-      <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;align-items:center">
-        <button class="btnSec" style="min-width:52px;min-height:48px" onclick="mvAdd(-1)">−1</button>
+      <div style="margin-top:14px;display:flex;gap:8px;justify-content:center;align-items:center">
+        <button class="btnSec" style="min-height:auto;padding:8px 14px;font-size:13px" onclick="mvAdd(-1)">−1</button>
         <input id="mvManual" class="campoG" style="max-width:110px;text-align:center" inputmode="decimal" value="${fmt(EST.mv.valor||0,conf.decimal?1:0)}" onchange="mvSetValor(this.value)">
-        <button class="btnSec" style="min-width:64px;min-height:48px" onclick="mvZerar()">zerar</button>
+        <button class="btnSec" style="min-height:auto;padding:8px 14px;font-size:13px" onclick="mvZerar()">zerar</button>
       </div>
       ${!conf.decimal?`<p style="margin-top:14px"><a href="#" onclick="mvMudarCaixa();return false" style="color:#7A6A57;font-size:12.5px">caixa tem ${EST.mv.caixa} potes · toque pra mudar</a></p>`:''}
       <button class="btnP" style="margin-top:16px;min-height:56px;font-size:18px;width:100%;background:${conf.cor};border-color:${conf.cor}" ${!(EST.mv.valor>0)?'disabled':''} onclick="confMovimento()">${EST.mv.dir==='entrada'?'✅ Confirmar entrada':'📤 Confirmar baixa'}</button>
