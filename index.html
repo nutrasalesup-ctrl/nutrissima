@@ -252,7 +252,7 @@ async function login(){
 }
 
 /* ================= NAVEGAÇÃO ================= */
-const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,baixa:tBaixa};
+const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,baixa:tBaixa,movimento:tMovimento};
 function tela(n,arg){TELAS[n](arg)}
 
 /* ================= INÍCIO ================= */
@@ -271,8 +271,7 @@ async function tInicio(){
       <button onclick="tela('mrp')"><span class="ico" style="background:#FBEAEA">🛒</span><span><b>Compras / MRP</b><small>O que comprar, quanto e até quando</small></span></button>
       <button onclick="tela('vendas')"><span class="ico" style="background:#EAF3EA">🛍️</span><span><b>Vendas / Despacho</b><small>Demanda dos marketplaces — o que envasar</small></span></button>
       <button onclick="tela('receber')"><span class="ico" style="background:#E7F0E4">📦</span><span><b>Receber mercadoria</b><small>Confirmar chegada das compras</small></span></button>
-      <button onclick="tela('envase')"><span class="ico" style="background:#EAE4F2">🫙</span><span><b>Entrada no estoque</b><small>Envasou? Aqui sobe pro estoque de potes</small></span></button>
-      <button onclick="tela('baixa')"><span class="ico" style="background:#FBEAEA">📤</span><span><b>Produtos separados</b><small>Separou pedido? Desconte do estoque aqui</small></span></button>
+      <button onclick="tela('movimento')"><span class="ico" style="background:#EAE4F2">🔄</span><span><b>Entrada / Saída de Estoque</b><small>Balde, matéria-prima ou pote — escolha e conte</small></span></button>
       <button onclick="tela('estoque')"><span class="ico" style="background:#E4EDF2">📋</span><span><b>Conferir estoque</b><small>Matéria-prima, balde e potes</small></span></button>
       <button onclick="tela('metas')"><span class="ico" style="background:#F6ECD6">🎯</span><span><b>Metas do dia</b><small>Definir o quadro (PIN do gestor)</small></span></button>
       <button onclick="tela('tv')"><span class="ico" style="background:#33200F;color:#fff">📺</span><span><b>Modo TV</b><small>Quadro do dia em tela cheia</small></span></button>
@@ -1046,6 +1045,127 @@ async function confBaixa(){
   msg('✅ Baixa de '+n+' potes de '+p.nome+' registrada');
   EST.bx={paId:null,potes:0,caixa:EST.bx.caixa};
   tela('baixa');
+}
+const MV_CONF={
+  balde_entrada:{titulo:'Entrada de balde',unidade:'kg',rpc:'entrada_balde',paramId:'p_produto_id',paramQtd:'p_kg',decimal:true,cor:'var(--cacau)'},
+  balde_saida:{titulo:'Baixa de balde',unidade:'kg',rpc:'baixa_balde',paramId:'p_produto_id',paramQtd:'p_kg',decimal:true,cor:'var(--morango)'},
+  mp_entrada:{titulo:'Entrada de matéria-prima',unidade:'',rpc:'entrada_item',paramId:'p_item',paramQtd:'p_qtd',decimal:true,cor:'var(--cacau)'},
+  mp_saida:{titulo:'Baixa de matéria-prima',unidade:'',rpc:'baixa_item',paramId:'p_item',paramQtd:'p_qtd',decimal:true,cor:'var(--morango)'},
+  pote_entrada:{titulo:'Entrada no estoque',unidade:'potes',rpc:'entrada_potes',paramId:'p_pa',paramQtd:'p_potes',decimal:false,cor:'var(--cacau)'},
+  pote_saida:{titulo:'Baixa de potes (separação)',unidade:'potes',rpc:'baixa_despacho',paramId:'p_pa',paramQtd:'p_potes',decimal:false,cor:'var(--morango)'}
+};
+async function tMovimento(){
+  if(!EST.mv)EST.mv={material:'pote',dir:'entrada',prodId:null,valor:0,caixa:28};
+  const conf=MV_CONF[EST.mv.material+'_'+EST.mv.dir];
+  let lista=[];
+  if(EST.mv.material==='balde'){
+    const {data}=await sb.from('produtos').select('id,nome').eq('estocavel_balde',true).order('nome');
+    if(EST.mv.dir==='entrada'){lista=(data||[]).map(p=>({id:p.id,nome:p.nome,extra:''}));}
+    else{
+      const {data:eb}=await sb.from('estoque_balde').select('produto_id,quantidade_kg').gt('quantidade_kg',0);
+      const sm=Object.fromEntries((eb||[]).map(b=>[b.produto_id,b.quantidade_kg]));
+      lista=(data||[]).filter(p=>sm[p.id]).map(p=>({id:p.id,nome:p.nome,extra:fmt(sm[p.id])+' kg',mix:false}));
+      const [{data:prods},{data:receitas}]=await Promise.all([
+        sb.from('produtos').select('id,nome,estocavel_balde'),
+        sb.from('receita_itens').select('produto_id,componente_produto_id,qtd_por_100kg').eq('componente_tipo','produto')
+      ]);
+      const prodMap=Object.fromEntries((prods||[]).map(p=>[p.id,p]));
+      const misturaSet=new Set();
+      (receitas||[]).forEach(r=>{if(prodMap[r.componente_produto_id]?.estocavel_balde)misturaSet.add(r.produto_id)});
+      misturaSet.forEach(pid=>{if(prodMap[pid])lista.push({id:pid,nome:prodMap[pid].nome,extra:'mistura — calcula sozinho',mix:true})});
+    }
+  }else if(EST.mv.material==='mp'){
+    if(EST.mv.dir==='entrada'){
+      const {data}=await sb.from('itens').select('id,nome,unidade').order('nome');
+      lista=(data||[]).map(i=>({id:i.id,nome:i.nome,extra:i.unidade||''}));
+    }else{
+      const {data}=await sb.from('itens').select('id,nome,unidade,saldo_atual').gt('saldo_atual',0).order('nome');
+      lista=(data||[]).map(i=>({id:i.id,nome:i.nome,extra:fmt(i.saldo_atual)+' '+(i.unidade||'')}));
+    }
+  }else{
+    if(EST.mv.dir==='entrada'){
+      const {data}=await sb.from('produto_acabado').select('id,nome,linha').eq('ativo',true).order('linha').order('nome');
+      lista=(data||[]).map(p=>({id:p.id,nome:p.nome,linha:p.linha,extra:''}));
+    }else{
+      const {data}=await sb.from('produto_acabado').select('id,nome,linha,saldo_potes').eq('ativo',true).gt('saldo_potes',0).order('linha').order('nome');
+      lista=(data||[]).map(p=>({id:p.id,nome:p.nome,linha:p.linha,extra:fmt(p.saldo_potes,0)}));
+    }
+  }
+  EST.cache.mvLista=lista;
+  const p=lista.find(x=>x.id===EST.mv.prodId);
+  const chipM=(k,l)=>`<button class="${EST.mv.material===k?'sel':''}" onclick="mvSetMaterial('${k}')">${l}</button>`;
+  const chipD=(k,l)=>`<button class="${EST.mv.dir===k?'sel':''}" onclick="mvSetDir('${k}')">${l}</button>`;
+  let corpo;
+  if(!p){
+    if(EST.mv.material==='pote'){
+      const porLinha={};lista.forEach(x=>{(porLinha[x.linha||'Outros']=porLinha[x.linha||'Outros']||[]).push(x)});
+      corpo=`<div class="card" style="margin-top:0"><span class="step-label">toca no produto</span></div>`+
+        (lista.length?Object.entries(porLinha).map(([linha,items])=>`<div class="card"><small style="color:#7A6A57;font-weight:700">${linha}</small><div class="chips" style="margin-top:8px">
+        ${items.map(x=>`<button onclick="mvEscolhe('${x.id}')">${x.nome}${x.extra?' <small>('+x.extra+')</small>':''}</button>`).join('')}
+        </div></div>`).join(''):'<div class="card"><div class="center">Nada disponível.</div></div>');
+    }else{
+      corpo=`<div class="card" style="margin-top:0"><span class="step-label">toca no produto</span><div class="chips">
+        ${lista.length?lista.map(x=>`<button onclick="mvEscolhe('${x.id}')">${x.nome}${x.extra?' <small>('+x.extra+')</small>':''}</button>`).join(''):'<p style="color:var(--morango)">Nada disponível.</p>'}
+      </div></div>`;
+    }
+  }else{
+    const passo=conf.decimal?10:(EST.mv.caixa||28);
+    const passoLabel=conf.decimal?`+${passo} kg`:`📦 +1 caixa (${passo})`;
+    corpo=`<div class="card" style="text-align:center;margin-top:0">
+      <span class="step-label">produto</span><b style="font-size:20px">${p.nome}</b>
+      <span class="step-label" style="margin-top:18px">conte ${conf.decimal?'em kg':'em unidades'}</span>
+      <div style="font-size:60px;font-weight:900;margin:2px 0 2px;color:${conf.cor};line-height:1">${fmt(EST.mv.valor||0,conf.decimal?1:0)}</div>
+      <p style="color:#7A6A57;margin:0 0 16px;font-size:12.5px">${conf.unidade}</p>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <button class="btnP" style="min-height:64px;font-size:19px;padding:0 22px;background:${conf.cor};border-color:${conf.cor}" onclick="mvAdd(${passo})">${passoLabel}</button>
+        <button class="btnSec" style="min-height:64px;font-size:19px;padding:0 20px" onclick="mvAdd(1)">+1${conf.decimal?' kg':' pote'}</button>
+      </div>
+      <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;align-items:center">
+        <button class="btnSec" style="min-width:52px;min-height:48px" onclick="mvAdd(-1)">−1</button>
+        <input id="mvManual" class="campoG" style="max-width:110px;text-align:center" inputmode="decimal" value="${fmt(EST.mv.valor||0,conf.decimal?1:0)}" onchange="mvSetValor(this.value)">
+        <button class="btnSec" style="min-width:64px;min-height:48px" onclick="mvZerar()">zerar</button>
+      </div>
+      ${!conf.decimal?`<p style="margin-top:14px"><a href="#" onclick="mvMudarCaixa();return false" style="color:#7A6A57;font-size:12.5px">caixa tem ${EST.mv.caixa} potes · toque pra mudar</a></p>`:''}
+      <button class="btnP" style="margin-top:16px;min-height:56px;font-size:18px;width:100%;background:${conf.cor};border-color:${conf.cor}" ${!(EST.mv.valor>0)?'disabled':''} onclick="confMovimento()">${EST.mv.dir==='entrada'?'✅ Confirmar entrada':'📤 Confirmar baixa'}</button>
+    </div>`;
+  }
+  document.getElementById('app').innerHTML=`
+  ${trilha('')}${topo('Entrada / Saída de Estoque','escolha o material e a direção')}
+  <main>
+    <div class="card" style="margin-top:0">
+      <span class="step-label">material</span>
+      <div class="chips">${chipM('balde','🪣 Balde')}${chipM('mp','🌰 Matéria-prima')}${chipM('pote','🫙 Pote')}</div>
+      <span class="step-label" style="margin-top:14px">direção</span>
+      <div class="chips">${chipD('entrada','⬆️ Entrada')}${chipD('saida','⬇️ Saída')}</div>
+    </div>
+    ${p?`<button class="btnSec" onclick="mvVoltar()">← trocar produto</button>`:''}
+    ${corpo}
+  </main>`;
+}
+function mvSetMaterial(m){EST.mv.material=m;EST.mv.prodId=null;EST.mv.valor=0;tela('movimento')}
+function mvSetDir(d){EST.mv.dir=d;EST.mv.prodId=null;EST.mv.valor=0;tela('movimento')}
+function mvEscolhe(id){EST.mv.prodId=id;EST.mv.valor=0;tela('movimento')}
+function mvVoltar(){EST.mv.prodId=null;EST.mv.valor=0;tela('movimento')}
+function mvAdd(n){EST.mv.valor=Math.max(0,Number(((EST.mv.valor||0)+n).toFixed(2)));tela('movimento')}
+function mvSetValor(v){const n=parseFloat(String(v).replace(',','.'));EST.mv.valor=Math.max(0,isNaN(n)?0:n);tela('movimento')}
+function mvZerar(){EST.mv.valor=0;tela('movimento')}
+function mvMudarCaixa(){const v=prompt('Quantos potes cabem numa caixa?',EST.mv.caixa);if(v==null)return;const n=parseInt(v);if(!n||n<=0)return;EST.mv.caixa=n;tela('movimento')}
+async function confMovimento(){
+  if(precisaOperador())return;
+  const conf=MV_CONF[EST.mv.material+'_'+EST.mv.dir];
+  const p=EST.cache.mvLista.find(x=>x.id===EST.mv.prodId);if(!p)return;
+  const n=EST.mv.valor;if(!n||n<=0)return msg('Informe uma quantidade',true);
+  let rpc=conf.rpc, params={};
+  if(p.mix){
+    rpc='baixa_balde_mix';params={p_produto_mix:p.id,p_kg_total:n,p_responsavel:EST.operador};
+  }else{
+    params[conf.paramId]=p.id;params[conf.paramQtd]=n;params.p_responsavel=EST.operador;
+  }
+  const {error}=await sb.rpc(rpc,params);
+  if(error)return msg(error.message,true);
+  msg('✅ '+(p.mix?'Baixa de balde (mistura)':conf.titulo)+' — '+p.nome+': '+fmt(n,conf.decimal?1:0));
+  EST.mv.prodId=null;EST.mv.valor=0;
+  tela('movimento');
 }
 async function tEnvase(){
   if(!EST.es)EST.es={paId:null,baldeId:null,potes:0,caixa:28,forcarBalde:false};
