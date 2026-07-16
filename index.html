@@ -251,7 +251,7 @@ async function login(){
 }
 
 /* ================= NAVEGAÇÃO ================= */
-const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote};
+const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote};
 function tela(n,arg){TELAS[n](arg)}
 
 /* ================= INÍCIO ================= */
@@ -989,6 +989,97 @@ async function confPesagem(progId){
 
 /* ================= ENVASE ================= */
 async function tEnvase(){
+  if(!EST.es)EST.es={paId:null,baldeId:null,potes:0,caixa:28,forcarBalde:false};
+  const [balde,pa,rec,prods]=await Promise.all([
+    sb.from('estoque_balde').select('produto_id,quantidade_kg,produtos(nome)'),
+    sb.from('produto_acabado').select('id,nome,linha,peso_pote_kg,saldo_potes,produto_id').eq('ativo',true).order('linha').order('nome'),
+    sb.from('receita_itens').select('produto_id,componente_produto_id,qtd_por_100kg').eq('componente_tipo','produto'),
+    sb.from('produtos').select('id,nome,estocavel_balde')
+  ]);
+  EST.cache.balde=(balde.data||[]);EST.cache.pa=pa.data||[];
+  const estoc=Object.fromEntries((prods.data||[]).map(p=>[p.id,p]));
+  EST.cache.mistura={};
+  (rec.data||[]).forEach(r=>{
+    if(estoc[r.componente_produto_id]?.estocavel_balde){
+      (EST.cache.mistura[r.produto_id]=EST.cache.mistura[r.produto_id]||[]).push({pid:r.componente_produto_id,nome:estoc[r.componente_produto_id].nome,pct:Number(r.qtd_por_100kg)});
+    }
+  });
+  const p=EST.cache.pa.find(x=>x.id===EST.es.paId);
+  let corpo;
+  if(!p){
+    const porLinha={};EST.cache.pa.forEach(x=>{(porLinha[x.linha||'Outros']=porLinha[x.linha||'Outros']||[]).push(x)});
+    corpo=`<div class="card" style="margin-top:0"><b style="font-size:17px">① Qual produto você está envasando?</b></div>`+
+      Object.entries(porLinha).map(([linha,items])=>`
+      <div class="card"><small style="color:#7A6A57;font-weight:700">${linha}</small><div class="chips" style="margin-top:8px">
+        ${items.map(x=>`<button onclick="esEscolheProduto('${x.id}')">${x.nome}</button>`).join('')}
+      </div></div>`).join('');
+  }else if(p.peso_pote_kg==null){
+    corpo=`<div class="card"><p style="color:var(--morango);font-size:15px">⚠️ O peso do pote de <b>${p.nome}</b> ainda não está cadastrado. Peça pro escritório configurar no <button class="btnSec" style="padding:4px 10px;min-height:auto" onclick="tela('envaseAvancado')">modo avançado</button> antes de lançar esse aqui.</p></div>`;
+  }else{
+    const mix=p.produto_id?EST.cache.mistura[p.produto_id]:null;
+    const precisaBalde=!mix;
+    const baldeAuto=p.produto_id?EST.cache.balde.find(b=>b.produto_id===p.produto_id&&Number(b.quantidade_kg)>0):null;
+    const baldeId=EST.es.baldeId||(baldeAuto&&!EST.es.forcarBalde?baldeAuto.produto_id:null);
+    if(precisaBalde&&!baldeId){
+      const comSaldo=EST.cache.balde.filter(b=>Number(b.quantidade_kg)>0);
+      corpo=`<div class="card" style="margin-top:0"><b style="font-size:17px">② Qual balde vai usar pra ${p.nome}?</b><div class="chips" style="margin-top:10px">
+        ${comSaldo.length?comSaldo.map(b=>`<button onclick="esEscolheBalde('${b.produto_id}')">${b.produtos.nome} <small>(${fmt(b.quantidade_kg)} kg)</small></button>`).join(''):'<p style="color:var(--morango)">Nenhum balde com saldo — avise o escritório.</p>'}
+      </div></div>`;
+    }else{
+      const nomeBalde=baldeId?EST.cache.balde.find(b=>b.produto_id===baldeId)?.produtos.nome:null;
+      corpo=`<div class="card" style="text-align:center;margin-top:0">
+        <p style="color:#7A6A57;margin:0">Produto</p><b style="font-size:20px">${p.nome}</b>
+        ${nomeBalde?`<p style="color:#7A6A57;margin:12px 0 0">Balde usado</p><b>${nomeBalde}</b> <button class="btnSec" style="padding:4px 10px;min-height:auto;font-size:12px;margin-left:4px" onclick="esTrocarBalde()">trocar</button>`:''}
+        <div style="font-size:60px;font-weight:900;margin:18px 0 2px;color:var(--cacau);line-height:1">${EST.es.potes||0}</div>
+        <p style="color:#7A6A57;margin:0 0 16px">potes contados até agora</p>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+          <button class="btnP" style="min-height:64px;font-size:19px;padding:0 22px" onclick="esAdd(${EST.es.caixa})">📦 +1 caixa (${EST.es.caixa})</button>
+          <button class="btnSec" style="min-height:64px;font-size:19px;padding:0 20px" onclick="esAdd(1)">+1 pote</button>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;align-items:center">
+          <button class="btnSec" style="min-width:52px;min-height:48px" onclick="esAdd(-1)">−1</button>
+          <input id="esManual" class="campoG" style="max-width:110px;text-align:center" inputmode="numeric" value="${EST.es.potes||0}" onchange="esSetPotes(this.value)">
+          <button class="btnSec" style="min-width:64px;min-height:48px" onclick="esZerar()">zerar</button>
+        </div>
+        <p style="margin-top:14px"><a href="#" onclick="esMudarCaixa();return false" style="color:#7A6A57;font-size:12.5px">caixa tem ${EST.es.caixa} potes · toque pra mudar</a></p>
+        <button class="btnP" style="margin-top:16px;min-height:56px;font-size:18px;width:100%" ${!(EST.es.potes>0)?'disabled':''} onclick="confEnvaseSimples()">✅ Confirmar envase</button>
+      </div>`;
+    }
+  }
+  document.getElementById('app').innerHTML=`
+  ${trilha('Envase')}${topo('Envasar','toque e conte as caixas')}
+  <main>
+    <div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
+      ${p?`<button class="btnSec" onclick="esVoltar()">← trocar produto</button>`:'<span></span>'}
+      <button class="btnSec" onclick="tela('envaseAvancado')">modo avançado</button>
+    </div>
+    ${corpo}
+  </main>`;
+}
+function esEscolheProduto(id){EST.es={paId:id,baldeId:null,potes:0,caixa:EST.es.caixa||28,forcarBalde:false};tela('envase')}
+function esEscolheBalde(pid){EST.es.baldeId=pid;tela('envase')}
+function esTrocarBalde(){EST.es.baldeId=null;EST.es.forcarBalde=true;tela('envase')}
+function esVoltar(){EST.es={paId:null,baldeId:null,potes:0,caixa:EST.es?.caixa||28,forcarBalde:false};tela('envase')}
+function esAdd(n){EST.es.potes=Math.max(0,(EST.es.potes||0)+n);tela('envase')}
+function esSetPotes(v){EST.es.potes=Math.max(0,parseInt(v)||0);tela('envase')}
+function esZerar(){EST.es.potes=0;tela('envase')}
+function esMudarCaixa(){const v=prompt('Quantos potes cabem numa caixa?',EST.es.caixa);if(v==null)return;const n=parseInt(v);if(!n||n<=0)return;EST.es.caixa=n;tela('envase')}
+async function confEnvaseSimples(){
+  if(precisaOperador())return;
+  const p=EST.cache.pa.find(x=>x.id===EST.es.paId);if(!p)return;
+  const n=EST.es.potes;if(!n||n<=0)return msg('Conte pelo menos 1 pote',true);
+  const mix=p.produto_id?EST.cache.mistura[p.produto_id]:null;
+  const baldeAuto=p.produto_id?EST.cache.balde.find(b=>b.produto_id===p.produto_id&&Number(b.quantidade_kg)>0):null;
+  const baldeId=EST.es.baldeId||(baldeAuto&&!EST.es.forcarBalde?baldeAuto.produto_id:null);
+  if(!mix&&!baldeId)return msg('Escolha o balde',true);
+  const lote=loteSugestao(1);
+  const {error}=await sb.rpc('envasar',{p_produto:mix?null:baldeId,p_pa:p.id,p_potes:n,p_responsavel:EST.operador,p_lote:lote});
+  if(error)return msg(error.message,true);
+  msg('✅ '+n+' potes de '+p.nome+' envasados — lote '+lote);
+  EST.es={paId:null,baldeId:null,potes:0,caixa:EST.es.caixa,forcarBalde:false};
+  tela('envase');
+}
+async function tEnvaseAvancado(){
   const [balde,pa,rec,prods]=await Promise.all([
     sb.from('estoque_balde').select('produto_id,quantidade_kg,produtos(nome)'),
     sb.from('produto_acabado').select('id,nome,linha,peso_pote_kg,saldo_potes,produto_id').eq('ativo',true).order('linha').order('nome'),
@@ -1007,8 +1098,9 @@ async function tEnvase(){
   EST.cache.saldoBalde=Object.fromEntries(EST.cache.balde.map(b=>[b.produto_id,Number(b.quantidade_kg)]));
   const comSaldo=EST.cache.balde.filter(b=>Number(b.quantidade_kg)>0);
   document.getElementById('app').innerHTML=`
-  ${trilha('Envase')}${topo('Envasar','do balde para os potes')}
+  ${trilha('Envase')}${topo('Envasar (avançado)','do balde para os potes')}
   <main>
+    <button class="btnSec" onclick="tela('envase')" style="margin-bottom:4px">← modo simples</button>
     <div class="card">
       <label style="margin-top:0">① Para qual produto?</label>
       <select id="ePa" onchange="ePeso();eResumo()">${EST.cache.pa.map(p=>`<option value="${p.id}">${p.linha?p.linha+' · ':''}${p.nome}</option>`).join('')}</select>
