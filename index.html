@@ -251,7 +251,7 @@ async function login(){
 }
 
 /* ================= NAVEGAÇÃO ================= */
-const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote};
+const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,baixa:tBaixa};
 function tela(n,arg){TELAS[n](arg)}
 
 /* ================= INÍCIO ================= */
@@ -270,7 +270,8 @@ async function tInicio(){
       <button onclick="tela('mrp')"><span class="ico" style="background:#FBEAEA">🛒</span><span><b>Compras / MRP</b><small>O que comprar, quanto e até quando</small></span></button>
       <button onclick="tela('vendas')"><span class="ico" style="background:#EAF3EA">🛍️</span><span><b>Vendas / Despacho</b><small>Demanda dos marketplaces — o que envasar</small></span></button>
       <button onclick="tela('receber')"><span class="ico" style="background:#E7F0E4">📦</span><span><b>Receber mercadoria</b><small>Confirmar chegada das compras</small></span></button>
-      <button onclick="tela('envase')"><span class="ico" style="background:#EAE4F2">🫙</span><span><b>Envasar</b><small>Do balde para os potes</small></span></button>
+      <button onclick="tela('envase')"><span class="ico" style="background:#EAE4F2">🫙</span><span><b>Entrada no estoque</b><small>Envasou? Aqui sobe pro estoque de potes</small></span></button>
+      <button onclick="tela('baixa')"><span class="ico" style="background:#FBEAEA">📤</span><span><b>Produtos separados</b><small>Separou pedido? Desconte do estoque aqui</small></span></button>
       <button onclick="tela('estoque')"><span class="ico" style="background:#E4EDF2">📋</span><span><b>Conferir estoque</b><small>Matéria-prima, balde e potes</small></span></button>
       <button onclick="tela('metas')"><span class="ico" style="background:#F6ECD6">🎯</span><span><b>Metas do dia</b><small>Definir o quadro (PIN do gestor)</small></span></button>
       <button onclick="tela('tv')"><span class="ico" style="background:#33200F;color:#fff">📺</span><span><b>Modo TV</b><small>Quadro do dia em tela cheia</small></span></button>
@@ -988,6 +989,62 @@ async function confPesagem(progId){
 }
 
 /* ================= ENVASE ================= */
+async function tBaixa(){
+  if(!EST.bx)EST.bx={paId:null,potes:0,caixa:28};
+  const {data:pa}=await sb.from('produto_acabado').select('id,nome,linha,saldo_potes').eq('ativo',true).gt('saldo_potes',0).order('linha').order('nome');
+  EST.cache.paBaixa=pa||[];
+  const p=EST.cache.paBaixa.find(x=>x.id===EST.bx.paId);
+  let corpo;
+  if(!p){
+    const porLinha={};EST.cache.paBaixa.forEach(x=>{(porLinha[x.linha||'Outros']=porLinha[x.linha||'Outros']||[]).push(x)});
+    corpo=`<div class="card" style="margin-top:0"><b style="font-size:17px">① De qual produto você separou/despachou?</b><small style="color:#7A6A57;display:block;margin-top:4px">só aparecem produtos com saldo em estoque</small></div>`+
+      (EST.cache.paBaixa.length?Object.entries(porLinha).map(([linha,items])=>`
+      <div class="card"><small style="color:#7A6A57;font-weight:700">${linha}</small><div class="chips" style="margin-top:8px">
+        ${items.map(x=>`<button onclick="bxEscolheProduto('${x.id}')">${x.nome} <small>(${fmt(x.saldo_potes,0)})</small></button>`).join('')}
+      </div></div>`).join(''):'<div class="card"><div class="center">Nenhum produto com saldo em estoque agora.</div></div>');
+  }else{
+    corpo=`<div class="card" style="text-align:center;margin-top:0">
+      <p style="color:#7A6A57;margin:0">Produto</p><b style="font-size:20px">${p.nome}</b>
+      <p style="color:#7A6A57;margin:10px 0 0">Em estoque agora</p><b class="mono">${fmt(p.saldo_potes,0)} potes</b>
+      <div style="font-size:60px;font-weight:900;margin:18px 0 2px;color:var(--morango);line-height:1">${EST.bx.potes||0}</div>
+      <p style="color:#7A6A57;margin:0 0 16px">potes separados pra tirar do estoque</p>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <button class="btnP" style="min-height:64px;font-size:19px;padding:0 22px;background:var(--morango);border-color:var(--morango)" onclick="bxAdd(${EST.bx.caixa})">📦 +1 caixa (${EST.bx.caixa})</button>
+        <button class="btnSec" style="min-height:64px;font-size:19px;padding:0 20px" onclick="bxAdd(1)">+1 pote</button>
+      </div>
+      <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;align-items:center">
+        <button class="btnSec" style="min-width:52px;min-height:48px" onclick="bxAdd(-1)">−1</button>
+        <input id="bxManual" class="campoG" style="max-width:110px;text-align:center" inputmode="numeric" value="${EST.bx.potes||0}" onchange="bxSetPotes(this.value)">
+        <button class="btnSec" style="min-width:64px;min-height:48px" onclick="bxZerar()">zerar</button>
+      </div>
+      ${EST.bx.potes>p.saldo_potes?`<p style="color:var(--morango);font-size:13px;margin-top:10px">⚠️ Isso é mais do que tem em estoque (${fmt(p.saldo_potes,0)}). Confere a contagem antes de confirmar.</p>`:''}
+      <p style="margin-top:14px"><a href="#" onclick="bxMudarCaixa();return false" style="color:#7A6A57;font-size:12.5px">caixa tem ${EST.bx.caixa} potes · toque pra mudar</a></p>
+      <button class="btnP" style="margin-top:16px;min-height:56px;font-size:18px;width:100%;background:var(--morango);border-color:var(--morango)" ${!(EST.bx.potes>0)?'disabled':''} onclick="confBaixa()">📤 Confirmar baixa</button>
+    </div>`;
+  }
+  document.getElementById('app').innerHTML=`
+  ${trilha('Baixa')}${topo('Produtos separados','tirou do estoque pra separar/despachar? anote aqui')}
+  <main>
+    ${p?`<button class="btnSec" onclick="bxVoltar()">← trocar produto</button>`:''}
+    ${corpo}
+  </main>`;
+}
+function bxEscolheProduto(id){EST.bx={paId:id,potes:0,caixa:EST.bx.caixa||28};tela('baixa')}
+function bxVoltar(){EST.bx={paId:null,potes:0,caixa:EST.bx?.caixa||28};tela('baixa')}
+function bxAdd(n){EST.bx.potes=Math.max(0,(EST.bx.potes||0)+n);tela('baixa')}
+function bxSetPotes(v){EST.bx.potes=Math.max(0,parseInt(v)||0);tela('baixa')}
+function bxZerar(){EST.bx.potes=0;tela('baixa')}
+function bxMudarCaixa(){const v=prompt('Quantos potes cabem numa caixa?',EST.bx.caixa);if(v==null)return;const n=parseInt(v);if(!n||n<=0)return;EST.bx.caixa=n;tela('baixa')}
+async function confBaixa(){
+  if(precisaOperador())return;
+  const p=EST.cache.paBaixa.find(x=>x.id===EST.bx.paId);if(!p)return;
+  const n=EST.bx.potes;if(!n||n<=0)return msg('Conte pelo menos 1 pote',true);
+  const {error}=await sb.rpc('baixa_despacho',{p_pa:p.id,p_potes:n,p_responsavel:EST.operador});
+  if(error)return msg(error.message,true);
+  msg('✅ Baixa de '+n+' potes de '+p.nome+' registrada');
+  EST.bx={paId:null,potes:0,caixa:EST.bx.caixa};
+  tela('baixa');
+}
 async function tEnvase(){
   if(!EST.es)EST.es={paId:null,baldeId:null,potes:0,caixa:28,forcarBalde:false};
   const [balde,pa,rec,prods]=await Promise.all([
@@ -1047,7 +1104,7 @@ async function tEnvase(){
     }
   }
   document.getElementById('app').innerHTML=`
-  ${trilha('Envase')}${topo('Envasar','toque e conte as caixas')}
+  ${trilha('Envase')}${topo('Entrada no estoque','toque e conte as caixas')}
   <main>
     <div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
       ${p?`<button class="btnSec" onclick="esVoltar()">← trocar produto</button>`:'<span></span>'}
@@ -1098,7 +1155,7 @@ async function tEnvaseAvancado(){
   EST.cache.saldoBalde=Object.fromEntries(EST.cache.balde.map(b=>[b.produto_id,Number(b.quantidade_kg)]));
   const comSaldo=EST.cache.balde.filter(b=>Number(b.quantidade_kg)>0);
   document.getElementById('app').innerHTML=`
-  ${trilha('Envase')}${topo('Envasar (avançado)','do balde para os potes')}
+  ${trilha('Envase')}${topo('Entrada no estoque (avançado)','do balde para os potes')}
   <main>
     <button class="btnSec" onclick="tela('envase')" style="margin-bottom:4px">← modo simples</button>
     <div class="card">
