@@ -177,6 +177,10 @@ body{overflow-x:hidden}
   .chips button{font-size:17px;min-height:52px}
   .calday{width:190px}
   .calweek-t>b{font-size:17px}
+  .mv-layout{display:grid;grid-template-columns:260px 1fr;gap:16px;align-items:start}
+  .mv-layout .card{padding:14px}
+  .mv-layout .chips button{font-size:13px;min-height:auto;padding:7px 14px}
+  .mv-grupos{display:grid;grid-template-columns:1fr 1fr;gap:10px;max-height:60vh;overflow-y:auto;padding-right:6px}
 }
 @media (min-width:1200px){
   .app{max-width:1040px}
@@ -1100,9 +1104,9 @@ async function tMovimento(){
     if(EST.mv.material==='pote'){
       const porLinha={};lista.forEach(x=>{(porLinha[x.linha||'Outros']=porLinha[x.linha||'Outros']||[]).push(x)});
       corpo=`<div class="card" style="margin-top:0"><span class="step-label">toca no produto</span></div>`+
-        (lista.length?Object.entries(porLinha).map(([linha,items])=>`<div class="card"><small style="color:#7A6A57;font-weight:700">${linha}</small><div class="chips" style="margin-top:8px">
+        (lista.length?`<div class="mv-grupos">`+Object.entries(porLinha).map(([linha,items])=>`<div class="card"><small style="color:#7A6A57;font-weight:700">${linha}</small><div class="chips" style="margin-top:8px">
         ${items.map(x=>`<button style="min-height:auto;padding:7px 14px;font-size:13px" onclick="mvEscolhe('${x.id}')">${x.nome}${x.extra?' <small>('+x.extra+')</small>':''}</button>`).join('')}
-        </div></div>`).join(''):'<div class="card"><div class="center">Nada disponível.</div></div>');
+        </div></div>`).join('')+`</div>`:'<div class="card"><div class="center">Nada disponível.</div></div>');
     }else{
       corpo=`<div class="card" style="margin-top:0"><span class="step-label">toca no produto</span><div class="chips">
         ${lista.length?lista.map(x=>`<button style="min-height:auto;padding:7px 14px;font-size:13px" onclick="mvEscolhe('${x.id}')">${x.nome}${x.extra?' <small>('+x.extra+')</small>':''}</button>`).join(''):'<p style="color:var(--morango)">Nada disponível.</p>'}
@@ -1133,14 +1137,18 @@ async function tMovimento(){
   document.getElementById('app').innerHTML=`
   ${trilha('')}${topo('Entrada / Saída de Estoque','escolha o material e a direção')}
   <main>
-    <div class="card" style="margin-top:0">
-      <span class="step-label">material</span>
-      <div class="chips">${chipM('balde','🪣 Balde')}${chipM('mp','🌰 Matéria-prima')}${chipM('pote','🫙 Pote')}</div>
-      <span class="step-label" style="margin-top:14px">direção</span>
-      <div class="chips">${chipD('entrada','⬆️ Entrada')}${chipD('saida','⬇️ Saída')}</div>
+    <div class="mv-layout">
+      <div class="card" style="margin-top:0">
+        <span class="step-label">material</span>
+        <div class="chips">${chipM('balde','🪣 Balde')}${chipM('mp','🌰 Matéria-prima')}${chipM('pote','🫙 Pote')}</div>
+        <span class="step-label" style="margin-top:14px">direção</span>
+        <div class="chips">${chipD('entrada','⬆️ Entrada')}${chipD('saida','⬇️ Saída')}</div>
+      </div>
+      <div>
+        ${p?`<button class="btnSec" onclick="mvVoltar()">← trocar produto</button>`:''}
+        ${corpo}
+      </div>
     </div>
-    ${p?`<button class="btnSec" onclick="mvVoltar()">← trocar produto</button>`:''}
-    ${corpo}
   </main>`;
 }
 function mvSetMaterial(m){EST.mv.material=m;EST.mv.prodId=null;EST.mv.valor=0;tela('movimento')}
