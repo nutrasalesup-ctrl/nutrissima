@@ -25,7 +25,7 @@ main{padding:4px 16px}
 .chips{display:flex;gap:8px;flex-wrap:wrap}
 .step-label{font-size:11px;font-weight:800;color:#7A6A57;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:8px}
 .chips button{padding:12px 18px;border-radius:99px;border:1.5px solid var(--linha);background:#fff;font-size:16px;font-weight:700;cursor:pointer;min-height:48px}
-.chips button.sel{background:var(--cacau);color:#fff;border-color:var(--cacau)}
+.chips button.sel{background:#E9DCC8;color:var(--cacau);border-color:#C9AF8C;font-weight:900}
 .acoes{display:grid;gap:12px;margin-top:8px}
 .acoes button{display:flex;align-items:center;gap:14px;padding:18px;border-radius:var(--raio);border:1.5px solid var(--linha);background:#fff;cursor:pointer;text-align:left;min-height:72px;font-family:inherit}
 .acoes .ico{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;font-size:22px;flex:none}
@@ -1047,11 +1047,11 @@ async function confBaixa(){
   tela('baixa');
 }
 const MV_CONF={
-  balde_entrada:{titulo:'Entrada de balde',unidade:'kg',rpc:'entrada_balde',paramId:'p_produto_id',paramQtd:'p_kg',decimal:true,cor:'var(--cacau)'},
+  balde_entrada:{titulo:'Entrada de balde',unidade:'kg',rpc:'entrada_balde',paramId:'p_produto_id',paramQtd:'p_kg',decimal:true,cor:'var(--pistache)'},
   balde_saida:{titulo:'Baixa de balde',unidade:'kg',rpc:'baixa_balde',paramId:'p_produto_id',paramQtd:'p_kg',decimal:true,cor:'var(--morango)'},
-  mp_entrada:{titulo:'Entrada de matéria-prima',unidade:'',rpc:'entrada_item',paramId:'p_item',paramQtd:'p_qtd',decimal:true,cor:'var(--cacau)'},
+  mp_entrada:{titulo:'Entrada de matéria-prima',unidade:'',rpc:'entrada_item',paramId:'p_item',paramQtd:'p_qtd',decimal:true,cor:'var(--pistache)'},
   mp_saida:{titulo:'Baixa de matéria-prima',unidade:'',rpc:'baixa_item',paramId:'p_item',paramQtd:'p_qtd',decimal:true,cor:'var(--morango)'},
-  pote_entrada:{titulo:'Entrada no estoque',unidade:'potes',rpc:'entrada_potes',paramId:'p_pa',paramQtd:'p_potes',decimal:false,cor:'var(--cacau)'},
+  pote_entrada:{titulo:'Entrada no estoque',unidade:'potes',rpc:'entrada_potes',paramId:'p_pa',paramQtd:'p_potes',decimal:false,cor:'var(--pistache)'},
   pote_saida:{titulo:'Baixa de potes (separação)',unidade:'potes',rpc:'baixa_despacho',paramId:'p_pa',paramQtd:'p_potes',decimal:false,cor:'var(--morango)'}
 };
 async function tMovimento(){
