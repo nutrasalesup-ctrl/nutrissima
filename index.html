@@ -23,6 +23,7 @@ main{padding:4px 16px}
 .card{background:#fff;border:1.5px solid var(--linha);border-radius:var(--raio);padding:16px;margin-bottom:12px}
 .pergunta{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#8A7A64;margin:12px 0 8px}
 .chips{display:flex;gap:8px;flex-wrap:wrap}
+.step-label{font-size:11px;font-weight:800;color:#7A6A57;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:8px}
 .chips button{padding:12px 18px;border-radius:99px;border:1.5px solid var(--linha);background:#fff;font-size:16px;font-weight:700;cursor:pointer;min-height:48px}
 .chips button.sel{background:var(--cacau);color:#fff;border-color:var(--cacau)}
 .acoes{display:grid;gap:12px;margin-top:8px}
@@ -997,17 +998,18 @@ async function tBaixa(){
   let corpo;
   if(!p){
     const porLinha={};EST.cache.paBaixa.forEach(x=>{(porLinha[x.linha||'Outros']=porLinha[x.linha||'Outros']||[]).push(x)});
-    corpo=`<div class="card" style="margin-top:0"><b style="font-size:17px">① De qual produto você separou/despachou?</b><small style="color:#7A6A57;display:block;margin-top:4px">só aparecem produtos com saldo em estoque</small></div>`+
+    corpo=`<div class="card" style="margin-top:0"><span class="step-label">① toca no produto que você separou</span><small style="color:#7A6A57">só aparecem produtos com saldo em estoque</small></div>`+
       (EST.cache.paBaixa.length?Object.entries(porLinha).map(([linha,items])=>`
       <div class="card"><small style="color:#7A6A57;font-weight:700">${linha}</small><div class="chips" style="margin-top:8px">
         ${items.map(x=>`<button onclick="bxEscolheProduto('${x.id}')">${x.nome} <small>(${fmt(x.saldo_potes,0)})</small></button>`).join('')}
       </div></div>`).join(''):'<div class="card"><div class="center">Nenhum produto com saldo em estoque agora.</div></div>');
   }else{
     corpo=`<div class="card" style="text-align:center;margin-top:0">
-      <p style="color:#7A6A57;margin:0">Produto</p><b style="font-size:20px">${p.nome}</b>
-      <p style="color:#7A6A57;margin:10px 0 0">Em estoque agora</p><b class="mono">${fmt(p.saldo_potes,0)} potes</b>
-      <div style="font-size:60px;font-weight:900;margin:18px 0 2px;color:var(--morango);line-height:1">${EST.bx.potes||0}</div>
-      <p style="color:#7A6A57;margin:0 0 16px">potes separados pra tirar do estoque</p>
+      <span class="step-label" style="margin-bottom:2px">produto</span><b style="font-size:20px">${p.nome}</b>
+      <p style="color:#7A6A57;margin:10px 0 0;font-size:12.5px">em estoque agora</p><b class="mono">${fmt(p.saldo_potes,0)} potes</b>
+      <span class="step-label" style="margin:18px 0 2px">② conte em unidades (a caixa é só um atalho)</span>
+      <div style="font-size:60px;font-weight:900;margin:2px 0 2px;color:var(--morango);line-height:1">${EST.bx.potes||0}</div>
+      <p style="color:#7A6A57;margin:0 0 16px;font-size:12.5px">potes separados pra tirar do estoque</p>
       <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
         <button class="btnP" style="min-height:64px;font-size:19px;padding:0 22px;background:var(--morango);border-color:var(--morango)" onclick="bxAdd(${EST.bx.caixa})">📦 +1 caixa (${EST.bx.caixa})</button>
         <button class="btnSec" style="min-height:64px;font-size:19px;padding:0 20px" onclick="bxAdd(1)">+1 pote</button>
@@ -1065,7 +1067,7 @@ async function tEnvase(){
   let corpo;
   if(!p){
     const porLinha={};EST.cache.pa.forEach(x=>{(porLinha[x.linha||'Outros']=porLinha[x.linha||'Outros']||[]).push(x)});
-    corpo=`<div class="card" style="margin-top:0"><b style="font-size:17px">① Qual produto você está envasando?</b></div>`+
+    corpo=`<div class="card" style="margin-top:0"><span class="step-label">① toca no produto</span></div>`+
       Object.entries(porLinha).map(([linha,items])=>`
       <div class="card"><small style="color:#7A6A57;font-weight:700">${linha}</small><div class="chips" style="margin-top:8px">
         ${items.map(x=>`<button onclick="esEscolheProduto('${x.id}')">${x.nome}</button>`).join('')}
@@ -1079,16 +1081,17 @@ async function tEnvase(){
     const baldeId=EST.es.baldeId||(baldeAuto&&!EST.es.forcarBalde?baldeAuto.produto_id:null);
     if(precisaBalde&&!baldeId){
       const comSaldo=EST.cache.balde.filter(b=>Number(b.quantidade_kg)>0);
-      corpo=`<div class="card" style="margin-top:0"><b style="font-size:17px">② Qual balde vai usar pra ${p.nome}?</b><div class="chips" style="margin-top:10px">
+      corpo=`<div class="card" style="margin-top:0"><span class="step-label">② toca no balde (pra ${p.nome})</span><div class="chips">
         ${comSaldo.length?comSaldo.map(b=>`<button onclick="esEscolheBalde('${b.produto_id}')">${b.produtos.nome} <small>(${fmt(b.quantidade_kg)} kg)</small></button>`).join(''):'<p style="color:var(--morango)">Nenhum balde com saldo — avise o escritório.</p>'}
       </div></div>`;
     }else{
       const nomeBalde=baldeId?EST.cache.balde.find(b=>b.produto_id===baldeId)?.produtos.nome:null;
       corpo=`<div class="card" style="text-align:center;margin-top:0">
-        <p style="color:#7A6A57;margin:0">Produto</p><b style="font-size:20px">${p.nome}</b>
-        ${nomeBalde?`<p style="color:#7A6A57;margin:12px 0 0">Balde usado</p><b>${nomeBalde}</b> <button class="btnSec" style="padding:4px 10px;min-height:auto;font-size:12px;margin-left:4px" onclick="esTrocarBalde()">trocar</button>`:''}
-        <div style="font-size:60px;font-weight:900;margin:18px 0 2px;color:var(--cacau);line-height:1">${EST.es.potes||0}</div>
-        <p style="color:#7A6A57;margin:0 0 16px">potes contados até agora</p>
+        <span class="step-label" style="margin-bottom:2px">produto</span><b style="font-size:20px">${p.nome}</b>
+        ${nomeBalde?`<p style="color:#7A6A57;margin:12px 0 0;font-size:12.5px">balde usado</p><b>${nomeBalde}</b> <button class="btnSec" style="padding:4px 10px;min-height:auto;font-size:12px;margin-left:4px" onclick="esTrocarBalde()">trocar</button>`:''}
+        <span class="step-label" style="margin:18px 0 2px">③ conte em unidades (a caixa é só um atalho)</span>
+        <div style="font-size:60px;font-weight:900;margin:2px 0 2px;color:var(--cacau);line-height:1">${EST.es.potes||0}</div>
+        <p style="color:#7A6A57;margin:0 0 16px;font-size:12.5px">potes contados até agora</p>
         <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
           <button class="btnP" style="min-height:64px;font-size:19px;padding:0 22px" onclick="esAdd(${EST.es.caixa})">📦 +1 caixa (${EST.es.caixa})</button>
           <button class="btnSec" style="min-height:64px;font-size:19px;padding:0 20px" onclick="esAdd(1)">+1 pote</button>
