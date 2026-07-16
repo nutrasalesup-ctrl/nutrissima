@@ -1060,11 +1060,11 @@ async function tMovimento(){
   let lista=[];
   if(EST.mv.material==='balde'){
     const {data}=await sb.from('produtos').select('id,nome').eq('estocavel_balde',true).order('nome');
-    if(EST.mv.dir==='entrada'){lista=(data||[]).map(p=>({id:p.id,nome:p.nome,extra:''}));}
+    const {data:ebAll}=await sb.from('estoque_balde').select('produto_id,quantidade_kg');
+    const smAll=Object.fromEntries((ebAll||[]).map(b=>[b.produto_id,Number(b.quantidade_kg)]));
+    if(EST.mv.dir==='entrada'){lista=(data||[]).map(p=>({id:p.id,nome:p.nome,extra:'',saldoAtual:smAll[p.id]||0,saldoUnidade:'kg'}));}
     else{
-      const {data:eb}=await sb.from('estoque_balde').select('produto_id,quantidade_kg').gt('quantidade_kg',0);
-      const sm=Object.fromEntries((eb||[]).map(b=>[b.produto_id,b.quantidade_kg]));
-      lista=(data||[]).filter(p=>sm[p.id]).map(p=>({id:p.id,nome:p.nome,extra:fmt(sm[p.id])+' kg',mix:false}));
+      lista=(data||[]).filter(p=>smAll[p.id]).map(p=>({id:p.id,nome:p.nome,extra:fmt(smAll[p.id])+' kg',mix:false,saldoAtual:smAll[p.id],saldoUnidade:'kg'}));
       const [{data:prods},{data:receitas}]=await Promise.all([
         sb.from('produtos').select('id,nome,estocavel_balde'),
         sb.from('receita_itens').select('produto_id,componente_produto_id,qtd_por_100kg').eq('componente_tipo','produto')
@@ -1076,19 +1076,19 @@ async function tMovimento(){
     }
   }else if(EST.mv.material==='mp'){
     if(EST.mv.dir==='entrada'){
-      const {data}=await sb.from('itens').select('id,nome,unidade').order('nome');
-      lista=(data||[]).map(i=>({id:i.id,nome:i.nome,extra:i.unidade||''}));
+      const {data}=await sb.from('itens').select('id,nome,unidade,saldo_atual').order('nome');
+      lista=(data||[]).map(i=>({id:i.id,nome:i.nome,extra:i.unidade||'',saldoAtual:Number(i.saldo_atual)||0,saldoUnidade:i.unidade||''}));
     }else{
       const {data}=await sb.from('itens').select('id,nome,unidade,saldo_atual').gt('saldo_atual',0).order('nome');
-      lista=(data||[]).map(i=>({id:i.id,nome:i.nome,extra:fmt(i.saldo_atual)+' '+(i.unidade||'')}));
+      lista=(data||[]).map(i=>({id:i.id,nome:i.nome,extra:fmt(i.saldo_atual)+' '+(i.unidade||''),saldoAtual:Number(i.saldo_atual),saldoUnidade:i.unidade||''}));
     }
   }else{
     if(EST.mv.dir==='entrada'){
-      const {data}=await sb.from('produto_acabado').select('id,nome,linha').eq('ativo',true).order('linha').order('nome');
-      lista=(data||[]).map(p=>({id:p.id,nome:p.nome,linha:p.linha,extra:''}));
+      const {data}=await sb.from('produto_acabado').select('id,nome,linha,saldo_potes').eq('ativo',true).order('linha').order('nome');
+      lista=(data||[]).map(p=>({id:p.id,nome:p.nome,linha:p.linha,extra:'',saldoAtual:Number(p.saldo_potes)||0,saldoUnidade:'potes'}));
     }else{
       const {data}=await sb.from('produto_acabado').select('id,nome,linha,saldo_potes').eq('ativo',true).gt('saldo_potes',0).order('linha').order('nome');
-      lista=(data||[]).map(p=>({id:p.id,nome:p.nome,linha:p.linha,extra:fmt(p.saldo_potes,0)}));
+      lista=(data||[]).map(p=>({id:p.id,nome:p.nome,linha:p.linha,extra:fmt(p.saldo_potes,0),saldoAtual:Number(p.saldo_potes),saldoUnidade:'potes'}));
     }
   }
   EST.cache.mvLista=lista;
@@ -1113,6 +1113,7 @@ async function tMovimento(){
     const passoLabel=conf.decimal?`+${passo} kg`:`📦 +1 caixa (${passo})`;
     corpo=`<div class="card" style="text-align:center;margin-top:0">
       <span class="step-label">produto</span><b style="font-size:20px">${p.nome}</b>
+      ${p.mix?'':`<p style="color:#7A6A57;margin:10px 0 0;font-size:12.5px">em estoque agora</p><b class="mono">${fmt(p.saldoAtual||0,conf.decimal?1:0)} ${p.saldoUnidade||''}</b>`}
       <span class="step-label" style="margin-top:18px">conte ${conf.decimal?'em kg':'em unidades'}</span>
       <div style="font-size:60px;font-weight:900;margin:2px 0 2px;color:${conf.cor};line-height:1">${fmt(EST.mv.valor||0,conf.decimal?1:0)}</div>
       <p style="color:#7A6A57;margin:0 0 16px;font-size:12.5px">${conf.unidade}</p>
