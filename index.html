@@ -432,6 +432,7 @@ async function tReceber(sel){
     <div class="card"><b style="font-size:19px">${c.itens.nome}</b><p style="color:#7A6A57;font-size:14.5px">${c.fornecedor_nome||''} · pedido: ${fmt(c.quantidade_solicitada)} ${c.itens.unidade}</p></div>
     <div class="card"><label>1 · Quanto chegou? (${c.itens.unidade})</label>
       <input class="campoG" id="rQtd" inputmode="decimal" value="${c.quantidade_solicitada}">
+      <p style="font-size:13.5px;color:#7A6A57;margin:6px 2px 2px">Se chegou menos que o pedido, o app pergunta se o saldo continua pendente com o fornecedor.</p>
       <label>2 · Lote do fornecedor (opcional)</label>
       <input id="rLote" class="mono" placeholder="ex.: USI-260713-A">
       <button class="btnP" onclick="confReceber('${c.id}')">Confirmar entrada no estoque</button>
@@ -440,9 +441,23 @@ async function tReceber(sel){
 }
 async function confReceber(id){
   if(precisaOperador())return;
+  const c=(EST.cache.compras||[]).find(x=>x.id===id); if(!c)return msg('Pedido não encontrado',true);
+  const un=(c.itens&&c.itens.unidade)||'';
   const q=Number(document.getElementById('rQtd').value.replace(',','.'));
   if(!q||q<=0)return msg('Informe a quantidade',true);
-  const {error}=await sb.rpc('confirmar_recebimento',{p_compra:id,p_qtd:q,p_lote:document.getElementById('rLote').value.trim()||null,p_responsavel:EST.operador});
+  const lote=document.getElementById('rLote').value.trim()||null;
+  const ped=Number(c.quantidade_solicitada)||0, falta=Math.round((ped-q)*1000)/1000;
+  if(falta>0){
+    if(confirm('Chegou '+fmt(q)+' de '+fmt(ped)+' '+un+' — faltam '+fmt(falta)+' '+un+'.\n\nOK = entrega parcial: o saldo continua pendente com o fornecedor e o MRP conta ele como "a caminho".\nCancelar = fecha o pedido só com o que chegou (o resto volta a ser compra nova).')){
+      const dt=prompt('Quando chega o saldo de '+fmt(falta)+' '+un+'?\n(AAAA-MM-DD — deixe vazio se o fornecedor não deu data)',c.data_prevista_entrega||new Date(Date.now()+7*864e5).toISOString().slice(0,10));
+      if(dt==null)return;
+      const v=dt.trim(); if(v&&!/^\d{4}-\d{2}-\d{2}$/.test(v))return msg('Data inválida — use AAAA-MM-DD',true);
+      const {error}=await sb.rpc('confirmar_recebimento_parcial',{p_compra:id,p_qtd:q,p_lote:lote,p_responsavel:EST.operador,p_data_saldo:v||null});
+      if(error)return msg(error.message,true);
+      msg('✅ Entrou '+fmt(q)+' — saldo de '+fmt(falta)+' '+un+' segue pendente');tela('receber');return;
+    }
+  }
+  const {error}=await sb.rpc('confirmar_recebimento',{p_compra:id,p_qtd:q,p_lote:lote,p_responsavel:EST.operador});
   if(error)return msg(error.message,true);
   msg('✅ Entrou no estoque — '+fmt(q));tela('receber');
 }
