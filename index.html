@@ -67,7 +67,7 @@ label{display:block;font-size:13px;font-weight:700;color:#7A6A57;margin:12px 0 5
 .mo.m1{background:#F3EAD8;color:#7A5A14}.mo.m2{background:#E4EDF2;color:#2B5A78}
 .center{text-align:center;color:#8A7A64;padding:30px 10px;font-size:15px}
 /* Modo TV — cartaz */
-.tv{background:radial-gradient(1200px 600px at 20% -10%,#4A2E15,#1C0F06 60%);color:#FFFDF9;min-height:100vh;padding:22px 28px;max-width:none}
+.tv{background:radial-gradient(1200px 600px at 20% -10%,#2E4250,#141C22 60%);color:#FFFDF9;min-height:100vh;padding:22px 28px;max-width:none}
 .tv h1{font-size:38px;font-weight:900;letter-spacing:-.01em}
 .tv .relogio{font-size:40px;font-variant-numeric:tabular-nums;font-weight:900;color:#FFD84D;text-shadow:0 0 18px #FFD84D55}
 .tv .recado{background:linear-gradient(90deg,#FFD84D,#FFB93B);color:#3A2400;border-radius:16px;padding:16px 22px;font-size:28px;font-weight:900;margin:16px 0;box-shadow:0 6px 24px #FFB93B44;animation:flutua 3s ease-in-out infinite}
@@ -75,17 +75,12 @@ label{display:block;font-size:13px;font-weight:700;color:#7A6A57;margin:12px 0 5
 .tv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;margin-top:16px}
 .tv-col{background:#00000038;border-radius:22px;padding:0 0 14px;overflow:hidden;border:1px solid #ffffff14}
 .tv-col h2{font-size:24px;letter-spacing:.1em;text-transform:uppercase;font-weight:900;padding:14px 18px;margin-bottom:12px;color:#1C0F06}
-.tv-col.a-pesagem h2{background:linear-gradient(90deg,#FFB93B,#FF8A3B)}
-.tv-col.a-refino h2{background:linear-gradient(90deg,#4FC3F7,#2E86DE);color:#fff}
-.tv-col.a-envase h2{background:linear-gradient(90deg,#7ED957,#3E9B4F);color:#fff}
 .tv-item{margin:0 16px 20px;background:#ffffff0a;border-radius:16px;padding:14px 16px;border:2px solid transparent}
 .tv-item .nome{font-size:23px;font-weight:900}
 .tv-item .pct{font-size:56px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums;color:#FFD84D}
 .tv-item .nums{font-size:20px;font-weight:800;color:#E8DECF;font-variant-numeric:tabular-nums}
 .tv-bar{height:26px;background:#00000055;border-radius:99px;overflow:hidden;margin-top:10px;border:1px solid #ffffff22}
 .tv-bar i{display:block;height:100%;border-radius:99px;transition:width 1.2s ease;background:repeating-linear-gradient(45deg,#FFB93B,#FFB93B 14px,#FFCE6B 14px,#FFCE6B 28px);background-size:200% 100%;animation:anda 1.6s linear infinite}
-.a-refino .tv-bar i{background:repeating-linear-gradient(45deg,#2E86DE,#2E86DE 14px,#4FC3F7 14px,#4FC3F7 28px)}
-.a-envase .tv-bar i{background:repeating-linear-gradient(45deg,#3E9B4F,#3E9B4F 14px,#7ED957 14px,#7ED957 28px)}
 @keyframes anda{to{background-position:56px 0}}
 .tv-item.feito{border-color:#7ED957;box-shadow:0 0 28px #7ED95744,inset 0 0 22px #7ED95722;animation:comemora .7s ease}
 .tv-item.feito .pct{color:#7ED957;text-shadow:0 0 18px #7ED95788}
@@ -99,11 +94,11 @@ label{display:block;font-size:13px;font-weight:700;color:#7A6A57;margin:12px 0 5
 .tv-item.critico .pct{color:#FF7B7B}
 .tv-desp{background:#00000038;border-radius:22px;padding:18px 20px;margin-top:16px;border:1px solid #ffffff14}
 .tv-desp h2{font-size:24px;letter-spacing:.06em;text-transform:uppercase;font-weight:900;color:#FFD84D}
-.tv-desp .item-row{border-color:#5A4630;padding:10px 0;font-size:18px}
+.tv-desp .item-row{border-color:#ffffff1c;padding:10px 0;font-size:18px}
 @keyframes alerta{50%{border-color:#FF5A5A22;box-shadow:0 0 22px #FF5A5A33}}
 .tv .semmeta{color:#8A7A64;font-size:18px;padding:0 18px 8px}
-.tv-pause{display:block;margin:16px auto 0;padding:12px 26px;border-radius:999px;border:1.5px solid #ffffff33;background:#00000038;color:#C9B99F;font-size:15px;font-weight:800;cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:none;min-height:44px}
-.tv-pause.ativo{background:#FFD84D;color:#3A2400;border-color:#FFD84D;box-shadow:0 0 22px #FFD84D66}
+.tv-dash{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-top:16px;align-items:start}
+.tv-dash .wide{grid-column:1/-1}
 .calweek{display:flex;align-items:center;gap:8px;margin:6px 0 10px}
 .calweek>button{flex:none;min-width:52px;height:44px;border:1.5px solid var(--linha);background:#fff;border-radius:12px;font-size:20px;font-weight:900;cursor:pointer;color:var(--cacau);display:flex;align-items:center;justify-content:center;gap:4px}
 .calweek>button i{font-size:11px;font-style:normal;background:var(--mel);color:#fff;border-radius:99px;padding:1px 6px}
@@ -1731,83 +1726,50 @@ async function delMeta(id){
 async function tTV(){
   if(EST.tvTimer){clearInterval(EST.tvTimer);EST.tvTimer=null}
   if(EST.tvRelogio){clearInterval(EST.tvRelogio);EST.tvRelogio=null}
-  if(EST.tvPainelTimer){clearInterval(EST.tvPainelTimer);EST.tvPainelTimer=null}
-  EST.tvIdx=0;
   await tvRender();
-  EST.tvTimer=setInterval(()=>{if(document.getElementById('tvPainelAtual'))tvRender();else{clearInterval(EST.tvTimer);EST.tvTimer=null}},45000);
+  EST.tvTimer=setInterval(()=>{if(document.querySelector('.tv'))tvRender();else{clearInterval(EST.tvTimer);EST.tvTimer=null}},60000);
   EST.tvRelogio=setInterval(()=>{const r=document.getElementById('tvClock');if(r)r.textContent=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});else{clearInterval(EST.tvRelogio);EST.tvRelogio=null}},1000);
-  tvIniciaRotacao();
-}
-function tvIniciaRotacao(){
-  if(EST.tvPainelTimer){clearInterval(EST.tvPainelTimer);EST.tvPainelTimer=null}
-  EST.tvPainelTimer=setInterval(()=>{
-    const el=document.getElementById('tvPainelAtual');
-    if(!el||!EST.tvPaineis||EST.tvPaineis.length<2){if(!el){clearInterval(EST.tvPainelTimer);EST.tvPainelTimer=null}return}
-    EST.tvIdx=(EST.tvIdx+1)%EST.tvPaineis.length;
-    el.innerHTML=EST.tvPaineis[EST.tvIdx];
-    document.querySelectorAll('.tv-dots span').forEach((d,i)=>{d.style.width=i===EST.tvIdx?'18px':'6px';d.style.background=i===EST.tvIdx?'#F0DFA0':'#5A4630'});
-  },18000);
-}
-function tvPause(){
-  if(EST.tvPainelTimer){clearInterval(EST.tvPainelTimer);EST.tvPainelTimer=null}
-  const b=document.getElementById('tvPauseBtn');
-  if(b){b.textContent='⏸ pausado — solte pra continuar';b.classList.add('ativo')}
-}
-function tvResume(){
-  const b=document.getElementById('tvPauseBtn');
-  if(b){b.textContent='⏸ segure pra pausar';b.classList.remove('ativo')}
-  if(EST.tvPaineis&&EST.tvPaineis.length>1)tvIniciaRotacao();
 }
 async function tvRender(){
   const dia=hojeLocal();
-  const ini=new Date();ini.setHours(0,0,0,0);const iniISO=ini.toISOString();
-  const [metas,rec,envMov,refMov,pesag,tarefas,desp,itens,paTv,progFutura]=await Promise.all([
-    sb.from('metas_dia').select('*').eq('data',dia),
-    sb.from('quadro_recado').select('recado').eq('data',dia).maybeSingle(),
-    sb.from('produto_acabado_movimentos').select('produto_acabado_id,quantidade,lote').eq('tipo','entrada').gte('criado_em',iniISO),
-    sb.from('estoque_balde_movimentos').select('produto_id,quantidade_kg,lote').eq('tipo','entrada').gte('criado_em',iniISO),
-    sb.from('programacao_refino').select('produto_id,quantidade_kg,status').eq('data',dia).in('status',['pesado','mistura','refino','balde']),
+  const [tarefas,desp,itens,paTv,progFutura,mrp]=await Promise.all([
     sb.from('tarefas').select('*').eq('data',dia).order('criado_em'),
     sb.from('despachos_ecommerce').select('conteudo').eq('id',1).maybeSingle(),
     sb.from('itens').select('nome,saldo_atual,estoque_minimo,unidade'),
     sb.from('produto_acabado').select('nome,linha,saldo_potes,ativo').eq('ativo',true),
-    sb.from('programacao_refino').select('data,quantidade_kg,status,produtos(nome),equipamentos(nome)').gte('data',dia).order('data')
+    sb.from('programacao_refino').select('data,quantidade_kg,status,produtos(nome),equipamentos(nome)').gte('data',dia).order('data'),
+    sb.rpc('fn_mrp')
   ]);
-  const soma={};
-  (envMov.data||[]).filter(m=>m.lote!=='AJUSTE').forEach(m=>soma['envase'+m.produto_acabado_id]=(soma['envase'+m.produto_acabado_id]||0)+Number(m.quantidade));
-  (refMov.data||[]).filter(m=>m.lote!=='AJUSTE').forEach(m=>soma['refino'+m.produto_id]=(soma['refino'+m.produto_id]||0)+Number(m.quantidade_kg));
-  (pesag.data||[]).forEach(m=>soma['pesagem'+m.produto_id]=(soma['pesagem'+m.produto_id]||0)+Number(m.quantidade_kg));
-  const h=new Date().getHours()+new Date().getMinutes()/60;
-  const ritmo=Math.min(1,Math.max(0,(h-7)/10));
-  const areas=[['pesagem','⚖️ Pesagem'],['refino','🌀 Refino'],['envase','🫙 Envase']];
-  const col=a=>{
-    const L=(metas.data||[]).filter(m=>m.area===a);
-    if(!L.length)return '<div class="semmeta">— sem meta hoje —</div>';
-    return L.map(m=>{
-      const real=soma[a+m.ref_id]||0, pct=Math.min(100,Math.round(real/Number(m.meta)*100));
-      const cls=pct>=100?'feito':(pct/100<ritmo-0.15?'atrasado':'');
-      return `<div class="tv-item ${cls}"><div style="display:flex;justify-content:space-between;align-items:flex-end;gap:10px"><div><div class="nome">${m.ref_nome}</div><div class="nums">${fmt(real,0)} de ${fmt(m.meta,0)} ${m.unidade}</div></div><div class="pct">${pct}%</div></div>
-        <div class="tv-bar"><i style="width:${pct}%"></i></div></div>`;
-    }).join('');
-  };
-  const painelMetas=`<div class="tv-grid" id="tvGrid">${areas.map(([a,t])=>`<div class="tv-col a-${a}"><h2>${t}</h2>${col(a)}</div>`).join('')}</div>`;
   const linhasDesp=(desp.data?.conteudo||'').split('\n').map(l=>l.trim()).filter(Boolean)
     .map(l=>{const mm=l.match(/^(\d+)\s+(.+)$/);return mm?{qtd:Number(mm[1]),nome:mm[2]}:null})
     .filter(x=>x&&!/^total/i.test(x.nome));
   const totalDesp=linhasDesp.reduce((s,x)=>s+x.qtd,0);
   const painelDesp=linhasDesp.length?`<div class="tv-desp">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h2 style="margin:0">📦 Despachos e-commerce pendentes</h2><span class="chip mel" style="font-size:16px">${fmt(totalDesp,0)} peças</span></div>
-      ${linhasDesp.slice(0,10).map(x=>`<div class="tv-item"><div style="display:flex;justify-content:space-between;gap:10px"><div class="nome">${x.nome}</div><div class="pct" style="font-size:20px">${fmt(x.qtd,0)}</div></div></div>`).join('')}
-      ${linhasDesp.length>10?`<p style="color:#8A7A64;text-align:center;margin-top:8px">+ ${linhasDesp.length-10} produtos</p>`:''}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><h2 style="margin:0">📦 Despachos pendentes</h2><span class="chip mel" style="font-size:14px">${fmt(totalDesp,0)} peças</span></div>
+      ${linhasDesp.slice(0,6).map(x=>`<div class="tv-item" style="margin:0 0 8px;padding:10px 12px"><div style="display:flex;justify-content:space-between;gap:10px"><div class="nome" style="font-size:17px">${x.nome}</div><div class="pct" style="font-size:22px">${fmt(x.qtd,0)}</div></div></div>`).join('')}
+      ${linhasDesp.length>6?`<p style="color:#8A7A64;text-align:center;margin-top:6px">+ ${linhasDesp.length-6} produtos</p>`:''}
     </div>`:null;
   const abaixo=(itens.data||[]).filter(i=>i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo));
   const painelEstoque=abaixo.length?`<div class="tv-desp">
-      <h2 style="margin:0 0 12px">🔴 Estoque abaixo do mínimo</h2>
-      ${abaixo.slice(0,10).map(i=>`<div class="tv-item critico"><div style="display:flex;justify-content:space-between;gap:10px"><div class="nome">${i.nome}</div><div class="pct" style="font-size:20px">${fmt(i.saldo_atual)} ${i.unidade||''}</div></div></div>`).join('')}
+      <h2 style="margin:0 0 10px">🔴 Abaixo do mínimo</h2>
+      ${abaixo.slice(0,6).map(i=>`<div class="tv-item critico" style="margin:0 0 8px;padding:10px 12px"><div style="display:flex;justify-content:space-between;gap:10px"><div class="nome" style="font-size:17px">${i.nome}</div><div class="pct" style="font-size:22px">${fmt(i.saldo_atual)} ${i.unidade||''}</div></div></div>`).join('')}
+      ${abaixo.length>6?`<p style="color:#8A7A64;text-align:center;margin-top:6px">+ ${abaixo.length-6} itens</p>`:''}
     </div>`:null;
   const painelTarefas=(tarefas.data||[]).length?`<div class="tv-desp">
-      <h2 style="margin:0 0 12px">✅ Tarefas de hoje</h2>
-      ${tarefas.data.map(t=>`<div class="item-row" style="border-color:#5A4630"><span style="color:${t.concluido?'#8FE39A':'#F0E6D6'}">${t.concluido?'☑':'☐'} ${t.descricao}${t.responsavel_designado?` <b>(${t.responsavel_designado})</b>`:''}</span>${t.concluido?`<small style="color:#8FE39A">${t.concluido_por||''}</small>`:''}</div>`).join('')}
+      <h2 style="margin:0 0 10px">✅ Tarefas de hoje</h2>
+      ${tarefas.data.map(t=>`<div class="item-row" style="border-color:#ffffff1c;padding:8px 0;font-size:16px"><span style="color:${t.concluido?'#8FE39A':'#F0E6D6'}">${t.concluido?'☑':'☐'} ${t.descricao}${t.responsavel_designado?` <b>(${t.responsavel_designado})</b>`:''}</span>${t.concluido?`<small style="color:#8FE39A">${t.concluido_por||''}</small>`:''}</div>`).join('')}
+    </div>`:null;
+  const rankStatus={'PEDIR AGORA':0,'esta semana':1};
+  const compraPendente=(mrp.data||[]).filter(m=>Number(m.a_comprar)>0 && (m.status==='PEDIR AGORA'||m.status==='esta semana'))
+    .sort((a,b)=>(rankStatus[a.status]??2)-(rankStatus[b.status]??2) || Number(b.a_comprar)-Number(a.a_comprar));
+  const painelCompras=compraPendente.length?`<div class="tv-desp">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><h2 style="margin:0">🛒 Compras — precisa pedir</h2><span class="chip ver" style="font-size:14px">${compraPendente.length} item${compraPendente.length>1?'s':''}</span></div>
+      ${compraPendente.slice(0,8).map(m=>{
+        const urgente=m.status==='PEDIR AGORA';
+        return `<div class="tv-item ${urgente?'critico':''}" style="margin:0 0 8px;padding:10px 12px"><div style="display:flex;justify-content:space-between;gap:10px"><div class="nome" style="font-size:17px">${m.nome}</div><div class="pct" style="font-size:22px">${fmt(m.a_comprar)} ${m.unidade}</div></div>
+        <div class="nums" style="font-size:13px;margin-top:2px">${urgente?'🔴 pedir agora':'🟡 esta semana'}${m.pedir_ate?' · pedir até '+new Date(m.pedir_ate+'T12:00').toLocaleDateString('pt-BR'):''}</div></div>`;
+      }).join('')}
+      ${compraPendente.length>8?`<p style="color:#8A7A64;text-align:center;margin-top:6px">+ ${compraPendente.length-8} itens — ver tudo em Compras/MRP</p>`:''}
     </div>`:null;
   const paTvOrdenado=(paTv.data||[]).slice().sort((a,b)=>Number(a.saldo_potes)-Number(b.saldo_potes));
   const gruposPotesTv=GRUPOS_LINHA.map(g=>{
@@ -1815,16 +1777,16 @@ async function tvRender(){
     if(!itensG.length)return null;
     return {nome:g.nome,total:itensG.length,maiores:itensG.slice(-5).reverse(),menores:itensG.slice(0,5)};
   }).filter(Boolean);
-  const painelPotes=gruposPotesTv.length?`<div class="tv-desp" style="padding:22px 24px">
-      <h2 style="margin:0 0 16px">🫙 Potes prontos — extremos por linha</h2>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:20px">
-        ${gruposPotesTv.map(g=>`<div style="background:#ffffff08;border:1px solid #ffffff1a;border-radius:18px;padding:18px 20px">
-          <div style="font-size:23px;font-weight:900;color:#FFD84D;margin-bottom:2px">${g.nome}</div>
-          <div style="font-size:13px;color:#9C8B76;font-weight:700;margin-bottom:12px">${g.total} SKUs ativos${g.total<10?' · maiores e menores se cruzam':''}</div>
-          <div style="font-size:13px;font-weight:800;color:#7ED957;text-transform:uppercase;letter-spacing:.08em;margin:0 0 6px">🔼 5 maiores</div>
-          ${g.maiores.map(p=>`<div class="item-row" style="border-color:#ffffff14;padding:9px 0;font-size:18px;color:#F0E6D6"><span>${p.nome}</span><span class="mono" style="font-weight:900;font-size:21px;color:#7ED957">${fmt(p.saldo_potes,0)}</span></div>`).join('')}
-          <div style="font-size:13px;font-weight:800;color:#FF7B7B;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 6px">🔽 5 menores</div>
-          ${g.menores.map(p=>`<div class="item-row" style="border-color:#ffffff14;padding:9px 0;font-size:18px;color:#F0E6D6"><span>${p.nome}</span><span class="mono" style="font-weight:900;font-size:21px;color:${Number(p.saldo_potes)<=1?'#FF5A5A':'#FFB93B'}">${fmt(p.saldo_potes,0)}</span></div>`).join('')}
+  const painelPotes=gruposPotesTv.length?`<div class="tv-desp">
+      <h2 style="margin:0 0 14px">🫙 Potes prontos — extremos por linha</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
+        ${gruposPotesTv.map(g=>`<div style="background:#ffffff08;border:1px solid #ffffff1a;border-radius:16px;padding:14px 16px">
+          <div style="font-size:19px;font-weight:900;color:#FFD84D;margin-bottom:2px">${g.nome}</div>
+          <div style="font-size:12px;color:#9C8B76;font-weight:700;margin-bottom:10px">${g.total} SKUs ativos${g.total<10?' · listas se cruzam':''}</div>
+          <div style="font-size:12px;font-weight:800;color:#7ED957;text-transform:uppercase;letter-spacing:.08em;margin:0 0 4px">🔼 maiores</div>
+          ${g.maiores.map(p=>`<div class="item-row" style="border-color:#ffffff14;padding:6px 0;font-size:15px;color:#F0E6D6"><span>${p.nome}</span><span class="mono" style="font-weight:900;font-size:17px;color:#7ED957">${fmt(p.saldo_potes,0)}</span></div>`).join('')}
+          <div style="font-size:12px;font-weight:800;color:#FF7B7B;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 4px">🔽 menores</div>
+          ${g.menores.map(p=>`<div class="item-row" style="border-color:#ffffff14;padding:6px 0;font-size:15px;color:#F0E6D6"><span>${p.nome}</span><span class="mono" style="font-weight:900;font-size:17px;color:${Number(p.saldo_potes)<=1?'#FF5A5A':'#FFB93B'}">${fmt(p.saldo_potes,0)}</span></div>`).join('')}
         </div>`).join('')}
       </div>
     </div>`:null;
@@ -1839,39 +1801,41 @@ async function tvRender(){
     g.bateladas++;g.kg+=Number(r.quantidade_kg);
     g.statusCount[r.status]=(g.statusCount[r.status]||0)+1;
   });
-  const diasProg=Object.keys(progPorDia).sort().slice(0,4);
+  const diasProg=Object.keys(progPorDia).sort().slice(0,3);
   const lblStatus={programado:'a pesar',pesado:'pesado',mistura:'em mistura',refino:'em refino',balde:'no balde'};
-  const painelProgramacao=diasProg.length?`<div class="tv-desp" style="padding:22px 24px">
-      <h2 style="margin:0 0 16px">🏭 Programação — próximos dias</h2>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:20px">
+  const painelProgramacao=diasProg.length?`<div class="tv-desp">
+      <h2 style="margin:0 0 14px">🏭 Programação — próximos dias</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px">
         ${diasProg.map(d=>{
           const ehHoje=d===dia;
           const dataFmt=new Date(d+'T12:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
-          return `<div style="background:${ehHoje?'#FFD84D14':'#ffffff08'};border:1px solid ${ehHoje?'#FFD84D55':'#ffffff1a'};border-radius:18px;padding:16px 18px">
-            <div style="font-size:21px;font-weight:900;color:${ehHoje?'#FFD84D':'#E8DECF'};text-transform:capitalize;margin-bottom:10px">${dataFmt}${ehHoje?' · HOJE':''}</div>
+          return `<div style="background:${ehHoje?'#FFD84D14':'#ffffff08'};border:1px solid ${ehHoje?'#FFD84D55':'#ffffff1a'};border-radius:16px;padding:14px 16px">
+            <div style="font-size:18px;font-weight:900;color:${ehHoje?'#FFD84D':'#E8DECF'};text-transform:capitalize;margin-bottom:8px">${dataFmt}${ehHoje?' · HOJE':''}</div>
             ${Object.values(progPorDia[d]).map(g=>{
               const statusTxt=Object.entries(g.statusCount).map(([s,n])=>n+' '+(lblStatus[s]||s)).join(' · ');
-              return `<div class="tv-item" style="margin:0 0 10px"><div><div class="nome">${(g.equip==='Moinho 1'?'M1':(g.equip==='Moinho 2'?'M2':g.equip))} · ${g.produto}</div>
-              <div class="nums">${g.bateladas} batelada${g.bateladas>1?'s':''} · ${fmt(g.kg,0)} kg · ${statusTxt}</div></div></div>`;
+              return `<div class="tv-item" style="margin:0 0 8px;padding:10px 12px"><div><div class="nome" style="font-size:16px">${(g.equip==='Moinho 1'?'M1':(g.equip==='Moinho 2'?'M2':g.equip))} · ${g.produto}</div>
+              <div class="nums" style="font-size:14px">${g.bateladas} batelada${g.bateladas>1?'s':''} · ${fmt(g.kg,0)} kg · ${statusTxt}</div></div></div>`;
             }).join('')}
           </div>`;
         }).join('')}
       </div>
     </div>`:null;
-  EST.tvPaineis=[painelMetas,painelDesp,painelEstoque,painelTarefas,painelPotes,painelProgramacao].filter(Boolean);
-  if(EST.tvIdx==null||EST.tvIdx>=EST.tvPaineis.length)EST.tvIdx=0;
   document.getElementById('app').innerHTML=`
   <div class="tv">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap">
       <h1>🏭 Nutríssima — Quadro do Dia <small style="font-size:16px;color:#C9B99F;font-weight:700">${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}</small></h1>
       <div style="display:flex;gap:14px;align-items:center"><span class="relogio" id="tvClock">${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}</span>
-      <button onclick="tela('inicio')" style="border:1px solid #5A4630;background:transparent;color:#C9B99F;border-radius:10px;padding:8px 14px;cursor:pointer">sair</button></div>
+      <button onclick="tela('inicio')" style="border:1px solid #ffffff33;background:transparent;color:#C9B99F;border-radius:10px;padding:8px 14px;cursor:pointer">sair</button></div>
     </div>
-    ${rec.data?.recado?`<div class="recado">📌 ${rec.data.recado}</div>`:''}
-    <div id="tvPainelAtual">${EST.tvPaineis[EST.tvIdx]||''}</div>
-    ${EST.tvPaineis.length>1?`<div class="tv-dots" style="display:flex;justify-content:center;gap:6px;margin-top:14px">${EST.tvPaineis.map((_,i)=>`<span style="width:${i===EST.tvIdx?18:6}px;height:6px;border-radius:3px;background:${i===EST.tvIdx?'#F0DFA0':'#5A4630'};display:inline-block"></span>`).join('')}</div>
-    <button id="tvPauseBtn" class="tv-pause" onpointerdown="tvPause()" onpointerup="tvResume()" onpointerleave="tvResume()" onpointercancel="tvResume()">⏸ segure pra pausar</button>`:''}
-    <p style="margin-top:14px;color:#8A7A64;font-size:13px">${EST.tvPaineis.length>1?'troca de painel a cada 18s · ':''}atualiza sozinho a cada 45 s · para a TV, abra ${location.origin+location.pathname}#tv</p>
+    <div class="tv-dash">
+      ${painelCompras?`<div class="wide">${painelCompras}</div>`:''}
+      ${painelDesp?`<div>${painelDesp}</div>`:''}
+      ${painelEstoque?`<div>${painelEstoque}</div>`:''}
+      ${painelTarefas?`<div>${painelTarefas}</div>`:''}
+      ${painelPotes?`<div class="wide">${painelPotes}</div>`:''}
+      ${painelProgramacao?`<div class="wide">${painelProgramacao}</div>`:''}
+    </div>
+    <p style="margin-top:14px;color:#8A7A64;font-size:13px">atualiza sozinho a cada 60 s · para a TV, abra ${location.origin+location.pathname}#tv</p>
   </div>`;
 }
 
