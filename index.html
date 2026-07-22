@@ -546,7 +546,7 @@ async function tProg(){
       :(()=>{const kgEntrou=p.lote?baldeEntradaPorLote[p.lote]:null;
          return kgEntrou
            ?'<div class="calinfo ok">✓ '+fmt(kgEntrou,0)+' kg já lançados no balde</div>'
-           :'<div class="calinfo pend">🛢️ aguardando lançamento manual (verifique em Entrada de balde)</div>';
+           :'<button class="calbtn laranja" onclick="entradaBaldeDireta(\''+p.produto_id+'\',\''+nomeEsc+'\','+p.quantidade_kg+',\''+(p.lote||'')+'\')">🛢️ Lançar entrada ('+fmt(p.quantidade_kg,0)+' kg)</button>';
        })();
     return '<div class="kancard"><div class="kd"><span class="calmo '+m+'">'+(m==='m1'?'M1':'M2')+'</span><span>'+diaLabelKan(p.data)+'</span></div><b>'+nome+'</b><div class="mono" style="font-size:13px;margin:2px 0 6px">'+fmt(p.quantidade_kg,0)+' kg'+(p.lote?' · <span class="mono" style="color:#A99A82;font-size:11px">'+p.lote+'</span>':'')+'</div>'+acao+'</div>';
   };
@@ -582,7 +582,7 @@ async function tProg(){
           :(()=>{const kgEntrou=p.lote?baldeEntradaPorLote[p.lote]:null;
              return kgEntrou
                ?'<div class="calinfo ok">✓ '+fmt(kgEntrou,0)+' kg já lançados no balde</div>'
-               :'<div class="calinfo pend">🛢️ aguardando lançamento manual (verifique em Entrada de balde)</div>';
+               :'<button class="calbtn laranja" onclick="entradaBaldeDireta(\''+p.produto_id+'\',\''+nomeEsc+'\','+p.quantidade_kg+',\''+(p.lote||'')+'\')">🛢️ Lançar entrada ('+fmt(p.quantidade_kg,0)+' kg)</button>';
            })();
         const chipCor=st==='programado'?'mel':st==='pesado'?'azul':st==='mistura'?'mel':st==='refino'?'laranja':'ok';
         const chipTxt=st==='programado'?'a pesar':st==='pesado'?'pesado':st==='mistura'?'em mistura':st==='refino'?'em refino':'refino concluído';
@@ -704,6 +704,15 @@ async function excluirProg(id,nome,kg){
   if(!data||!data.length)return msg('Não deu pra excluir (já foi pesada?)',true);
   msg('🗑️ Programação excluída');
   tela('programacao');
+}
+async function entradaBaldeDireta(produtoId,nome,kgSugerido,lote){
+  const q=prompt(`Quantos kg de ${nome} entraram no balde?`,kgSugerido);
+  if(q==null)return; const n=Number(String(q).replace(',','.'));
+  if(!n||n<=0)return msg('Quantidade inválida',true);
+  if(precisaOperador())return;
+  const {error}=await sb.rpc('entrada_balde',{p_produto_id:produtoId,p_kg:n,p_responsavel:EST.operador,p_lote:lote||'MANUAL'});
+  if(error)return msg(error.message,true);
+  msg('✅ '+fmt(n)+' kg lançados no balde — '+nome);tela('programacao');
 }
 async function iniciarMistura(id,nome){
   if(!confirm('Iniciar mistura de '+nome+'? (só marca o andamento — passa pelo dispersor antes do moinho, sem lançar quantidade nem estoque)'))return;
