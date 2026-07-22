@@ -529,7 +529,10 @@ async function tProg(){
   const dnum=d=>new Date(d+'T12:00').getDate();
   const mesNome=new Date(ini+'T12:00').toLocaleDateString('pt-BR',{month:'long'});
   const janelaKan=[hojeStr,addDias(hojeStr,1),addDias(hojeStr,2)];
-  const diaLabelKan=d=>d===janelaKan[0]?'hoje':d===janelaKan[1]?'amanhã':(wname(d)+' '+dnum(d));
+  const diaLabelKan=d=>{
+    const label=d===janelaKan[0]?'hoje':d===janelaKan[1]?'amanhã':wname(d);
+    return label+' <span style="font-size:9px;color:#A99A82;font-weight:400">'+dnum(d)+'/'+(new Date(d+'T12:00').getMonth()+1)+'</span>';
+  };
   const kanItens=linhas.filter(p=>janelaKan.includes(p.data));
   const porStatusKan={programado:[],pesado:[],mistura:[],refino:[],balde:[]};
   kanItens.forEach(p=>{(porStatusKan[p.status]=porStatusKan[p.status]||[]).push(p)});
