@@ -42,7 +42,7 @@ label{display:block;font-size:13px;font-weight:700;color:#7A6A57;margin:12px 0 5
 .item-row .saldo{font-weight:900;font-variant-numeric:tabular-nums;font-size:17px;white-space:nowrap}
 .item-row.baixo .saldo{color:var(--morango)}
 .chip{display:inline-block;padding:4px 11px;border-radius:99px;font-size:12px;font-weight:700;text-transform:uppercase}
-.chip.ok{background:#E7F0E4;color:var(--pistache-esc)}.chip.mel{background:#F6ECD6;color:#7A5A14}.chip.azul{background:#E4EDF2;color:#2B5A78}.chip.ver{background:#FBEAEA;color:var(--morango)}
+.chip.ok{background:#E7F0E4;color:var(--pistache-esc)}.chip.mel{background:#F6ECD6;color:#7A5A14}.chip.azul{background:#E4EDF2;color:#2B5A78}.chip.laranja{background:#FBE6D6;color:#B0510F}.chip.ver{background:#FBEAEA;color:var(--morango)}
 .check{display:flex;align-items:center;gap:12px;padding:12px;border:1.5px solid var(--linha);border-radius:12px;font-size:16px;cursor:pointer;background:#fff;margin-bottom:8px}
 .check input{width:26px;height:26px;accent-color:var(--pistache);flex:none}
 .check .qtd{margin-left:auto;font-weight:900;font-variant-numeric:tabular-nums}
@@ -137,6 +137,8 @@ details.calgrp>.calbat:last-child{padding-bottom:8px}
 .calbat .chip{margin:4px 0;font-size:10px;padding:2px 8px}
 .calbtn{width:100%;min-height:42px;font-size:14px;font-weight:800;border:none;border-radius:10px;background:var(--pistache);color:#fff;cursor:pointer;font-family:inherit;margin-top:4px}
 .calbtn.mel{background:var(--mel)}
+.calbtn.azul{background:#2B5A78}
+.calbtn.laranja{background:#D9772B}
 .calmini{display:flex;gap:5px;margin-top:5px}
 .calmini button{flex:1;min-height:34px;font-size:12px;font-weight:700;border:1.5px solid var(--linha);background:#fff;border-radius:9px;cursor:pointer;color:var(--cacau);font-family:inherit}
 .calmini button.del{flex:0 0 auto;padding:0 11px;color:var(--morango);border-color:#E8C4C4}
@@ -484,7 +486,7 @@ function previewBat(){
 }
 async function tProg(){
   const [prog,prods,equip,alertas]=await Promise.all([
-    sb.from('programacao_refino').select('*, produtos(nome,estocavel_balde), equipamentos(nome)').neq('status','no_balde').order('data'),
+    sb.from('programacao_refino').select('*, produtos(nome,estocavel_balde), equipamentos(nome)').neq('status','balde').order('data'),
     sb.from('produtos').select('id,nome').eq('ativo',true).order('nome'),
     sb.from('equipamentos').select('id,nome').eq('ativo',true).order('nome'),
     sb.rpc('fn_alerta_entregas')
@@ -510,13 +512,17 @@ async function tProg(){
       const total=g.reduce((a,p)=>a+Number(p.quantidade_kg),0);
       const nomeEsc=nome.replace(/'/g,"\\'");
       const bats=g.map((p,ix)=>{
-        const ehProg=p.status==='programado';
-        const acao=ehProg
+        const st=p.status;
+        const acao=st==='programado'
           ?'<button class="calbtn" onclick="tela(\''+'pesagem\',\''+p.id+'\')">⚖️ Pesar</button><div class="calmini"><button onclick="mudarDataProg(\''+p.id+'\',\''+nomeEsc+'\',\''+p.data+'\')">🗓️</button><button onclick="mudarQtdProg(\''+p.id+'\',\''+nomeEsc+'\','+p.quantidade_kg+')">⚖️ kg</button><button class="del" onclick="excluirProg(\''+p.id+'\',\''+nomeEsc+'\','+p.quantidade_kg+')">🗑️</button></div>'
-          :'<button class="calbtn mel" onclick="pedirRefino(\''+p.id+'\',\''+nomeEsc+'\','+p.quantidade_kg+')">🌀 → balde</button>';
-        return '<div class="calbat"><div class="calbat-h"><span>B'+(ix+1)+' · <b class="mono">'+fmt(p.quantidade_kg,0)+'</b> kg</span>'+(p.lote?'<span class="mono lote">'+p.lote+'</span>':'')+'</div><span class="chip '+(ehProg?'mel':'azul')+'">'+(ehProg?'a pesar':'no moinho')+'</span>'+acao+'<button class="caltrilha" onclick="tela(\''+'lote\',\''+p.id+'\')">🔎 trilha</button></div>';
+          :st==='pesado'
+          ?'<button class="calbtn azul" onclick="iniciarRefino(\''+p.id+'\',\''+nomeEsc+'\')">🌀 Iniciar refino</button>'
+          :'<button class="calbtn laranja" onclick="concluirRefinoUI(\''+p.id+'\',\''+nomeEsc+'\')">🛢️ → balde</button>';
+        const chipCor=st==='programado'?'mel':st==='pesado'?'azul':'laranja';
+        const chipTxt=st==='programado'?'a pesar':st==='pesado'?'pesado':'em refino';
+        return '<div class="calbat"><div class="calbat-h"><span>B'+(ix+1)+' · <b class="mono">'+fmt(p.quantidade_kg,0)+'</b> kg</span>'+(p.lote?'<span class="mono lote">'+p.lote+'</span>':'')+'</div><span class="chip '+chipCor+'">'+chipTxt+'</span>'+acao+'<button class="caltrilha" onclick="tela(\''+'lote\',\''+p.id+'\')">🔎 trilha</button></div>';
       }).join('');
-      const nProg=g.filter(p=>p.status==='programado').length;const nPes=g.length-nProg;const cnt=[];if(nProg)cnt.push(nProg+' a pesar');if(nPes)cnt.push(nPes+' no moinho');
+      const nProg=g.filter(p=>p.status==='programado').length;const nPes=g.filter(p=>p.status==='pesado').length;const nRef=g.filter(p=>p.status==='refino').length;const cnt=[];if(nProg)cnt.push(nProg+' a pesar');if(nPes)cnt.push(nPes+' pesado');if(nRef)cnt.push(nRef+' em refino');
       return '<details class="calgrp"><summary class="calgrp-h"><span class="calmo '+m+'">'+(m==='m1'?'M1':'M2')+'</span><div style="flex:1"><b>'+nome+'</b><small>'+fmt(total,0)+' kg · '+g.length+' bat · '+cnt.join(' · ')+'</small></div></summary>'+bats+'</details>';
     }).join('')||'<div class="calvazio">—</div>';
     return '<div class="calday '+(d===hojeStr?'hoje':'')+'"><header><b>'+wname(d)+'</b><span>'+dnum(d)+'</span></header>'+body+'</div>';
@@ -560,8 +566,9 @@ async function tLote(progId){
   const {data:pr,error:e0}=await sb.from('programacao_refino').select('*, produtos(nome), equipamentos(nome)').eq('id',progId).single();
   if(e0||!pr){msg('Lote não encontrado',true);return tela('programacao');}
   const lote=pr.lote;
-  const pesou=pr.status==='pesado'||pr.status==='no_balde';
-  const noBalde=pr.status==='no_balde';
+  const pesou=pr.status==='pesado'||pr.status==='refino'||pr.status==='balde';
+  const emRefino=pr.status==='refino'||pr.status==='balde';
+  const noBalde=pr.status==='balde';
   const [mpR,ativR,baldeR,recR,itensR]=await Promise.all([
     lote?sb.from('pesagem_lotes_mp').select('lotes,item_id').eq('programacao_id',progId):Promise.resolve({data:[]}),
     lote?sb.from('atividades').select('tipo,responsavel,criado_em').eq('lote',lote):Promise.resolve({data:[]}),
@@ -590,8 +597,9 @@ async function tLote(progId){
       <div class="tl">
         <div class="no ok"><div class="pt">✓</div><b>Programado</b><small>${pr.equipamentos?.nome||''} · ${fmt(pr.quantidade_kg,0)} kg · ${brData(pr.data)}</small></div>
         <div class="no ${pesou?'ok':'pend'}"><div class="pt">${pesou?'✓':'2'}</div><b>Pesado</b>${pesou?`<small>${pesAtiv?.responsavel?'por '+pesAtiv.responsavel+' · ':''}lote <span class="mono">${lote}</span></small>${mp.length?`<div class="tl-mp">${mp.map(x=>`<span>${itById[x.item_id]?itById[x.item_id]+': ':''}${x.lotes}</span>`).join('')}</div>`:'<small style="color:#9A8B77">sem lote de MP anotado</small>'}`:'<small>aguardando pesagem</small>'}</div>
-        <div class="no ${noBalde||baldeMov?'ok':'pend'}"><div class="pt">${noBalde||baldeMov?'✓':'3'}</div><b>No balde</b>${baldeMov?`<small>${fmt(baldeMov.quantidade_kg,0)} kg entraram no tanque${baldeMov.responsavel?' · por '+baldeMov.responsavel:''}</small>`:'<small>aguardando refino</small>'}</div>
-        <div class="no pend"><div class="pt">4</div><b style="color:#9A8B77">Envase</b><small>puxa do tanque compartilhado →</small></div>
+        <div class="no ${emRefino?'ok':'pend'}"><div class="pt">${emRefino?'✓':'3'}</div><b>Refino</b><small>${emRefino?'no moinho':'aguardando início'}</small></div>
+        <div class="no ${noBalde?'ok':'pend'}"><div class="pt">${noBalde?'✓':'4'}</div><b>Balde</b><small>${noBalde?'batelada concluída — se a entrada real no balde já foi lançada, aparece abaixo':'aguardando conclusão do refino'}</small>${baldeMov?`<div class="tl-mp"><span>${fmt(baldeMov.quantidade_kg,0)} kg entraram no tanque${baldeMov.responsavel?' · por '+baldeMov.responsavel:''}</span></div>`:noBalde?'<small style="color:#9A8B77">entrada de balde ainda não lançada (tela Entrada de balde)</small>':''}</div>
+        <div class="no pend"><div class="pt">5</div><b style="color:#9A8B77">Envase</b><small>puxa do tanque compartilhado →</small></div>
       </div>
       <div class="leque">
         <div class="lq-h">Leque de destino do balde</div>
@@ -611,14 +619,19 @@ async function excluirProg(id,nome,kg){
   msg('🗑️ Programação excluída');
   tela('programacao');
 }
-async function pedirRefino(id,nome,kg){
-  const q=prompt(`Quantos kg de ${nome} saíram do moinho para o balde?`,kg);
-  if(q==null)return; const n=Number(String(q).replace(',','.'));
-  if(!n||n<=0)return msg('Quantidade inválida',true);
+async function iniciarRefino(id,nome){
+  if(!confirm('Iniciar refino de '+nome+'? (só marca o andamento — não lança quantidade nem estoque)'))return;
   if(precisaOperador())return;
-  const {error}=await sb.rpc('concluir_refino',{p_prog:id,p_qtd_real:n,p_responsavel:EST.operador});
+  const {error}=await sb.rpc('iniciar_refino',{p_prog:id,p_responsavel:EST.operador});
   if(error)return msg(error.message,true);
-  msg('✅ '+fmt(n)+' kg no balde');tela('programacao');
+  msg('✅ Refino iniciado — '+nome);tela('programacao');
+}
+async function concluirRefinoUI(id,nome){
+  if(!confirm('Marcar '+nome+' como no balde? (só o andamento — a entrada real do kg no balde continua na tela Entrada de balde)'))return;
+  if(precisaOperador())return;
+  const {error}=await sb.rpc('concluir_refino',{p_prog:id,p_responsavel:EST.operador});
+  if(error)return msg(error.message,true);
+  msg('✅ '+nome+' no balde — lembre de lançar a entrada real em Entrada de balde');tela('programacao');
 }
 async function mudarDataProg(id,nome,atual){
   if(precisaOperador())return;
@@ -1413,7 +1426,7 @@ async function tMetas(){
   const metasPorDia={};(metas.data||[]).forEach(m=>{(metasPorDia[m.data]=metasPorDia[m.data]||[]).push(m)});
   const tarefasPorDia={};(tarefas.data||[]).forEach(t=>{(tarefasPorDia[t.data]=tarefasPorDia[t.data]||[]).push(t)});
   const progPorDia={};(prog.data||[]).forEach(p=>{(progPorDia[p.data]=progPorDia[p.data]||[]).push(p)});
-  const statusChip={programado:['mel','a pesar'],pesado:['azul','pesado'],no_balde:['ok','no balde']};
+  const statusChip={programado:['mel','a pesar'],pesado:['azul','pesado'],refino:['laranja','em refino'],balde:['ok','no balde']};
   document.getElementById('app').innerHTML=`
   ${trilha('')}${topo('Metas da semana','quadro que aparece na TV')}
   <main>
@@ -1456,7 +1469,7 @@ async function tMetas(){
           ${(ms.length||ts.length||ps.length)?`<button class="btnSec" style="padding:6px 12px;min-height:auto;font-size:13px" onclick="imprimirDia('${d}')">🖨️ Imprimir</button>`:''}
         </div>
         ${ps.length?`<div style="margin:8px 0"><small style="color:#7A6A57">⚖️ Programação de pesagem</small>
-        ${ps.map(p=>{const sc=statusChip[p.status]||['','?'];const pct=p.status==='no_balde'?100:(p.status==='pesado'?50:0);const barCor=pct===100?'#3E7C45':pct===50?'#37568D':'#B8862B';
+        ${ps.map(p=>{const sc=statusChip[p.status]||['','?'];const pct=p.status==='balde'?100:(p.status==='refino'?66:(p.status==='pesado'?33:0));const barCor=pct===100?'#3E7C45':pct===66?'#D9772B':pct===33?'#37568D':'#B8862B';
           return `<div class="item-row" style="flex-direction:column;align-items:stretch;gap:6px">
             <div style="display:flex;justify-content:space-between"><span><span class="chip ${sc[0]}">${p.equipamentos?.nome||''}</span> ${p.produtos?.nome||'—'}</span><span style="display:flex;gap:10px;align-items:center"><b class="mono">${fmt(p.quantidade_kg,0)} kg</b><small style="color:#7A6A57">${sc[1]}</small></span></div>
             <div style="background:#EFE7DC;border-radius:6px;height:8px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${barCor}"></div></div>
@@ -1577,7 +1590,7 @@ async function tvRender(){
     sb.from('quadro_recado').select('recado').eq('data',dia).maybeSingle(),
     sb.from('produto_acabado_movimentos').select('produto_acabado_id,quantidade,lote').eq('tipo','entrada').gte('criado_em',iniISO),
     sb.from('estoque_balde_movimentos').select('produto_id,quantidade_kg,lote').eq('tipo','entrada').gte('criado_em',iniISO),
-    sb.from('programacao_refino').select('produto_id,quantidade_kg,status').eq('data',dia).in('status',['pesado','no_balde']),
+    sb.from('programacao_refino').select('produto_id,quantidade_kg,status').eq('data',dia).in('status',['pesado','refino','balde']),
     sb.from('tarefas').select('*').eq('data',dia).order('criado_em'),
     sb.from('despachos_ecommerce').select('conteudo').eq('id',1).maybeSingle(),
     sb.from('itens').select('nome,saldo_atual,estoque_minimo,unidade')
