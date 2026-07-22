@@ -712,19 +712,19 @@ async function entradaBaldeDireta(produtoId,nome,kgSugerido,lote){
   if(precisaOperador())return;
   let restante=Number(kgSugerido)||0;
   let totalLancado=0;
-  let seguir=true;
-  while(seguir){
+  while(true){
     const sugestao=restante>0?String(restante):'';
-    const q=prompt('Balde de '+nome+' — quantos kg entraram agora?'+(restante>0?' (faltam ~'+fmt(restante,1)+' kg da batelada)':''),sugestao);
-    if(q==null){seguir=false;break;}
+    const info=totalLancado>0?' (já lançado: '+fmt(totalLancado)+' kg · faltam ~'+fmt(restante,1)+' kg da batelada — cancele quando terminar)':(restante>0?' (previsto ~'+fmt(restante,1)+' kg — cancele quando terminar)':'');
+    const q=prompt('Balde de '+nome+' — quantos kg entraram agora?'+info,sugestao);
+    if(q==null)break;
     const n=Number(String(q).replace(',','.'));
     if(!n||n<=0){msg('Quantidade inválida',true);continue;}
     const {error}=await sb.rpc('entrada_balde',{p_produto_id:produtoId,p_kg:n,p_responsavel:EST.operador,p_lote:lote||'MANUAL'});
     if(error){msg(error.message,true);continue;}
     totalLancado+=n;restante=Math.max(0,restante-n);
-    seguir=confirm('✅ '+fmt(n)+' kg lançados (total já lançado desse lote: '+fmt(totalLancado)+' kg). Lançar mais um balde do mesmo lote?');
+    msg('✅ '+fmt(n)+' kg lançados (total do lote: '+fmt(totalLancado)+' kg)');
   }
-  if(totalLancado>0)msg('✅ '+fmt(totalLancado)+' kg lançados no balde — '+nome);
+  if(totalLancado>0)msg('✅ total lançado no balde: '+fmt(totalLancado)+' kg — '+nome);
   tela('programacao');
 }
 async function iniciarMistura(id,nome){
