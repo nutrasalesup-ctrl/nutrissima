@@ -279,7 +279,7 @@ async function login(){
 }
 
 /* ================= NAVEGAÇÃO ================= */
-const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,baixa:tBaixa,movimento:tMovimento};
+const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada};
 function tela(n,arg){TELAS[n](arg)}
 
 /* ================= INÍCIO ================= */
@@ -549,7 +549,7 @@ async function tProg(){
       :(()=>{const kgEntrou=p.lote?baldeEntradaPorLote[p.lote]:null;
          return kgEntrou
            ?'<div class="calinfo ok">✓ '+fmt(kgEntrou,0)+' kg já lançados no balde</div>'
-           :'<button class="calbtn laranja" onclick="entradaBaldeDireta(\''+p.produto_id+'\',\''+nomeEsc+'\','+p.quantidade_kg+',\''+(p.lote||'')+'\')">🛢️ Lançar balde ('+fmt(p.quantidade_kg,0)+' kg previstos)</button>';
+           :'<button class="calbtn laranja" onclick="tela(\'baldeEntrada\',{produtoId:\''+p.produto_id+'\',nome:\''+nomeEsc+'\',lote:\''+(p.lote||'')+'\',kgPrevisto:'+p.quantidade_kg+'})">🛢️ Lançar balde ('+fmt(p.quantidade_kg,0)+' kg previstos)</button>';
        })();
     return '<div class="kancard"><div class="kd"><span class="calmo '+m+'">'+(m==='m1'?'M1':'M2')+'</span><span>'+diaLabelKan(p.data)+'</span></div><b>'+nome+'</b><div class="mono" style="font-size:13px;margin:2px 0 6px">'+fmt(p.quantidade_kg,0)+' kg'+(p.lote?' · <span class="mono" style="color:#A99A82;font-size:11px">'+p.lote+'</span>':'')+'</div>'+acao+'</div>';
   };
@@ -585,7 +585,7 @@ async function tProg(){
           :(()=>{const kgEntrou=p.lote?baldeEntradaPorLote[p.lote]:null;
              return kgEntrou
                ?'<div class="calinfo ok">✓ '+fmt(kgEntrou,0)+' kg já lançados no balde</div>'
-               :'<button class="calbtn laranja" onclick="entradaBaldeDireta(\''+p.produto_id+'\',\''+nomeEsc+'\','+p.quantidade_kg+',\''+(p.lote||'')+'\')">🛢️ Lançar balde ('+fmt(p.quantidade_kg,0)+' kg previstos)</button>';
+               :'<button class="calbtn laranja" onclick="tela(\'baldeEntrada\',{produtoId:\''+p.produto_id+'\',nome:\''+nomeEsc+'\',lote:\''+(p.lote||'')+'\',kgPrevisto:'+p.quantidade_kg+'})">🛢️ Lançar balde ('+fmt(p.quantidade_kg,0)+' kg previstos)</button>';
            })();
         const chipCor=st==='programado'?'mel':st==='pesado'?'azul':st==='mistura'?'mel':st==='refino'?'laranja':'ok';
         const chipTxt=st==='programado'?'a pesar':st==='pesado'?'pesado':st==='mistura'?'em mistura':st==='refino'?'em refino':'refino concluído';
@@ -708,24 +708,35 @@ async function excluirProg(id,nome,kg){
   msg('🗑️ Programação excluída');
   tela('programacao');
 }
-async function entradaBaldeDireta(produtoId,nome,kgSugerido,lote){
+async function tBaldeEntrada(ctx){
+  const {produtoId,nome,lote,kgPrevisto}=ctx;
+  const {data:movs}=await sb.from('estoque_balde_movimentos').select('quantidade_kg,responsavel,criado_em').eq('produto_id',produtoId).eq('lote',lote||'__sem_lote__').eq('tipo','entrada').order('criado_em');
+  const lista=movs||[];
+  const total=lista.reduce((a,m)=>a+Number(m.quantidade_kg),0);
+  const restante=Math.max(0,Number(kgPrevisto)-total);
+  const nomeEsc=nome.replace(/'/g,"\\'");
+  document.getElementById('app').innerHTML=`
+  ${trilha('Programação')}${topo('Entrada de balde',nome+' · lote '+(lote||'—'))}
+  <main>
+    <div class="card">
+      <p style="font-size:14px">Previsto: <b class="mono">${fmt(kgPrevisto,0)} kg</b> · já lançado: <b class="mono">${fmt(total,0)} kg</b> · falta: <b class="mono" style="color:${restante>0?'var(--morango)':'var(--pistache)'}">${fmt(restante,0)} kg</b></p>
+      ${lista.length?`<div style="margin:10px 0 4px">${lista.map(m=>`<div class="item-row"><span>${new Date(m.criado_em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}${m.responsavel?' · '+m.responsavel:''}</span><b class="mono">${fmt(m.quantidade_kg,0)} kg</b></div>`).join('')}</div>`:'<p style="font-size:13px;color:#7A6A57;margin:8px 0">nenhum balde lançado ainda pra este lote</p>'}
+      <label style="margin-top:10px">Novo balde (kg)</label>
+      <input class="campoG" id="baldeKg" inputmode="decimal" placeholder="${restante>0?fmt(restante,1):'0'}" value="${restante>0?fmt(restante,1):''}">
+      <button class="btnP" onclick='addBaldeEntrada("${produtoId}","${nomeEsc}","${lote||''}",${Number(kgPrevisto)})'>+ Adicionar balde</button>
+      <button class="btnSec" style="margin-top:8px" onclick="tela('programacao')">✓ Concluir e voltar pra Programação</button>
+    </div>
+  </main>`;
+}
+async function addBaldeEntrada(produtoId,nome,lote,kgPrevisto){
   if(precisaOperador())return;
-  let restante=Number(kgSugerido)||0;
-  let totalLancado=0;
-  while(true){
-    const sugestao=restante>0?String(restante):'';
-    const info=totalLancado>0?' (já lançado: '+fmt(totalLancado)+' kg · faltam ~'+fmt(restante,1)+' kg da batelada — cancele quando terminar)':(restante>0?' (previsto ~'+fmt(restante,1)+' kg — cancele quando terminar)':'');
-    const q=prompt('Balde de '+nome+' — quantos kg entraram agora?'+info,sugestao);
-    if(q==null)break;
-    const n=Number(String(q).replace(',','.'));
-    if(!n||n<=0){msg('Quantidade inválida',true);continue;}
-    const {error}=await sb.rpc('entrada_balde',{p_produto_id:produtoId,p_kg:n,p_responsavel:EST.operador,p_lote:lote||'MANUAL'});
-    if(error){msg(error.message,true);continue;}
-    totalLancado+=n;restante=Math.max(0,restante-n);
-    msg('✅ '+fmt(n)+' kg lançados (total do lote: '+fmt(totalLancado)+' kg)');
-  }
-  if(totalLancado>0)msg('✅ total lançado no balde: '+fmt(totalLancado)+' kg — '+nome);
-  tela('programacao');
+  const v=document.getElementById('baldeKg').value;
+  const n=Number(String(v).replace(',','.'));
+  if(!n||n<=0)return msg('Quantidade inválida',true);
+  const {error}=await sb.rpc('entrada_balde',{p_produto_id:produtoId,p_kg:n,p_responsavel:EST.operador,p_lote:lote||'MANUAL'});
+  if(error)return msg(error.message,true);
+  msg('✅ '+fmt(n)+' kg lançados no balde');
+  tela('baldeEntrada',{produtoId,nome,lote,kgPrevisto});
 }
 async function iniciarMistura(id,nome){
   if(!confirm('Iniciar mistura de '+nome+'? (só marca o andamento — passa pelo dispersor antes do moinho, sem lançar quantidade nem estoque)'))return;
