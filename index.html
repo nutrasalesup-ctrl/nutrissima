@@ -148,6 +148,13 @@ details.calgrp>.calbat:last-child{padding-bottom:8px}
 .calsec-h b{font-family:ui-monospace,Menlo,monospace;font-size:13px;font-weight:700;color:#33200F}
 .calsec-h.mel{color:#7A5A14}
 .calsec-h.azul{color:#2B5A78}
+.kanscroll{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 12px;margin-bottom:14px}
+.kancol{flex:none;width:190px;background:#FAF6EF;border:1.5px solid var(--linha);border-radius:14px;padding:8px}
+.kancol-h{display:flex;justify-content:space-between;align-items:baseline;font-size:11px;font-weight:800;letter-spacing:.03em;padding:2px 4px 8px;border-bottom:1px dashed var(--linha);margin-bottom:8px}
+.kancard{background:#fff;border:1px solid var(--linha);border-radius:10px;padding:8px;margin-bottom:8px}
+.kancard .kd{display:flex;justify-content:space-between;align-items:baseline;font-size:10px;color:#A99A82;text-transform:uppercase;letter-spacing:.03em;margin-bottom:3px}
+.kancard b{font-size:13px}
+.kanvazio{color:#A99A82;font-size:12px;padding:8px 4px}
 .calmini button{flex:1;min-height:34px;font-size:12px;font-weight:700;border:1.5px solid var(--linha);background:#fff;border-radius:9px;cursor:pointer;color:var(--cacau);font-family:inherit}
 .calmini button.del{flex:0 0 auto;padding:0 11px;color:var(--morango);border-color:#E8C4C4}
 .calprev{font-size:13px;color:#7A5A14;background:#F6ECD6;border-radius:10px;padding:8px 10px;margin:8px 0}
@@ -200,6 +207,7 @@ body{overflow-x:hidden}
 @media (min-width:1440px){
   .app{max-width:1540px}
   .calday{width:205px}
+  .kancol{width:230px}
 }
 /* TV sai do container e ocupa a tela inteira */
 .tv{width:100vw;position:relative;left:50%;transform:translateX(-50%);max-width:none}
@@ -520,6 +528,36 @@ async function tProg(){
   const wname=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR',{weekday:'short'}).replace('.','');
   const dnum=d=>new Date(d+'T12:00').getDate();
   const mesNome=new Date(ini+'T12:00').toLocaleDateString('pt-BR',{month:'long'});
+  const janelaKan=[hojeStr,addDias(hojeStr,1),addDias(hojeStr,2)];
+  const diaLabelKan=d=>d===janelaKan[0]?'hoje':d===janelaKan[1]?'amanhã':(wname(d)+' '+dnum(d));
+  const kanItens=linhas.filter(p=>janelaKan.includes(p.data)&&p.status!=='programado');
+  const porStatusKan={pesado:[],mistura:[],refino:[],balde:[]};
+  kanItens.forEach(p=>{(porStatusKan[p.status]=porStatusKan[p.status]||[]).push(p)});
+  const kanCardHTML=p=>{
+    const nome=p.produtos?.nome||'—';const nomeEsc=nome.replace(/'/g,"\\'");const m=moinhoTipo(p.equipamentos?.nome);
+    const acao=p.status==='pesado'
+      ?'<button class="calbtn azul" onclick="iniciarMistura(\''+p.id+'\',\''+nomeEsc+'\')">🥣 Iniciar mistura</button>'
+      :p.status==='mistura'
+      ?'<button class="calbtn mel" onclick="iniciarRefino(\''+p.id+'\',\''+nomeEsc+'\')">🌀 Iniciar refino</button>'
+      :p.status==='refino'
+      ?'<button class="calbtn laranja" onclick="concluirRefinoUI(\''+p.id+'\',\''+nomeEsc+'\')">🛢️ → balde</button>'
+      :(()=>{const kgEntrou=p.lote?baldeEntradaPorLote[p.lote]:null;
+         return kgEntrou
+           ?'<div class="calinfo ok">✓ '+fmt(kgEntrou,0)+' kg já lançados no balde</div>'
+           :'<div class="calinfo pend">🛢️ aguardando lançamento manual (verifique em Entrada de balde)</div>';
+       })();
+    return '<div class="kancard"><div class="kd"><span class="calmo '+m+'">'+(m==='m1'?'M1':'M2')+'</span><span>'+diaLabelKan(p.data)+'</span></div><b>'+nome+'</b><div class="mono" style="font-size:13px;margin:2px 0 6px">'+fmt(p.quantidade_kg,0)+' kg'+(p.lote?' · <span class="mono" style="color:#A99A82;font-size:11px">'+p.lote+'</span>':'')+'</div>'+acao+'</div>';
+  };
+  const kanColHTML=(status,titulo,cor)=>{
+    const list=porStatusKan[status]||[];
+    return '<div class="kancol"><div class="kancol-h" style="color:'+cor+'"><span>'+titulo+'</span><span class="mono">'+list.length+'</span></div>'+(list.length?list.map(kanCardHTML).join(''):'<div class="kanvazio">—</div>')+'</div>';
+  };
+  const kanHTML='<div class="kanscroll">'
+    +kanColHTML('pesado','⚖️ Pesado','#2B5A78')
+    +kanColHTML('mistura','🥣 Mistura','#7A5A14')
+    +kanColHTML('refino','🌀 Refino','#B0510F')
+    +kanColHTML('balde','🛢️ Balde','#2E5F34')
+    +'</div>';
 
   const gruposHTML=list=>{
     const grupos={};list.forEach(p=>{const k=p.produto_id+'|'+p.equipamento_id;(grupos[k]=grupos[k]||[]).push(p)});
@@ -573,6 +611,8 @@ async function tProg(){
   ${trilha('Programação')}${topo('Programação','Moinhos 1 e 2 em paralelo')}
   <main>
     ${(alertas.data||[]).length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-bottom:12px"><b style="color:var(--morango)">⚠️ Insumo chega depois da produção</b>${alertas.data.map(al=>`<p style="font-size:14px;margin-top:6px"><b>${al.item}</b> · produção de ${brData(al.data_producao)}: precisa <b class="mono">${fmt(al.necessario_ate)}</b> acumulado, terá <b class="mono">${fmt(al.disponivel_ate)}</b> — falta <b class="mono" style="color:var(--morango)">${fmt(al.falta)} ${al.unidade||''}</b>${al.proxima_entrega?` · próxima entrega ${brData(al.proxima_entrega)}`:' · sem pedido a caminho'}</p>`).join('')}<small style="color:#7A6A57">solução: remarcar a produção (🗓️ no cartão) ou a entrega do pedido (✏️ em Compras)</small></div>`:''}
+    <p style="font-size:11px;font-weight:800;color:#8A7A64;letter-spacing:.04em;text-transform:uppercase;margin:0 0 6px 2px">🏭 Chão de fábrica — hoje + próx. 2 dias</p>
+    ${kanHTML}
     <div class="calweek">
       <button onclick="progSemana(-7)">‹${antes?` <i>${antes}</i>`:''}</button>
       <div class="calweek-t"><b>${dnum(ini)}–${dnum(fim)} ${mesNome}</b><button class="calhoje" onclick="progHoje()">Hoje</button></div>
