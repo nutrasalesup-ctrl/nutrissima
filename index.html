@@ -140,6 +140,14 @@ details.calgrp>.calbat:last-child{padding-bottom:8px}
 .calbtn.azul{background:#2B5A78}
 .calbtn.laranja{background:#D9772B}
 .calmini{display:flex;gap:5px;margin-top:5px}
+.calinfo{margin-top:6px;padding:6px 8px;border-radius:8px;font-size:12px;font-weight:700;text-align:center}
+.calinfo.ok{background:#E7F0E4;color:var(--pistache-esc)}
+.calinfo.pend{background:#FBE6D6;color:#B0510F}
+.calsec{margin-bottom:10px}
+.calsec-h{display:flex;justify-content:space-between;align-items:baseline;font-size:11px;font-weight:800;letter-spacing:.03em;padding:0 2px 5px}
+.calsec-h b{font-family:ui-monospace,Menlo,monospace;font-size:13px;font-weight:700;color:#33200F}
+.calsec-h.mel{color:#7A5A14}
+.calsec-h.azul{color:#2B5A78}
 .calmini button{flex:1;min-height:34px;font-size:12px;font-weight:700;border:1.5px solid var(--linha);background:#fff;border-radius:9px;cursor:pointer;color:var(--cacau);font-family:inherit}
 .calmini button.del{flex:0 0 auto;padding:0 11px;color:var(--morango);border-color:#E8C4C4}
 .calprev{font-size:13px;color:#7A5A14;background:#F6ECD6;border-radius:10px;padding:8px 10px;margin:8px 0}
@@ -188,6 +196,10 @@ body{overflow-x:hidden}
 @media (min-width:1200px){
   .app{max-width:1040px}
   .acoes{grid-template-columns:repeat(3,1fr)}
+}
+@media (min-width:1440px){
+  .app{max-width:1540px}
+  .calday{width:205px}
 }
 /* TV sai do container e ocupa a tela inteira */
 .tv{width:100vw;position:relative;left:50%;transform:translateX(-50%);max-width:none}
@@ -486,13 +498,19 @@ function previewBat(){
 }
 async function tProg(){
   const [prog,prods,equip,alertas]=await Promise.all([
-    sb.from('programacao_refino').select('*, produtos(nome,estocavel_balde), equipamentos(nome)').neq('status','balde').order('data'),
+    sb.from('programacao_refino').select('*, produtos(nome,estocavel_balde), equipamentos(nome)').order('data'),
     sb.from('produtos').select('id,nome').eq('ativo',true).order('nome'),
     sb.from('equipamentos').select('id,nome').eq('ativo',true).order('nome'),
     sb.rpc('fn_alerta_entregas')
   ]);
   EST.cache.prods=prods.data||[];EST.cache.equip=equip.data||[];
   const linhas=prog.data||[];
+  const lotesBalde=[...new Set(linhas.filter(p=>p.status==='balde'&&p.lote).map(p=>p.lote))];
+  const baldeMovs=lotesBalde.length
+    ?(await sb.from('estoque_balde_movimentos').select('lote,quantidade_kg').eq('tipo','entrada').in('lote',lotesBalde)).data||[]
+    :[];
+  const baldeEntradaPorLote={};
+  baldeMovs.forEach(m=>{baldeEntradaPorLote[m.lote]=(baldeEntradaPorLote[m.lote]||0)+Number(m.quantidade_kg)});
   if(!EST.progSemana)EST.progSemana=mondayOf();
   const ini=EST.progSemana, fim=addDias(ini,6);
   const dias=[0,1,2,3,4,5,6].map(i=>addDias(ini,i));
@@ -503,10 +521,9 @@ async function tProg(){
   const dnum=d=>new Date(d+'T12:00').getDate();
   const mesNome=new Date(ini+'T12:00').toLocaleDateString('pt-BR',{month:'long'});
 
-  const colHTML=d=>{
-    const itens=porDia[d]||[];
-    const grupos={};itens.forEach(p=>{const k=p.produto_id+'|'+p.equipamento_id;(grupos[k]=grupos[k]||[]).push(p)});
-    const body=Object.values(grupos).map(g=>{
+  const gruposHTML=list=>{
+    const grupos={};list.forEach(p=>{const k=p.produto_id+'|'+p.equipamento_id;(grupos[k]=grupos[k]||[]).push(p)});
+    return Object.values(grupos).map(g=>{
       g.sort((x,y)=>new Date(x.criado_em)-new Date(y.criado_em));
       const nome=g[0].produtos?.nome||'—';const eq=g[0].equipamentos?.nome||'';const m=moinhoTipo(eq);
       const total=g.reduce((a,p)=>a+Number(p.quantidade_kg),0);
@@ -517,14 +534,36 @@ async function tProg(){
           ?'<button class="calbtn" onclick="tela(\''+'pesagem\',\''+p.id+'\')">⚖️ Pesar</button><div class="calmini"><button onclick="mudarDataProg(\''+p.id+'\',\''+nomeEsc+'\',\''+p.data+'\')">🗓️</button><button onclick="mudarQtdProg(\''+p.id+'\',\''+nomeEsc+'\','+p.quantidade_kg+')">⚖️ kg</button><button class="del" onclick="excluirProg(\''+p.id+'\',\''+nomeEsc+'\','+p.quantidade_kg+')">🗑️</button></div>'
           :st==='pesado'
           ?'<button class="calbtn azul" onclick="iniciarRefino(\''+p.id+'\',\''+nomeEsc+'\')">🌀 Iniciar refino</button>'
-          :'<button class="calbtn laranja" onclick="concluirRefinoUI(\''+p.id+'\',\''+nomeEsc+'\')">🛢️ → balde</button>';
-        const chipCor=st==='programado'?'mel':st==='pesado'?'azul':'laranja';
-        const chipTxt=st==='programado'?'a pesar':st==='pesado'?'pesado':'em refino';
+          :st==='refino'
+          ?'<button class="calbtn laranja" onclick="concluirRefinoUI(\''+p.id+'\',\''+nomeEsc+'\')">🛢️ → balde</button>'
+          :(()=>{const kgEntrou=p.lote?baldeEntradaPorLote[p.lote]:null;
+             return kgEntrou
+               ?'<div class="calinfo ok">✓ '+fmt(kgEntrou,0)+' kg já lançados no balde</div>'
+               :'<div class="calinfo pend">⚠️ falta lançar entrada no balde</div>';
+           })();
+        const chipCor=st==='programado'?'mel':st==='pesado'?'azul':st==='refino'?'laranja':'ok';
+        const chipTxt=st==='programado'?'a pesar':st==='pesado'?'pesado':st==='refino'?'em refino':'refino concluído';
         return '<div class="calbat"><div class="calbat-h"><span>B'+(ix+1)+' · <b class="mono">'+fmt(p.quantidade_kg,0)+'</b> kg</span>'+(p.lote?'<span class="mono lote">'+p.lote+'</span>':'')+'</div><span class="chip '+chipCor+'">'+chipTxt+'</span>'+acao+'<button class="caltrilha" onclick="tela(\''+'lote\',\''+p.id+'\')">🔎 trilha</button></div>';
       }).join('');
-      const nProg=g.filter(p=>p.status==='programado').length;const nPes=g.filter(p=>p.status==='pesado').length;const nRef=g.filter(p=>p.status==='refino').length;const cnt=[];if(nProg)cnt.push(nProg+' a pesar');if(nPes)cnt.push(nPes+' pesado');if(nRef)cnt.push(nRef+' em refino');
+      const nProg=g.filter(p=>p.status==='programado').length;const nPes=g.filter(p=>p.status==='pesado').length;const nRef=g.filter(p=>p.status==='refino').length;const nBal=g.filter(p=>p.status==='balde').length;const cnt=[];if(nProg)cnt.push(nProg+' a pesar');if(nPes)cnt.push(nPes+' pesado');if(nRef)cnt.push(nRef+' em refino');if(nBal)cnt.push(nBal+' concluído'+(nBal>1?'s':''));
       return '<details class="calgrp"><summary class="calgrp-h"><span class="calmo '+m+'">'+(m==='m1'?'M1':'M2')+'</span><div style="flex:1"><b>'+nome+'</b><small>'+fmt(total,0)+' kg · '+g.length+' bat · '+cnt.join(' · ')+'</small></div></summary>'+bats+'</details>';
-    }).join('')||'<div class="calvazio">—</div>';
+    }).join('');
+  };
+  const colHTML=d=>{
+    const itens=porDia[d]||[];
+    const pesagemItens=itens.filter(p=>p.status==='programado');
+    const refinoItens=itens.filter(p=>p.status!=='programado');
+    const totalPesagem=pesagemItens.reduce((a,p)=>a+Number(p.quantidade_kg),0);
+    const refPorEquip={};refinoItens.forEach(p=>{(refPorEquip[p.equipamento_id]=refPorEquip[p.equipamento_id]||[]).push(p)});
+    const secPesagem=itens.length
+      ?'<div class="calsec"><div class="calsec-h mel"><span>⚖ Pesagem do dia</span><b>'+fmt(totalPesagem,0)+' kg</b></div>'+(pesagemItens.length?gruposHTML(pesagemItens):'<div class="calvazio">—</div>')+'</div>'
+      :'';
+    const secRefino=Object.entries(refPorEquip).map(([eqId,list])=>{
+      const eqNome=list[0].equipamentos?.nome||'';
+      const tot=list.reduce((a,p)=>a+Number(p.quantidade_kg),0);
+      return '<div class="calsec"><div class="calsec-h azul"><span>🌀 Refino do dia — '+eqNome+'</span><b>'+fmt(tot,0)+' kg</b></div>'+gruposHTML(list)+'</div>';
+    }).join('');
+    const body=(secPesagem+secRefino)||'<div class="calvazio">—</div>';
     return '<div class="calday '+(d===hojeStr?'hoje':'')+'"><header><b>'+wname(d)+'</b><span>'+dnum(d)+'</span></header>'+body+'</div>';
   };
 
