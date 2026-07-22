@@ -319,6 +319,11 @@ async function setOp(n){
 }
 
 /* ================= PAINEL ================= */
+const GRUPOS_LINHA=[
+  {nome:'Nutríssima',linhas:['Nutríssima Leite','Nutríssima Vegana','Integral']},
+  {nome:'GO',linhas:['GO']},
+  {nome:'La Ben',linhas:['La Ben']}
+];
 async function tPainel(){
   document.getElementById('app').innerHTML=trilha('')+topo('Painel','Nutríssima agora')+'<main><div class="center">Carregando…</div></main>';
   const [itens,compras,balde,pa,ativ,alertas]=await Promise.all([
@@ -333,8 +338,6 @@ async function tPainel(){
   const kgBalde=(balde.data||[]).reduce((a,b)=>a+Number(b.quantidade_kg),0);
   const potes=(pa.data||[]).reduce((a,b)=>a+Number(b.saldo_potes),0);
   const paOrdenado=(pa.data||[]).filter(p=>p.ativo).slice().sort((a,b)=>Number(a.saldo_potes)-Number(b.saldo_potes));
-  const paMenores=paOrdenado.slice(0,10);
-  const paMaiores=paOrdenado.slice(-10).reverse();
   const hj=new Date().toISOString().slice(0,10);
   const chegaHoje=(compras.data||[]).filter(c=>c.data_prevista_entrega===hj).length;
   document.getElementById('app').innerHTML=`
@@ -349,17 +352,25 @@ async function tPainel(){
     ${(alertas.data||[]).length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-top:12px"><b style="color:var(--morango)">⚠️ Insumo chega depois da produção</b>${alertas.data.slice(0,5).map(al=>`<div class="item-row baixo"><span>${al.item} · prod. ${brData(al.data_producao)}</span><span class="saldo mono" style="color:var(--morango)">falta ${fmt(al.falta)}</span></div>`).join('')}</div>`:''}
     ${abaixo.length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-top:12px"><b style="color:var(--morango)">Precisa de atenção</b>${abaixo.slice(0,8).map(i=>`<div class="item-row baixo"><span>${i.nome}</span><span class="saldo mono">${fmt(i.saldo_atual)}</span></div>`).join('')}</div>`:''}
     ${(balde.data||[]).length?`<div class="card" style="margin-top:12px"><b>Baldes com saldo</b>${balde.data.map(b=>`<div class="item-row"><span>${b.produtos.nome}</span><span class="saldo mono">${fmt(b.quantidade_kg)} kg</span></div>`).join('')}</div>`:''}
-    ${paOrdenado.length?`<div class="card" style="margin-top:12px"><b>🫙 Potes prontos — extremos de estoque</b><small style="color:#7A6A57;display:block;margin-bottom:10px">10 SKUs com mais potes e 10 com menos (só produtos ativos, ${paOrdenado.length} no total)</small>
-      <div style="display:flex;flex-wrap:wrap;gap:20px">
-        <div style="flex:1;min-width:230px">
-          <p class="pergunta" style="margin-top:0">🔼 10 maiores</p>
-          ${paMaiores.map(p=>`<div class="item-row"><span>${p.nome}${p.linha?` <span style="color:#8A7A64;font-size:12px">· ${p.linha}</span>`:''}</span><span class="saldo mono">${fmt(p.saldo_potes,0)}</span></div>`).join('')}
-        </div>
-        <div style="flex:1;min-width:230px">
-          <p class="pergunta" style="margin-top:0">🔽 10 menores</p>
-          ${paMenores.map(p=>`<div class="item-row ${Number(p.saldo_potes)<=1?'baixo':''}"><span>${p.nome}${p.linha?` <span style="color:#8A7A64;font-size:12px">· ${p.linha}</span>`:''}</span><span class="saldo mono">${fmt(p.saldo_potes,0)}</span></div>`).join('')}
-        </div>
-      </div>
+    ${paOrdenado.length?`<div class="card" style="margin-top:12px"><b>🫙 Potes prontos — extremos de estoque por linha</b><small style="color:#7A6A57;display:block;margin-bottom:10px">10 SKUs com mais potes e 10 com menos, por linha (só produtos ativos)</small>
+      ${GRUPOS_LINHA.map(g=>{
+        const itensG=paOrdenado.filter(p=>g.linhas.includes(p.linha));
+        if(!itensG.length)return'';
+        const menores=itensG.slice(0,10);
+        const maiores=itensG.slice(-10).reverse();
+        const sobrepoe=itensG.length<20;
+        return `<p class="pergunta" style="margin-top:16px">${g.nome} <span style="font-weight:400;text-transform:none;letter-spacing:0;color:#8A7A64">(${itensG.length} SKU${itensG.length===1?'':'s'} ativo${itensG.length===1?'':'s'}${sobrepoe?' — menos de 20, as duas listas se cruzam':''})</span></p>
+        <div style="display:flex;flex-wrap:wrap;gap:20px">
+          <div style="flex:1;min-width:230px">
+            <p style="font-size:12px;color:#8A7A64;margin:0 0 6px;font-weight:700">🔼 10 maiores</p>
+            ${maiores.map(p=>`<div class="item-row"><span>${p.nome}</span><span class="saldo mono">${fmt(p.saldo_potes,0)}</span></div>`).join('')}
+          </div>
+          <div style="flex:1;min-width:230px">
+            <p style="font-size:12px;color:#8A7A64;margin:0 0 6px;font-weight:700">🔽 10 menores</p>
+            ${menores.map(p=>`<div class="item-row ${Number(p.saldo_potes)<=1?'baixo':''}"><span>${p.nome}</span><span class="saldo mono">${fmt(p.saldo_potes,0)}</span></div>`).join('')}
+          </div>
+        </div>`;
+      }).join('')}
     </div>`:''}
     <div class="card" style="margin-top:12px"><b>Atividade da fábrica</b><small style="color:#7A6A57;display:block;margin-bottom:10px">tudo que aconteceu, com quem fez e o lote</small>
       <div class="feed">${(ativ.data&&ativ.data.length)?ativ.data.map(a=>{
@@ -1734,7 +1745,7 @@ async function tTV(){
 async function tvRender(){
   const dia=hojeLocal();
   const ini=new Date();ini.setHours(0,0,0,0);const iniISO=ini.toISOString();
-  const [metas,rec,envMov,refMov,pesag,tarefas,desp,itens]=await Promise.all([
+  const [metas,rec,envMov,refMov,pesag,tarefas,desp,itens,paTv,progFutura]=await Promise.all([
     sb.from('metas_dia').select('*').eq('data',dia),
     sb.from('quadro_recado').select('recado').eq('data',dia).maybeSingle(),
     sb.from('produto_acabado_movimentos').select('produto_acabado_id,quantidade,lote').eq('tipo','entrada').gte('criado_em',iniISO),
@@ -1742,7 +1753,9 @@ async function tvRender(){
     sb.from('programacao_refino').select('produto_id,quantidade_kg,status').eq('data',dia).in('status',['pesado','mistura','refino','balde']),
     sb.from('tarefas').select('*').eq('data',dia).order('criado_em'),
     sb.from('despachos_ecommerce').select('conteudo').eq('id',1).maybeSingle(),
-    sb.from('itens').select('nome,saldo_atual,estoque_minimo,unidade')
+    sb.from('itens').select('nome,saldo_atual,estoque_minimo,unidade'),
+    sb.from('produto_acabado').select('nome,linha,saldo_potes,ativo').eq('ativo',true),
+    sb.from('programacao_refino').select('data,quantidade_kg,status,produtos(nome),equipamentos(nome)').gte('data',dia).order('data')
   ]);
   const soma={};
   (envMov.data||[]).filter(m=>m.lote!=='AJUSTE').forEach(m=>soma['envase'+m.produto_acabado_id]=(soma['envase'+m.produto_acabado_id]||0)+Number(m.quantidade));
@@ -1780,7 +1793,53 @@ async function tvRender(){
       <h2 style="margin:0 0 12px">✅ Tarefas de hoje</h2>
       ${tarefas.data.map(t=>`<div class="item-row" style="border-color:#5A4630"><span style="color:${t.concluido?'#8FE39A':'#F0E6D6'}">${t.concluido?'☑':'☐'} ${t.descricao}${t.responsavel_designado?` <b>(${t.responsavel_designado})</b>`:''}</span>${t.concluido?`<small style="color:#8FE39A">${t.concluido_por||''}</small>`:''}</div>`).join('')}
     </div>`:null;
-  EST.tvPaineis=[painelMetas,painelDesp,painelEstoque,painelTarefas].filter(Boolean);
+  const paTvOrdenado=(paTv.data||[]).slice().sort((a,b)=>Number(a.saldo_potes)-Number(b.saldo_potes));
+  const gruposPotesTv=GRUPOS_LINHA.map(g=>{
+    const itensG=paTvOrdenado.filter(p=>g.linhas.includes(p.linha));
+    if(!itensG.length)return null;
+    return {nome:g.nome,total:itensG.length,maiores:itensG.slice(-10).reverse(),menores:itensG.slice(0,10)};
+  }).filter(Boolean);
+  const painelPotes=gruposPotesTv.length?`<div class="tv-desp">
+      <h2 style="margin:0 0 14px">🫙 Potes prontos — extremos por linha</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:22px">
+        ${gruposPotesTv.map(g=>`<div>
+          <div style="font-size:22px;font-weight:900;color:#FFD84D;margin-bottom:6px">${g.nome} <span style="font-size:14px;color:#C9B99F;font-weight:700">(${g.total} SKUs${g.total<20?' · listas se cruzam':''})</span></div>
+          <div style="font-size:14px;font-weight:800;color:#7ED957;text-transform:uppercase;letter-spacing:.08em;margin:8px 0 2px">🔼 maiores</div>
+          ${g.maiores.map(p=>`<div class="item-row" style="border-color:#5A4630;padding:7px 0;font-size:16px;color:#F0E6D6"><span>${p.nome}</span><span class="mono" style="font-weight:900;font-size:18px;color:#7ED957">${fmt(p.saldo_potes,0)}</span></div>`).join('')}
+          <div style="font-size:14px;font-weight:800;color:#FF7B7B;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 2px">🔽 menores</div>
+          ${g.menores.map(p=>`<div class="item-row" style="border-color:#5A4630;padding:7px 0;font-size:16px;color:#F0E6D6"><span>${p.nome}</span><span class="mono" style="font-weight:900;font-size:18px;color:${Number(p.saldo_potes)<=1?'#FF5A5A':'#FFB93B'}">${fmt(p.saldo_potes,0)}</span></div>`).join('')}
+        </div>`).join('')}
+      </div>
+    </div>`:null;
+  const progPorDia={};
+  (progFutura.data||[]).forEach(r=>{
+    const d=r.data;
+    progPorDia[d]=progPorDia[d]||{};
+    const eqNome=r.equipamentos?.nome||'?';
+    const key=eqNome+'|'+(r.produtos?.nome||'?');
+    progPorDia[d][key]=progPorDia[d][key]||{equip:eqNome,produto:r.produtos?.nome||'?',bateladas:0,kg:0,statusCount:{}};
+    const g=progPorDia[d][key];
+    g.bateladas++;g.kg+=Number(r.quantidade_kg);
+    g.statusCount[r.status]=(g.statusCount[r.status]||0)+1;
+  });
+  const diasProg=Object.keys(progPorDia).sort().slice(0,6);
+  const lblStatus={programado:'a pesar',pesado:'pesado',mistura:'em mistura',refino:'em refino',balde:'no balde'};
+  const painelProgramacao=diasProg.length?`<div class="tv-desp">
+      <h2 style="margin:0 0 14px">🏭 Programação — próximos dias</h2>
+      ${diasProg.map((d,idx)=>{
+        const ehHoje=d===dia;
+        const dataFmt=new Date(d+'T12:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
+        return `<div style="margin:${idx===0?'0':'18px'} 0 6px">
+          <div style="font-size:21px;font-weight:900;color:${ehHoje?'#FFD84D':'#E8DECF'};text-transform:capitalize;margin-bottom:8px">${dataFmt}${ehHoje?' · HOJE':''}</div>
+          ${Object.values(progPorDia[d]).map(g=>{
+            const statusTxt=Object.entries(g.statusCount).map(([s,n])=>n+' '+(lblStatus[s]||s)).join(' · ');
+            return `<div class="tv-item" style="margin:0 0 10px"><div><div class="nome">${(g.equip==='Moinho 1'?'M1':(g.equip==='Moinho 2'?'M2':g.equip))} · ${g.produto}</div>
+            <div class="nums">${g.bateladas} batelada${g.bateladas>1?'s':''} · ${fmt(g.kg,0)} kg · ${statusTxt}</div></div></div>`;
+          }).join('')}
+        </div>`;
+      }).join('')}
+    </div>`:null;
+  EST.tvPaineis=[painelMetas,painelDesp,painelEstoque,painelTarefas,painelPotes,painelProgramacao].filter(Boolean);
   if(EST.tvIdx==null||EST.tvIdx>=EST.tvPaineis.length)EST.tvIdx=0;
   document.getElementById('app').innerHTML=`
   <div class="tv">
