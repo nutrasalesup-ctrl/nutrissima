@@ -530,12 +530,14 @@ async function tProg(){
   const mesNome=new Date(ini+'T12:00').toLocaleDateString('pt-BR',{month:'long'});
   const janelaKan=[hojeStr,addDias(hojeStr,1),addDias(hojeStr,2)];
   const diaLabelKan=d=>d===janelaKan[0]?'hoje':d===janelaKan[1]?'amanhã':(wname(d)+' '+dnum(d));
-  const kanItens=linhas.filter(p=>janelaKan.includes(p.data)&&p.status!=='programado');
-  const porStatusKan={pesado:[],mistura:[],refino:[],balde:[]};
+  const kanItens=linhas.filter(p=>janelaKan.includes(p.data));
+  const porStatusKan={programado:[],pesado:[],mistura:[],refino:[],balde:[]};
   kanItens.forEach(p=>{(porStatusKan[p.status]=porStatusKan[p.status]||[]).push(p)});
   const kanCardHTML=p=>{
     const nome=p.produtos?.nome||'—';const nomeEsc=nome.replace(/'/g,"\\'");const m=moinhoTipo(p.equipamentos?.nome);
-    const acao=p.status==='pesado'
+    const acao=p.status==='programado'
+      ?'<button class="calbtn" onclick="tela(\''+'pesagem\',\''+p.id+'\')">⚖️ Pesar</button>'
+      :p.status==='pesado'
       ?'<button class="calbtn azul" onclick="iniciarMistura(\''+p.id+'\',\''+nomeEsc+'\')">🥣 Iniciar mistura</button>'
       :p.status==='mistura'
       ?'<button class="calbtn mel" onclick="iniciarRefino(\''+p.id+'\',\''+nomeEsc+'\')">🌀 Iniciar refino</button>'
@@ -553,6 +555,7 @@ async function tProg(){
     return '<div class="kancol"><div class="kancol-h" style="color:'+cor+'"><span>'+titulo+'</span><span class="mono">'+list.length+'</span></div>'+(list.length?list.map(kanCardHTML).join(''):'<div class="kanvazio">—</div>')+'</div>';
   };
   const kanHTML='<div class="kanscroll">'
+    +kanColHTML('programado','📋 Pesar','#7A6A57')
     +kanColHTML('pesado','⚖️ Pesado','#2B5A78')
     +kanColHTML('mistura','🥣 Mistura','#7A5A14')
     +kanColHTML('refino','🌀 Refino','#B0510F')
@@ -611,7 +614,7 @@ async function tProg(){
   ${trilha('Programação')}${topo('Programação','Moinhos 1 e 2 em paralelo')}
   <main>
     ${(alertas.data||[]).length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-bottom:12px"><b style="color:var(--morango)">⚠️ Insumo chega depois da produção</b>${alertas.data.map(al=>`<p style="font-size:14px;margin-top:6px"><b>${al.item}</b> · produção de ${brData(al.data_producao)}: precisa <b class="mono">${fmt(al.necessario_ate)}</b> acumulado, terá <b class="mono">${fmt(al.disponivel_ate)}</b> — falta <b class="mono" style="color:var(--morango)">${fmt(al.falta)} ${al.unidade||''}</b>${al.proxima_entrega?` · próxima entrega ${brData(al.proxima_entrega)}`:' · sem pedido a caminho'}</p>`).join('')}<small style="color:#7A6A57">solução: remarcar a produção (🗓️ no cartão) ou a entrega do pedido (✏️ em Compras)</small></div>`:''}
-    <p style="font-size:11px;font-weight:800;color:#8A7A64;letter-spacing:.04em;text-transform:uppercase;margin:0 0 6px 2px">🏭 Chão de fábrica — hoje + próx. 2 dias</p>
+    <p style="font-size:11px;font-weight:800;color:#8A7A64;letter-spacing:.04em;text-transform:uppercase;margin:0 0 6px 2px">hoje + próx. 2 dias</p>
     ${kanHTML}
     <div class="calweek">
       <button onclick="progSemana(-7)">‹${antes?` <i>${antes}</i>`:''}</button>
