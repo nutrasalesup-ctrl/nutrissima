@@ -547,9 +547,9 @@ async function tProg(){
       :p.status==='refino'
       ?'<button class="calbtn laranja" onclick="concluirRefinoUI(\''+p.id+'\',\''+nomeEsc+'\')">🛢️ → balde</button>'
       :(()=>{const kgEntrou=p.lote?baldeEntradaPorLote[p.lote]:null;
-         return kgEntrou
-           ?'<div class="calinfo ok">✓ '+fmt(kgEntrou,0)+' kg já lançados no balde</div>'
-           :'<div class="calinfo pend">🛢️ aguardando lançamento (verifique em Entrada de balde)</div>';
+         if(kgEntrou)return '<div class="calinfo ok">✓ '+fmt(kgEntrou,0)+' kg já lançados no balde</div>';
+         if(p.entrada_confirmada)return '<div class="calinfo ok">✓ lançado (confirmado manualmente)</div>';
+         return '<div class="calinfo pend">🛢️ aguardando lançamento (verifique em Entrada de balde)</div><button class="calbtn" style="margin-top:6px;background:#7A6A57" onclick="marcarBaldeLancado(\''+p.id+'\',\''+nomeEsc+'\')">✓ Marcar como lançado</button>';
        })();
     return '<div class="kancard"><div class="kd"><span class="calmo '+m+'">'+(m==='m1'?'M1':'M2')+'</span><span>'+diaLabelKan(p.data)+'</span></div><b>'+nome+'</b><div class="mono" style="font-size:13px;margin:2px 0 6px">'+fmt(p.quantidade_kg,0)+' kg'+(p.lote?' · <span class="mono" style="color:#A99A82;font-size:11px">'+p.lote+'</span>':'')+'</div>'+acao+'</div>';
   };
@@ -583,9 +583,9 @@ async function tProg(){
           :st==='refino'
           ?'<button class="calbtn laranja" onclick="concluirRefinoUI(\''+p.id+'\',\''+nomeEsc+'\')">🛢️ → balde</button>'
           :(()=>{const kgEntrou=p.lote?baldeEntradaPorLote[p.lote]:null;
-             return kgEntrou
-               ?'<div class="calinfo ok">✓ '+fmt(kgEntrou,0)+' kg já lançados no balde</div>'
-               :'<div class="calinfo pend">🛢️ aguardando lançamento (verifique em Entrada de balde)</div>';
+             if(kgEntrou)return '<div class="calinfo ok">✓ '+fmt(kgEntrou,0)+' kg já lançados no balde</div>';
+             if(p.entrada_confirmada)return '<div class="calinfo ok">✓ lançado (confirmado manualmente)</div>';
+             return '<div class="calinfo pend">🛢️ aguardando lançamento (verifique em Entrada de balde)</div><button class="calbtn" style="margin-top:6px;background:#7A6A57" onclick="marcarBaldeLancado(\''+p.id+'\',\''+nomeEsc+'\')">✓ Marcar como lançado</button>';
            })();
         const chipCor=st==='programado'?'mel':st==='pesado'?'azul':st==='mistura'?'mel':st==='refino'?'laranja':'ok';
         const chipTxt=st==='programado'?'a pesar':st==='pesado'?'pesado':st==='mistura'?'em mistura':st==='refino'?'em refino':'refino concluído';
@@ -737,6 +737,14 @@ async function addBaldeEntrada(produtoId,nome,lote,kgPrevisto){
   if(error)return msg(error.message,true);
   msg('✅ '+fmt(n)+' kg lançados no balde');
   tela('baldeEntrada',{produtoId,nome,lote,kgPrevisto});
+}
+async function marcarBaldeLancado(id,nome){
+  if(!confirm('Marcar a entrada de balde de '+nome+' como já lançada?\n(isso só tira o aviso da tela — não confere nem lança nada no estoque de verdade)'))return;
+  if(precisaOperador())return;
+  const {error}=await sb.from('programacao_refino').update({entrada_confirmada:true}).eq('id',id);
+  if(error)return msg(error.message,true);
+  await sb.from('atividades').insert({tipo:'ajuste',descricao:'Entrada de balde marcada manualmente como lançada — '+nome,responsavel:EST.operador});
+  msg('✅ Marcado como lançado — '+nome);tela('programacao');
 }
 async function iniciarMistura(id,nome){
   if(!confirm('Iniciar mistura de '+nome+'? (só marca o andamento — passa pelo dispersor antes do moinho, sem lançar quantidade nem estoque)'))return;
