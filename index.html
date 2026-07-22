@@ -102,6 +102,8 @@ label{display:block;font-size:13px;font-weight:700;color:#7A6A57;margin:12px 0 5
 .tv-desp .item-row{border-color:#5A4630;padding:10px 0;font-size:18px}
 @keyframes alerta{50%{border-color:#FF5A5A22;box-shadow:0 0 22px #FF5A5A33}}
 .tv .semmeta{color:#8A7A64;font-size:18px;padding:0 18px 8px}
+.tv-pause{display:block;margin:16px auto 0;padding:12px 26px;border-radius:999px;border:1.5px solid #ffffff33;background:#00000038;color:#C9B99F;font-size:15px;font-weight:800;cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:none;min-height:44px}
+.tv-pause.ativo{background:#FFD84D;color:#3A2400;border-color:#FFD84D;box-shadow:0 0 22px #FFD84D66}
 .calweek{display:flex;align-items:center;gap:8px;margin:6px 0 10px}
 .calweek>button{flex:none;min-width:52px;height:44px;border:1.5px solid var(--linha);background:#fff;border-radius:12px;font-size:20px;font-weight:900;cursor:pointer;color:var(--cacau);display:flex;align-items:center;justify-content:center;gap:4px}
 .calweek>button i{font-size:11px;font-style:normal;background:var(--mel);color:#fff;border-radius:99px;padding:1px 6px}
@@ -1734,6 +1736,10 @@ async function tTV(){
   await tvRender();
   EST.tvTimer=setInterval(()=>{if(document.getElementById('tvPainelAtual'))tvRender();else{clearInterval(EST.tvTimer);EST.tvTimer=null}},45000);
   EST.tvRelogio=setInterval(()=>{const r=document.getElementById('tvClock');if(r)r.textContent=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});else{clearInterval(EST.tvRelogio);EST.tvRelogio=null}},1000);
+  tvIniciaRotacao();
+}
+function tvIniciaRotacao(){
+  if(EST.tvPainelTimer){clearInterval(EST.tvPainelTimer);EST.tvPainelTimer=null}
   EST.tvPainelTimer=setInterval(()=>{
     const el=document.getElementById('tvPainelAtual');
     if(!el||!EST.tvPaineis||EST.tvPaineis.length<2){if(!el){clearInterval(EST.tvPainelTimer);EST.tvPainelTimer=null}return}
@@ -1741,6 +1747,16 @@ async function tTV(){
     el.innerHTML=EST.tvPaineis[EST.tvIdx];
     document.querySelectorAll('.tv-dots span').forEach((d,i)=>{d.style.width=i===EST.tvIdx?'18px':'6px';d.style.background=i===EST.tvIdx?'#F0DFA0':'#5A4630'});
   },18000);
+}
+function tvPause(){
+  if(EST.tvPainelTimer){clearInterval(EST.tvPainelTimer);EST.tvPainelTimer=null}
+  const b=document.getElementById('tvPauseBtn');
+  if(b){b.textContent='⏸ pausado — solte pra continuar';b.classList.add('ativo')}
+}
+function tvResume(){
+  const b=document.getElementById('tvPauseBtn');
+  if(b){b.textContent='⏸ segure pra pausar';b.classList.remove('ativo')}
+  if(EST.tvPaineis&&EST.tvPaineis.length>1)tvIniciaRotacao();
 }
 async function tvRender(){
   const dia=hojeLocal();
@@ -1797,17 +1813,18 @@ async function tvRender(){
   const gruposPotesTv=GRUPOS_LINHA.map(g=>{
     const itensG=paTvOrdenado.filter(p=>g.linhas.includes(p.linha));
     if(!itensG.length)return null;
-    return {nome:g.nome,total:itensG.length,maiores:itensG.slice(-10).reverse(),menores:itensG.slice(0,10)};
+    return {nome:g.nome,total:itensG.length,maiores:itensG.slice(-5).reverse(),menores:itensG.slice(0,5)};
   }).filter(Boolean);
-  const painelPotes=gruposPotesTv.length?`<div class="tv-desp">
-      <h2 style="margin:0 0 14px">🫙 Potes prontos — extremos por linha</h2>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:22px">
-        ${gruposPotesTv.map(g=>`<div>
-          <div style="font-size:22px;font-weight:900;color:#FFD84D;margin-bottom:6px">${g.nome} <span style="font-size:14px;color:#C9B99F;font-weight:700">(${g.total} SKUs${g.total<20?' · listas se cruzam':''})</span></div>
-          <div style="font-size:14px;font-weight:800;color:#7ED957;text-transform:uppercase;letter-spacing:.08em;margin:8px 0 2px">🔼 maiores</div>
-          ${g.maiores.map(p=>`<div class="item-row" style="border-color:#5A4630;padding:7px 0;font-size:16px;color:#F0E6D6"><span>${p.nome}</span><span class="mono" style="font-weight:900;font-size:18px;color:#7ED957">${fmt(p.saldo_potes,0)}</span></div>`).join('')}
-          <div style="font-size:14px;font-weight:800;color:#FF7B7B;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 2px">🔽 menores</div>
-          ${g.menores.map(p=>`<div class="item-row" style="border-color:#5A4630;padding:7px 0;font-size:16px;color:#F0E6D6"><span>${p.nome}</span><span class="mono" style="font-weight:900;font-size:18px;color:${Number(p.saldo_potes)<=1?'#FF5A5A':'#FFB93B'}">${fmt(p.saldo_potes,0)}</span></div>`).join('')}
+  const painelPotes=gruposPotesTv.length?`<div class="tv-desp" style="padding:22px 24px">
+      <h2 style="margin:0 0 16px">🫙 Potes prontos — extremos por linha</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:20px">
+        ${gruposPotesTv.map(g=>`<div style="background:#ffffff08;border:1px solid #ffffff1a;border-radius:18px;padding:18px 20px">
+          <div style="font-size:23px;font-weight:900;color:#FFD84D;margin-bottom:2px">${g.nome}</div>
+          <div style="font-size:13px;color:#9C8B76;font-weight:700;margin-bottom:12px">${g.total} SKUs ativos${g.total<10?' · maiores e menores se cruzam':''}</div>
+          <div style="font-size:13px;font-weight:800;color:#7ED957;text-transform:uppercase;letter-spacing:.08em;margin:0 0 6px">🔼 5 maiores</div>
+          ${g.maiores.map(p=>`<div class="item-row" style="border-color:#ffffff14;padding:9px 0;font-size:18px;color:#F0E6D6"><span>${p.nome}</span><span class="mono" style="font-weight:900;font-size:21px;color:#7ED957">${fmt(p.saldo_potes,0)}</span></div>`).join('')}
+          <div style="font-size:13px;font-weight:800;color:#FF7B7B;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 6px">🔽 5 menores</div>
+          ${g.menores.map(p=>`<div class="item-row" style="border-color:#ffffff14;padding:9px 0;font-size:18px;color:#F0E6D6"><span>${p.nome}</span><span class="mono" style="font-weight:900;font-size:21px;color:${Number(p.saldo_potes)<=1?'#FF5A5A':'#FFB93B'}">${fmt(p.saldo_potes,0)}</span></div>`).join('')}
         </div>`).join('')}
       </div>
     </div>`:null;
@@ -1822,22 +1839,24 @@ async function tvRender(){
     g.bateladas++;g.kg+=Number(r.quantidade_kg);
     g.statusCount[r.status]=(g.statusCount[r.status]||0)+1;
   });
-  const diasProg=Object.keys(progPorDia).sort().slice(0,6);
+  const diasProg=Object.keys(progPorDia).sort().slice(0,4);
   const lblStatus={programado:'a pesar',pesado:'pesado',mistura:'em mistura',refino:'em refino',balde:'no balde'};
-  const painelProgramacao=diasProg.length?`<div class="tv-desp">
-      <h2 style="margin:0 0 14px">🏭 Programação — próximos dias</h2>
-      ${diasProg.map((d,idx)=>{
-        const ehHoje=d===dia;
-        const dataFmt=new Date(d+'T12:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
-        return `<div style="margin:${idx===0?'0':'18px'} 0 6px">
-          <div style="font-size:21px;font-weight:900;color:${ehHoje?'#FFD84D':'#E8DECF'};text-transform:capitalize;margin-bottom:8px">${dataFmt}${ehHoje?' · HOJE':''}</div>
-          ${Object.values(progPorDia[d]).map(g=>{
-            const statusTxt=Object.entries(g.statusCount).map(([s,n])=>n+' '+(lblStatus[s]||s)).join(' · ');
-            return `<div class="tv-item" style="margin:0 0 10px"><div><div class="nome">${(g.equip==='Moinho 1'?'M1':(g.equip==='Moinho 2'?'M2':g.equip))} · ${g.produto}</div>
-            <div class="nums">${g.bateladas} batelada${g.bateladas>1?'s':''} · ${fmt(g.kg,0)} kg · ${statusTxt}</div></div></div>`;
-          }).join('')}
-        </div>`;
-      }).join('')}
+  const painelProgramacao=diasProg.length?`<div class="tv-desp" style="padding:22px 24px">
+      <h2 style="margin:0 0 16px">🏭 Programação — próximos dias</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:20px">
+        ${diasProg.map(d=>{
+          const ehHoje=d===dia;
+          const dataFmt=new Date(d+'T12:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
+          return `<div style="background:${ehHoje?'#FFD84D14':'#ffffff08'};border:1px solid ${ehHoje?'#FFD84D55':'#ffffff1a'};border-radius:18px;padding:16px 18px">
+            <div style="font-size:21px;font-weight:900;color:${ehHoje?'#FFD84D':'#E8DECF'};text-transform:capitalize;margin-bottom:10px">${dataFmt}${ehHoje?' · HOJE':''}</div>
+            ${Object.values(progPorDia[d]).map(g=>{
+              const statusTxt=Object.entries(g.statusCount).map(([s,n])=>n+' '+(lblStatus[s]||s)).join(' · ');
+              return `<div class="tv-item" style="margin:0 0 10px"><div><div class="nome">${(g.equip==='Moinho 1'?'M1':(g.equip==='Moinho 2'?'M2':g.equip))} · ${g.produto}</div>
+              <div class="nums">${g.bateladas} batelada${g.bateladas>1?'s':''} · ${fmt(g.kg,0)} kg · ${statusTxt}</div></div></div>`;
+            }).join('')}
+          </div>`;
+        }).join('')}
+      </div>
     </div>`:null;
   EST.tvPaineis=[painelMetas,painelDesp,painelEstoque,painelTarefas,painelPotes,painelProgramacao].filter(Boolean);
   if(EST.tvIdx==null||EST.tvIdx>=EST.tvPaineis.length)EST.tvIdx=0;
@@ -1850,7 +1869,8 @@ async function tvRender(){
     </div>
     ${rec.data?.recado?`<div class="recado">📌 ${rec.data.recado}</div>`:''}
     <div id="tvPainelAtual">${EST.tvPaineis[EST.tvIdx]||''}</div>
-    ${EST.tvPaineis.length>1?`<div class="tv-dots" style="display:flex;justify-content:center;gap:6px;margin-top:14px">${EST.tvPaineis.map((_,i)=>`<span style="width:${i===EST.tvIdx?18:6}px;height:6px;border-radius:3px;background:${i===EST.tvIdx?'#F0DFA0':'#5A4630'};display:inline-block"></span>`).join('')}</div>`:''}
+    ${EST.tvPaineis.length>1?`<div class="tv-dots" style="display:flex;justify-content:center;gap:6px;margin-top:14px">${EST.tvPaineis.map((_,i)=>`<span style="width:${i===EST.tvIdx?18:6}px;height:6px;border-radius:3px;background:${i===EST.tvIdx?'#F0DFA0':'#5A4630'};display:inline-block"></span>`).join('')}</div>
+    <button id="tvPauseBtn" class="tv-pause" onpointerdown="tvPause()" onpointerup="tvResume()" onpointerleave="tvResume()" onpointercancel="tvResume()">⏸ segure pra pausar</button>`:''}
     <p style="margin-top:14px;color:#8A7A64;font-size:13px">${EST.tvPaineis.length>1?'troca de painel a cada 18s · ':''}atualiza sozinho a cada 45 s · para a TV, abra ${location.origin+location.pathname}#tv</p>
   </div>`;
 }
