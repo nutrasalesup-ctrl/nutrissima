@@ -324,15 +324,17 @@ const GRUPOS_LINHA=[
 async function tPainel(){
   document.getElementById('app').innerHTML=trilha('')+topo('Painel','Nutríssima agora')+'<main><div class="center">Carregando…</div></main>';
   const [itens,compras,balde,pa,ativ,alertas]=await Promise.all([
-    sb.from('itens').select('nome,saldo_atual,estoque_minimo'),
+    sb.from('itens').select('nome,categoria,saldo_atual,estoque_minimo'),
     sb.from('compras').select('id,status,data_prevista_entrega').in('status',['pendente','aguardando_pagamento','liberado']),
     sb.from('estoque_balde').select('quantidade_kg,produtos(nome)').gt('quantidade_kg',0),
     sb.from('produto_acabado').select('nome,linha,saldo_potes,ativo'),
     sb.from('atividades').select('*').order('criado_em',{ascending:false}).limit(15),
     sb.rpc('fn_alerta_entregas')
   ]);
-  const abaixo=(itens.data||[]).filter(i=>i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo))
+  const abaixo=(itens.data||[]).filter(i=>i.categoria!=='embalagem'&&i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo))
     .sort((a,b)=>(Number(a.saldo_atual)/Number(a.estoque_minimo))-(Number(b.saldo_atual)/Number(b.estoque_minimo)));
+  const embCritico=(itens.data||[]).filter(i=>i.categoria==='embalagem'&&(i.estoque_minimo!=null?Number(i.saldo_atual)<Number(i.estoque_minimo):Number(i.saldo_atual)<=0))
+    .sort((a,b)=>Number(a.saldo_atual)-Number(b.saldo_atual));
   const kgBalde=(balde.data||[]).reduce((a,b)=>a+Number(b.quantidade_kg),0);
   const potes=(pa.data||[]).reduce((a,b)=>a+Number(b.saldo_potes),0);
   const paOrdenado=(pa.data||[]).filter(p=>p.ativo).slice().sort((a,b)=>Number(a.saldo_potes)-Number(b.saldo_potes));
@@ -349,6 +351,7 @@ async function tPainel(){
     </div>
     ${(alertas.data||[]).length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-top:12px"><b style="color:var(--morango)">⚠️ Insumo chega depois da produção</b>${alertas.data.slice(0,5).map(al=>`<div class="item-row baixo"><span>${al.item} · prod. ${brData(al.data_producao)}</span><span class="saldo mono" style="color:var(--morango)">falta ${fmt(al.falta)}</span></div>`).join('')}</div>`:''}
     ${abaixo.length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-top:12px"><b style="color:var(--morango)">Precisa de atenção (${abaixo.length})</b>${abaixo.map(i=>`<div class="item-row baixo"><span>${i.nome}</span><span class="saldo mono">${fmt(i.saldo_atual)} <small style="color:#7A6A57">/ mín. ${fmt(i.estoque_minimo)}</small></span></div>`).join('')}</div>`:''}
+    ${embCritico.length?`<div class="card" style="border-color:#F0D9B8;background:#FDF8F0;margin-top:12px"><b style="color:var(--laranja)">📦 Embalagens (${embCritico.length})</b><small style="color:#7A6A57;display:block;margin-bottom:4px">potes, tampas, rótulos e caixas — zeradas ou abaixo do mínimo</small>${embCritico.map(i=>`<div class="item-row baixo"><span>${i.nome}</span><span class="saldo mono">${fmt(i.saldo_atual)}${i.estoque_minimo!=null?' <small style="color:#7A6A57">/ mín. '+fmt(i.estoque_minimo)+'</small>':''}</span></div>`).join('')}</div>`:''}
     ${(balde.data||[]).length?`<div class="card" style="margin-top:12px"><b>Baldes com saldo</b>${balde.data.map(b=>`<div class="item-row"><span>${b.produtos.nome}</span><span class="saldo mono">${fmt(b.quantidade_kg)} kg</span></div>`).join('')}</div>`:''}
     ${paOrdenado.length?`<div class="card" style="margin-top:12px"><b>🫙 Potes prontos — extremos de estoque por linha</b><small style="color:#7A6A57;display:block;margin-bottom:10px">10 SKUs com mais potes e 10 com menos, por linha (só produtos ativos)</small>
       ${GRUPOS_LINHA.map(g=>{
@@ -948,12 +951,15 @@ async function mudarEntrega(id,nome,atual){
 /* ================= COMPRAS / MRP ================= */
 async function tMRP(){
   document.getElementById('app').innerHTML=trilha('Compra')+topo('Compras / MRP','calculando a partir da programação…')+'<main><div class="center">Calculando…</div></main>';
-  const [mrp,pedidos,forns]=await Promise.all([
+  const [mrp,pedidos,forns,itensEmb]=await Promise.all([
     sb.rpc('fn_mrp'),
     sb.from('compras').select('*, itens(nome,unidade)').in('status',['pendente','aguardando_pagamento','liberado']).order('data_prevista_entrega'),
-    sb.from('fornecedores').select('id,nome').order('nome')
+    sb.from('fornecedores').select('id,nome').order('nome'),
+    sb.from('itens').select('id,nome,unidade,saldo_atual,estoque_minimo').eq('categoria','embalagem').order('nome')
   ]);
   EST.cache.forns=forns.data||[];EST.cache.mrp=mrp.data||[];EST.cache.pedidos=pedidos.data||[];
+  const embAlerta=(itensEmb.data||[]).filter(i=>i.estoque_minimo!=null?Number(i.saldo_atual)<Number(i.estoque_minimo):Number(i.saldo_atual)<=0)
+    .sort((a,b)=>Number(a.saldo_atual)-Number(b.saldo_atual));
   const sug=(mrp.data||[]).filter(m=>m.a_comprar>0||m.status==='faltam dados');
   // decomposição do "comprar" + grade de criticidade — só apresentação, não muda a conta
   const grade=m=>{
@@ -992,6 +998,12 @@ async function tMRP(){
         </div>
         ${m.a_comprar>0?`<button class="btnP" style="min-height:44px;font-size:15px;margin-top:8px;background:${g.cor}" onclick="novoPedido('${m.item_id}','${m.nome.replace(/'/g,"\\'")}',${m.a_comprar})">Criar pedido de ${fmt(m.a_comprar)} ${u}</button>`:''}
       </div>`;}).join(''):'<div class="center">Nenhuma compra necessária para a programação atual. ✅</div>'}
+    </div>
+    <div class="card"><b>📦 Embalagens (${embAlerta.length})</b><small style="color:#7A6A57;display:block;margin-bottom:6px">potes, tampas, rótulos e caixas — abaixo do mínimo (quando cadastrado) ou zeradas</small>
+    ${embAlerta.length?embAlerta.map(i=>`
+      <div class="item-row"><span>${i.nome}<br><small style="color:#7A6A57">${i.estoque_minimo!=null?'mínimo '+fmt(i.estoque_minimo):'sem mínimo cadastrado'}</small></span>
+      <span style="display:flex;gap:8px;align-items:center"><b class="mono" style="color:${Number(i.saldo_atual)<=0?'#C63A3A':'#D9772B'}">${fmt(i.saldo_atual)} ${i.unidade||''}</b>
+      <button class="btnP" style="min-height:auto;padding:8px 14px;font-size:13px;margin:0" onclick="novoPedido('${i.id}','${i.nome.replace(/'/g,"\\'")}',${i.estoque_minimo!=null?Math.max(0,Number(i.estoque_minimo)-Number(i.saldo_atual)):1000})">Pedir</button></span></div>`).join(''):'<div class="center">Nenhuma embalagem crítica.</div>'}
     </div>
     <div class="card"><b>Pedidos em andamento</b>
     ${(pedidos.data||[]).length?pedidos.data.map(c=>`
@@ -1866,7 +1878,7 @@ async function tvRender(){
   const [tarefas,desp,itens,paTv,progFutura,mrp]=await Promise.all([
     sb.from('tarefas').select('*').eq('data',dia).order('criado_em'),
     sb.from('despachos_ecommerce').select('conteudo').eq('id',1).maybeSingle(),
-    sb.from('itens').select('nome,saldo_atual,estoque_minimo,unidade'),
+    sb.from('itens').select('nome,categoria,saldo_atual,estoque_minimo,unidade'),
     sb.from('produto_acabado').select('nome,linha,saldo_potes,ativo').eq('ativo',true),
     sb.from('programacao_refino').select('data,quantidade_kg,status,produtos(nome),equipamentos(nome)').gte('data',dia).order('data'),
     sb.rpc('fn_mrp')
@@ -1880,11 +1892,18 @@ async function tvRender(){
       ${linhasDesp.slice(0,6).map(x=>`<div class="tv-item" style="margin:0 0 8px;padding:10px 12px"><div style="display:flex;justify-content:space-between;gap:10px"><div class="nome" style="font-size:17px">${x.nome}</div><div class="pct" style="font-size:22px">${fmt(x.qtd,0)}</div></div></div>`).join('')}
       ${linhasDesp.length>6?`<p style="color:#8A7A64;text-align:center;margin-top:6px">+ ${linhasDesp.length-6} produtos</p>`:''}
     </div>`:null;
-  const abaixo=(itens.data||[]).filter(i=>i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo));
+  const abaixo=(itens.data||[]).filter(i=>i.categoria!=='embalagem'&&i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo));
   const painelEstoque=abaixo.length?`<div class="tv-desp">
       <h2 style="margin:0 0 10px">🔴 Abaixo do mínimo</h2>
       ${abaixo.slice(0,6).map(i=>`<div class="tv-item critico" style="margin:0 0 8px;padding:10px 12px"><div style="display:flex;justify-content:space-between;gap:10px"><div class="nome" style="font-size:17px">${i.nome}</div><div class="pct" style="font-size:22px">${fmt(i.saldo_atual)} ${i.unidade||''}</div></div></div>`).join('')}
       ${abaixo.length>6?`<p style="color:#8A7A64;text-align:center;margin-top:6px">+ ${abaixo.length-6} itens</p>`:''}
+    </div>`:null;
+  const embCritico=(itens.data||[]).filter(i=>i.categoria==='embalagem'&&(i.estoque_minimo!=null?Number(i.saldo_atual)<Number(i.estoque_minimo):Number(i.saldo_atual)<=0))
+    .sort((a,b)=>Number(a.saldo_atual)-Number(b.saldo_atual));
+  const painelEmbalagens=embCritico.length?`<div class="tv-desp">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><h2 style="margin:0">📦 Embalagens</h2><span class="chip mel" style="font-size:14px">${embCritico.length} item${embCritico.length>1?'s':''}</span></div>
+      ${embCritico.slice(0,6).map(i=>`<div class="tv-item critico" style="margin:0 0 8px;padding:10px 12px"><div style="display:flex;justify-content:space-between;gap:10px"><div class="nome" style="font-size:17px">${i.nome}</div><div class="pct" style="font-size:22px">${fmt(i.saldo_atual)} ${i.unidade||''}</div></div></div>`).join('')}
+      ${embCritico.length>6?`<p style="color:#8A7A64;text-align:center;margin-top:6px">+ ${embCritico.length-6} itens</p>`:''}
     </div>`:null;
   const painelTarefas=(tarefas.data||[]).length?`<div class="tv-desp">
       <h2 style="margin:0 0 10px">✅ Tarefas de hoje</h2>
@@ -1962,6 +1981,7 @@ async function tvRender(){
       ${painelCompras?`<div class="wide">${painelCompras}</div>`:''}
       ${painelDesp?`<div>${painelDesp}</div>`:''}
       ${painelEstoque?`<div>${painelEstoque}</div>`:''}
+      ${painelEmbalagens?`<div>${painelEmbalagens}</div>`:''}
       ${painelTarefas?`<div>${painelTarefas}</div>`:''}
       ${painelPotes?`<div class="wide">${painelPotes}</div>`:''}
       ${painelProgramacao?`<div class="wide">${painelProgramacao}</div>`:''}
