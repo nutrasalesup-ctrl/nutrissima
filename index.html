@@ -331,7 +331,8 @@ async function tPainel(){
     sb.from('atividades').select('*').order('criado_em',{ascending:false}).limit(15),
     sb.rpc('fn_alerta_entregas')
   ]);
-  const abaixo=(itens.data||[]).filter(i=>i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo));
+  const abaixo=(itens.data||[]).filter(i=>i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo))
+    .sort((a,b)=>(Number(a.saldo_atual)/Number(a.estoque_minimo))-(Number(b.saldo_atual)/Number(b.estoque_minimo)));
   const kgBalde=(balde.data||[]).reduce((a,b)=>a+Number(b.quantidade_kg),0);
   const potes=(pa.data||[]).reduce((a,b)=>a+Number(b.saldo_potes),0);
   const paOrdenado=(pa.data||[]).filter(p=>p.ativo).slice().sort((a,b)=>Number(a.saldo_potes)-Number(b.saldo_potes));
@@ -347,7 +348,7 @@ async function tPainel(){
       <div class="kpi"><b>${fmt(potes,0)}</b><p>potes em estoque</p></div>
     </div>
     ${(alertas.data||[]).length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-top:12px"><b style="color:var(--morango)">⚠️ Insumo chega depois da produção</b>${alertas.data.slice(0,5).map(al=>`<div class="item-row baixo"><span>${al.item} · prod. ${brData(al.data_producao)}</span><span class="saldo mono" style="color:var(--morango)">falta ${fmt(al.falta)}</span></div>`).join('')}</div>`:''}
-    ${abaixo.length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-top:12px"><b style="color:var(--morango)">Precisa de atenção</b>${abaixo.slice(0,8).map(i=>`<div class="item-row baixo"><span>${i.nome}</span><span class="saldo mono">${fmt(i.saldo_atual)}</span></div>`).join('')}</div>`:''}
+    ${abaixo.length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-top:12px"><b style="color:var(--morango)">Precisa de atenção (${abaixo.length})</b>${abaixo.map(i=>`<div class="item-row baixo"><span>${i.nome}</span><span class="saldo mono">${fmt(i.saldo_atual)} <small style="color:#7A6A57">/ mín. ${fmt(i.estoque_minimo)}</small></span></div>`).join('')}</div>`:''}
     ${(balde.data||[]).length?`<div class="card" style="margin-top:12px"><b>Baldes com saldo</b>${balde.data.map(b=>`<div class="item-row"><span>${b.produtos.nome}</span><span class="saldo mono">${fmt(b.quantidade_kg)} kg</span></div>`).join('')}</div>`:''}
     ${paOrdenado.length?`<div class="card" style="margin-top:12px"><b>🫙 Potes prontos — extremos de estoque por linha</b><small style="color:#7A6A57;display:block;margin-bottom:10px">10 SKUs com mais potes e 10 com menos, por linha (só produtos ativos)</small>
       ${GRUPOS_LINHA.map(g=>{
