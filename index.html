@@ -405,6 +405,13 @@ async function tEstoque(){
           <button data-f="balde" onclick="fCat(this)">🪣 Baldes</button>
           <button data-f="alerta" onclick="fCat(this)">🔴 Abaixo do mín.</button>
         </div>
+        <div class="chips" id="subEmbalagem" style="display:none;margin:0 0 10px">
+          <button class="sel" data-sub="todas" onclick="fSub(this)">Todas</button>
+          <button data-sub="caixa" onclick="fSub(this)">Caixas</button>
+          <button data-sub="pote" onclick="fSub(this)">Potes</button>
+          <button data-sub="tampa" onclick="fSub(this)">Tampas</button>
+          <button data-sub="rotulo" onclick="fSub(this)">Rótulos</button>
+        </div>
         <p style="font-size:12px;color:#8A7A64;margin:0 0 10px">Toque em ✏️ pra ajustar um saldo pela contagem física (pede motivo e fica registrado).</p>
         <button class="btnSec" onclick="imprimirEstoque()">🖨️ Imprimir relatório de estoque</button>
       </div>
@@ -413,7 +420,20 @@ async function tEstoque(){
   </main>`;
   EST.fcat='materia_prima';fEstoque();
 }
-function fCat(b){document.querySelectorAll('[data-f]').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');EST.fcat=b.dataset.f;fEstoque()}
+function fCat(b){document.querySelectorAll('[data-f]').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');EST.fcat=b.dataset.f;EST.fsub='todas';
+  const subBox=document.getElementById('subEmbalagem');
+  if(subBox){subBox.style.display=EST.fcat==='embalagem'?'flex':'none';subBox.querySelectorAll('[data-sub]').forEach(x=>x.classList.toggle('sel',x.dataset.sub==='todas'));}
+  fEstoque();
+}
+function fSub(b){document.querySelectorAll('#subEmbalagem [data-sub]').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');EST.fsub=b.dataset.sub;fEstoque()}
+function classificaEmbalagem(nome){
+  const n=nome.toLowerCase();
+  if(n.startsWith('caixa'))return 'caixa';
+  if(n.startsWith('pote'))return 'pote';
+  if(n.startsWith('tampa'))return 'tampa';
+  if(n.startsWith('rótulo')||n.startsWith('rotulo'))return 'rotulo';
+  return 'outro';
+}
 function linhaEst(tipo,id,nome,saldo,un,baixo){
   return `<div class="item-row ${baixo?'baixo':''}"><span>${baixo?'⬤ ':''}${nome}</span>`+
     `<span style="display:flex;align-items:center;gap:10px"><span class="saldo mono">${fmt(saldo)} ${un}</span>`+
@@ -421,6 +441,7 @@ function linhaEst(tipo,id,nome,saldo,un,baixo){
 }
 async function imprimirEstoque(){
   const itens=EST.cache.itens||[], pa=EST.cache.paEst||[], baldes=EST.cache.baldeEst||[];
+  const cat=EST.fcat||'materia_prima', sub=EST.fsub||'todas';
   const statusMP=i=>{
     const v=Number(i.saldo_atual);
     if(v<0)return['NEGATIVO — investigar','#fff','#C63A3A'];
@@ -430,20 +451,56 @@ async function imprimirEstoque(){
     if(v<min*1.3)return['perto do mínimo','#fff','#D9772B'];
     return['ok','#fff','#3E7C45'];
   };
-  const linhaItem=i=>{const[st,fg,bg]=statusMP(i);const minTxt=i.estoque_minimo!=null?` · mínimo ${fmt(i.estoque_minimo)}`:'';
+  const statusEmb=i=>{
+    const v=Number(i.saldo_atual);
+    if(i.estoque_minimo!=null){const min=Number(i.estoque_minimo);if(v<min)return['abaixo do mínimo','#fff','#C63A3A'];return['ok','#fff','#3E7C45'];}
+    if(v<=0)return['zerada','#fff','#C63A3A'];
+    return['sem mínimo cadastrado','#7A6A57','#F0EBDD'];
+  };
+  const linhaItem=(i,statusFn)=>{const[st,fg,bg]=statusFn(i);const minTxt=i.estoque_minimo!=null?` · mínimo ${fmt(i.estoque_minimo)}`:'';
     return `<div class="linha"><span class="nome">${i.nome}</span><span class="valores"><b class="mono">${fmt(i.saldo_atual)}</b> <span class="un">${i.unidade||''}</span>${minTxt}</span><span class="tag" style="background:${bg};color:${fg}">${st}</span></div>`;};
-  const mp=itens.filter(i=>i.categoria==='materia_prima');
-  const alerta=mp.filter(i=>['NEGATIVO — investigar','abaixo do mínimo'].includes(statusMP(i)[0]));
-  const perto=mp.filter(i=>statusMP(i)[0]==='perto do mínimo');
-  const ok=mp.filter(i=>!alerta.includes(i)&&!perto.includes(i));
-  const negativos=mp.filter(i=>Number(i.saldo_atual)<0);
-  const baldesHtml=baldes.map(b=>`<div class="linha"><span class="nome">🪣 ${b.produtos.nome}</span><span class="valores"><b class="mono">${fmt(b.quantidade_kg)}</b> <span class="un">kg</span></span><span class="tag" style="background:${Number(b.quantidade_kg)>0?'#3E7C45':'#F0EBDD'};color:${Number(b.quantidade_kg)>0?'#fff':'#7A6A57'}">${Number(b.quantidade_kg)>0?'em uso':'vazio'}</span></div>`).join('');
-  let poteHtml='',linhaAtual=null;
-  pa.forEach(p=>{if(p.linha!==linhaAtual){poteHtml+=`<p class="grupo-titulo">${p.linha||'Sem linha'}</p>`;linhaAtual=p.linha}
-    const saldo=Number(p.saldo_potes);const cor=saldo===0?'#C63A3A':(saldo<10?'#D9772B':'#3E7C45');const tag=saldo===0?'zerado':(saldo<10?'baixo':'ok');
-    poteHtml+=`<div class="linha"><span class="nome">${p.nome}</span><span class="valores"><b class="mono">${fmt(p.saldo_potes,0)}</b> <span class="un">potes</span></span><span class="tag" style="background:${cor};color:#fff">${tag}</span></div>`;});
+  const baldeLinha=b=>`<div class="linha"><span class="nome">🪣 ${b.produtos.nome}</span><span class="valores"><b class="mono">${fmt(b.quantidade_kg)}</b> <span class="un">kg</span></span><span class="tag" style="background:${Number(b.quantidade_kg)>0?'#3E7C45':'#F0EBDD'};color:${Number(b.quantidade_kg)>0?'#fff':'#7A6A57'}">${Number(b.quantidade_kg)>0?'em uso':'vazio'}</span></div>`;
+  const poteBlocos=lista=>{let html='',linhaAtual=null;
+    lista.forEach(p=>{if(p.linha!==linhaAtual){html+=`<p class="grupo-titulo">${p.linha||'Sem linha'}</p>`;linhaAtual=p.linha}
+      const saldo=Number(p.saldo_potes);const cor=saldo===0?'#C63A3A':(saldo<10?'#D9772B':'#3E7C45');const tag=saldo===0?'zerado':(saldo<10?'baixo':'ok');
+      html+=`<div class="linha"><span class="nome">${p.nome}</span><span class="valores"><b class="mono">${fmt(p.saldo_potes,0)}</b> <span class="un">potes</span></span><span class="tag" style="background:${cor};color:#fff">${tag}</span></div>`;});
+    return html;};
+  const negativos=itens.filter(i=>Number(i.saldo_atual)<0);
+  let titulo='Relatório de Estoque', corpo='', premissaExtra='';
+
+  if(cat==='materia_prima'){
+    const mp=itens.filter(i=>i.categoria==='materia_prima');
+    const alerta=mp.filter(i=>['NEGATIVO — investigar','abaixo do mínimo'].includes(statusMP(i)[0]));
+    const perto=mp.filter(i=>statusMP(i)[0]==='perto do mínimo');
+    const ok=mp.filter(i=>!alerta.includes(i)&&!perto.includes(i));
+    titulo='Relatório de Estoque — Matéria-prima';
+    corpo=`<div class="card"><h2>🔴 Abaixo do mínimo</h2>${alerta.map(i=>linhaItem(i,statusMP)).join('')||'<div class="linha">Nada abaixo do mínimo.</div>'}</div>
+      <div class="card"><h2>🟠 Perto do mínimo</h2>${perto.map(i=>linhaItem(i,statusMP)).join('')||'<div class="linha">Nada nessa faixa.</div>'}</div>
+      <div class="card"><h2>🟢 Normal</h2>${ok.map(i=>linhaItem(i,statusMP)).join('')}</div>`;
+    const negMp=mp.filter(i=>Number(i.saldo_atual)<0);
+    premissaExtra=negMp.length?`<p><b>⚠️ Atenção:</b> ${negMp.length} item(ns) com saldo negativo (${negMp.map(i=>i.nome).join(', ')}) — provável erro de lançamento.</p>`:'';
+  }else if(cat==='embalagem'){
+    let emb=itens.filter(i=>i.categoria==='embalagem');
+    if(sub!=='todas')emb=emb.filter(i=>classificaEmbalagem(i.nome)===sub);
+    emb=emb.slice().sort((a,b)=>Number(a.saldo_atual)-Number(b.saldo_atual));
+    const subLabel={todas:'',caixa:' — Caixas',pote:' — Potes',tampa:' — Tampas',rotulo:' — Rótulos'}[sub]||'';
+    titulo='Relatório de Estoque — Embalagens'+subLabel;
+    corpo=`<div class="card"><h2>📦 Embalagens${subLabel} (${emb.length})</h2>${emb.map(i=>linhaItem(i,statusEmb)).join('')||'<div class="linha">Nenhum item nessa categoria.</div>'}</div>`;
+  }else if(cat==='pa'){
+    titulo='Relatório de Estoque — Potes acabados';
+    corpo=`<div class="card"><h2>🫙 Potes por linha</h2>${poteBlocos(pa)}</div>`;
+  }else if(cat==='balde'){
+    titulo='Relatório de Estoque — Baldes';
+    corpo=`<div class="card"><h2>🪣 Baldes</h2>${baldes.map(baldeLinha).join('')||'<div class="linha">Nenhum balde cadastrado.</div>'}</div>`;
+  }else{ // alerta
+    const abaixo=itens.filter(i=>i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo))
+      .sort((a,b)=>(Number(a.saldo_atual)/Number(a.estoque_minimo))-(Number(b.saldo_atual)/Number(b.estoque_minimo)));
+    titulo='Relatório de Estoque — Abaixo do mínimo';
+    corpo=`<div class="card"><h2>🔴 Abaixo do mínimo (${abaixo.length})</h2>${abaixo.map(i=>linhaItem(i,statusMP)).join('')||'<div class="linha">Nada abaixo do mínimo.</div>'}</div>`;
+  }
+
   const agora=new Date().toLocaleString('pt-BR');
-  const html=`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Nutríssima — Relatório de Estoque</title>
+  const html=`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Nutríssima — ${titulo}</title>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
   <style>
   :root{--cacau:#33200F;--casca:#EFE7DC;--linha:#DCD2C4;--tinta2:#7A6A57;--header:#22303A}
@@ -462,17 +519,13 @@ async function imprimirEstoque(){
   .rodape{font-size:11.5px;color:var(--tinta2);line-height:1.6;background:#fff;border:1.5px solid var(--linha);border-radius:14px;padding:14px}
   @media print{.header{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
   </style></head><body>
-  <div class="header"><div class="eyebrow">Nutríssima · Fábrica</div><h1>Relatório de Estoque</h1><div class="sub">foto de agora · gerado em ${agora}</div></div>
+  <div class="header"><div class="eyebrow">Nutríssima · Fábrica</div><h1>${titulo}</h1><div class="sub">foto de agora · gerado em ${agora}</div></div>
   <main>
-    <div class="card"><h2>🔴 Matéria-prima — abaixo do mínimo</h2>${alerta.map(linhaItem).join('')||'<div class="linha">Nada abaixo do mínimo.</div>'}</div>
-    <div class="card"><h2>🟠 Matéria-prima — perto do mínimo</h2>${perto.map(linhaItem).join('')||'<div class="linha">Nada nessa faixa.</div>'}</div>
-    <div class="card"><h2>🪣 Baldes</h2>${baldesHtml}</div>
-    <div class="card"><h2>🫙 Potes por linha</h2>${poteHtml}</div>
-    <div class="card"><h2>🟢 Matéria-prima — normal</h2>${ok.map(linhaItem).join('')}</div>
+    ${corpo}
     <div class="rodape">
-      <p><b>Como ler:</b> abaixo do mínimo = comprar já; perto do mínimo = ficar de olho; baldes mostram o que já foi refinado.</p>
-      ${negativos.length?`<p><b>⚠️ Atenção:</b> ${negativos.length} item(ns) com saldo negativo (${negativos.map(i=>i.nome).join(', ')}) — provável erro de lançamento, recomenda-se contagem física.</p>`:''}
-      <p><b>Procedência:</b> tabelas itens, estoque_balde e produto_acabado — gerado em ${agora}.</p>
+      <p><b>Como ler:</b> abaixo do mínimo = comprar já; perto do mínimo = ficar de olho; zerada (embalagem sem mínimo) = considerar cadastrar um mínimo.</p>
+      ${premissaExtra}
+      <p><b>Procedência:</b> tabelas itens, estoque_balde e produto_acabado · filtro aplicado: ${titulo.split('—')[1]||'geral'} — gerado em ${agora}.</p>
     </div>
   </main></body></html>`;
   const w=window.open('','_blank');w.document.write(html);w.document.close();
@@ -496,6 +549,7 @@ function fEstoque(){
     let L=EST.cache.itens;
     if(EST.fcat==='alerta')L=L.filter(i=>i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo));
     else L=L.filter(i=>i.categoria===EST.fcat);
+    if(EST.fcat==='embalagem'&&EST.fsub&&EST.fsub!=='todas')L=L.filter(i=>classificaEmbalagem(i.nome)===EST.fsub);
     if(q)L=L.filter(i=>i.nome.toLowerCase().includes(q));
     html=L.map(i=>{
       const baixo=i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo);
