@@ -440,63 +440,36 @@ function linhaEst(tipo,id,nome,saldo,un,baixo){
     `<button data-t="${tipo}" data-i="${id}" data-s="${saldo}" data-u="${un}" onclick="ajuste(this)" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer;font-size:15px" title="Ajustar saldo">✏️</button></span></div>`;
 }
 async function imprimirEstoque(){
-  const itens=EST.cache.itens||[], pa=EST.cache.paEst||[], baldes=EST.cache.baldeEst||[];
+  const q=(document.getElementById('busca')?.value||'').toLowerCase();
   const cat=EST.fcat||'materia_prima', sub=EST.fsub||'todas';
-  const statusMP=i=>{
-    const v=Number(i.saldo_atual);
-    if(v<0)return['NEGATIVO — investigar','#fff','#C63A3A'];
-    if(i.estoque_minimo==null)return['sem mínimo definido','#7A6A57','#F0EBDD'];
-    const min=Number(i.estoque_minimo);
-    if(v<min)return['abaixo do mínimo','#fff','#C63A3A'];
-    if(v<min*1.3)return['perto do mínimo','#fff','#D9772B'];
-    return['ok','#fff','#3E7C45'];
-  };
-  const statusEmb=i=>{
-    const v=Number(i.saldo_atual);
-    if(i.estoque_minimo!=null){const min=Number(i.estoque_minimo);if(v<min)return['abaixo do mínimo','#fff','#C63A3A'];return['ok','#fff','#3E7C45'];}
-    if(v<=0)return['zerada','#fff','#C63A3A'];
-    return['sem mínimo cadastrado','#7A6A57','#F0EBDD'];
-  };
-  const linhaItem=(i,statusFn)=>{const[st,fg,bg]=statusFn(i);const minTxt=i.estoque_minimo!=null?` · mínimo ${fmt(i.estoque_minimo)}`:'';
-    return `<div class="linha"><span class="nome">${i.nome}</span><span class="valores"><b class="mono">${fmt(i.saldo_atual)}</b> <span class="un">${i.unidade||''}</span>${minTxt}</span><span class="tag" style="background:${bg};color:${fg}">${st}</span></div>`;};
-  const baldeLinha=b=>`<div class="linha"><span class="nome">🪣 ${b.produtos.nome}</span><span class="valores"><b class="mono">${fmt(b.quantidade_kg)}</b> <span class="un">kg</span></span><span class="tag" style="background:${Number(b.quantidade_kg)>0?'#3E7C45':'#F0EBDD'};color:${Number(b.quantidade_kg)>0?'#fff':'#7A6A57'}">${Number(b.quantidade_kg)>0?'em uso':'vazio'}</span></div>`;
-  const poteBlocos=lista=>{let html='',linhaAtual=null;
-    lista.forEach(p=>{if(p.linha!==linhaAtual){html+=`<p class="grupo-titulo">${p.linha||'Sem linha'}</p>`;linhaAtual=p.linha}
-      const saldo=Number(p.saldo_potes);const cor=saldo===0?'#C63A3A':(saldo<10?'#D9772B':'#3E7C45');const tag=saldo===0?'zerado':(saldo<10?'baixo':'ok');
-      html+=`<div class="linha"><span class="nome">${p.nome}</span><span class="valores"><b class="mono">${fmt(p.saldo_potes,0)}</b> <span class="un">potes</span></span><span class="tag" style="background:${cor};color:#fff">${tag}</span></div>`;});
-    return html;};
-  const negativos=itens.filter(i=>Number(i.saldo_atual)<0);
-  let titulo='Relatório de Estoque', corpo='', premissaExtra='';
+  let titulo='Relatório de Estoque', corpo='';
 
-  if(cat==='materia_prima'){
-    const mp=itens.filter(i=>i.categoria==='materia_prima');
-    const alerta=mp.filter(i=>['NEGATIVO — investigar','abaixo do mínimo'].includes(statusMP(i)[0]));
-    const perto=mp.filter(i=>statusMP(i)[0]==='perto do mínimo');
-    const ok=mp.filter(i=>!alerta.includes(i)&&!perto.includes(i));
-    titulo='Relatório de Estoque — Matéria-prima';
-    corpo=`<div class="card"><h2>🔴 Abaixo do mínimo</h2>${alerta.map(i=>linhaItem(i,statusMP)).join('')||'<div class="linha">Nada abaixo do mínimo.</div>'}</div>
-      <div class="card"><h2>🟠 Perto do mínimo</h2>${perto.map(i=>linhaItem(i,statusMP)).join('')||'<div class="linha">Nada nessa faixa.</div>'}</div>
-      <div class="card"><h2>🟢 Normal</h2>${ok.map(i=>linhaItem(i,statusMP)).join('')}</div>`;
-    const negMp=mp.filter(i=>Number(i.saldo_atual)<0);
-    premissaExtra=negMp.length?`<p><b>⚠️ Atenção:</b> ${negMp.length} item(ns) com saldo negativo (${negMp.map(i=>i.nome).join(', ')}) — provável erro de lançamento.</p>`:'';
-  }else if(cat==='embalagem'){
-    let emb=itens.filter(i=>i.categoria==='embalagem');
-    if(sub!=='todas')emb=emb.filter(i=>classificaEmbalagem(i.nome)===sub);
-    emb=emb.slice().sort((a,b)=>Number(a.saldo_atual)-Number(b.saldo_atual));
-    const subLabel={todas:'',caixa:' — Caixas',pote:' — Potes',tampa:' — Tampas',rotulo:' — Rótulos'}[sub]||'';
-    titulo='Relatório de Estoque — Embalagens'+subLabel;
-    corpo=`<div class="card"><h2>📦 Embalagens${subLabel} (${emb.length})</h2>${emb.map(i=>linhaItem(i,statusEmb)).join('')||'<div class="linha">Nenhum item nessa categoria.</div>'}</div>`;
-  }else if(cat==='pa'){
+  if(cat==='pa'){
+    let L=EST.cache.paEst||[]; if(q)L=L.filter(p=>(p.linha+' '+p.nome).toLowerCase().includes(q));
     titulo='Relatório de Estoque — Potes acabados';
-    corpo=`<div class="card"><h2>🫙 Potes por linha</h2>${poteBlocos(pa)}</div>`;
+    let linhaAtual=null,linhas='';
+    L.forEach(p=>{if(p.linha!==linhaAtual){linhas+=`<p class="grupo-titulo">${p.linha||'Sem linha'}</p>`;linhaAtual=p.linha}
+      const saldo=Number(p.saldo_potes);const cor=saldo===0?'#C63A3A':(saldo<10?'#D9772B':'#3E7C45');const tag=saldo===0?'zerado':(saldo<10?'baixo':'ok');
+      linhas+=`<div class="linha"><span class="nome">${p.nome}</span><span class="valores"><b class="mono">${fmt(p.saldo_potes,0)}</b> <span class="un">potes</span></span><span class="tag" style="background:${cor};color:#fff">${tag}</span></div>`;});
+    corpo=`<div class="card"><h2>🫙 Potes (${L.length})</h2>${linhas||'<div class="linha">Nada encontrado.</div>'}</div>`;
   }else if(cat==='balde'){
+    let L=EST.cache.baldeEst||[]; if(q)L=L.filter(b=>b.produtos.nome.toLowerCase().includes(q));
     titulo='Relatório de Estoque — Baldes';
-    corpo=`<div class="card"><h2>🪣 Baldes</h2>${baldes.map(baldeLinha).join('')||'<div class="linha">Nenhum balde cadastrado.</div>'}</div>`;
-  }else{ // alerta
-    const abaixo=itens.filter(i=>i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo))
-      .sort((a,b)=>(Number(a.saldo_atual)/Number(a.estoque_minimo))-(Number(b.saldo_atual)/Number(b.estoque_minimo)));
-    titulo='Relatório de Estoque — Abaixo do mínimo';
-    corpo=`<div class="card"><h2>🔴 Abaixo do mínimo (${abaixo.length})</h2>${abaixo.map(i=>linhaItem(i,statusMP)).join('')||'<div class="linha">Nada abaixo do mínimo.</div>'}</div>`;
+    corpo=`<div class="card"><h2>🪣 Baldes (${L.length})</h2>${L.map(b=>`<div class="linha"><span class="nome">${b.produtos.nome}</span><span class="valores"><b class="mono">${fmt(b.quantidade_kg)}</b> <span class="un">kg</span></span><span class="tag" style="background:${Number(b.quantidade_kg)>0?'#3E7C45':'#F0EBDD'};color:${Number(b.quantidade_kg)>0?'#fff':'#7A6A57'}">${Number(b.quantidade_kg)>0?'em uso':'vazio'}</span></div>`).join('')||'<div class="linha">Nada encontrado.</div>'}</div>`;
+  }else{
+    let L=EST.cache.itens||[];
+    if(cat==='alerta')L=L.filter(i=>i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo));
+    else L=L.filter(i=>i.categoria===cat);
+    if(cat==='embalagem'&&sub!=='todas')L=L.filter(i=>classificaEmbalagem(i.nome)===sub);
+    if(q)L=L.filter(i=>i.nome.toLowerCase().includes(q));
+    const subLabel={todas:'',caixa:' — Caixas',pote:' — Potes',tampa:' — Tampas',rotulo:' — Rótulos'}[sub]||'';
+    const nomeCat={materia_prima:'Matéria-prima',embalagem:'Embalagens'+subLabel,alerta:'Abaixo do mínimo'}[cat]||cat;
+    titulo='Relatório de Estoque — '+nomeCat;
+    corpo=`<div class="card"><h2>${nomeCat} (${L.length})</h2>${L.map(i=>{
+      const baixo=i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo);
+      const minTxt=i.estoque_minimo!=null?` · mínimo ${fmt(i.estoque_minimo)}`:'';
+      return `<div class="linha"><span class="nome">${i.nome}</span><span class="valores"><b class="mono">${fmt(i.saldo_atual)}</b> <span class="un">${i.unidade||''}</span>${minTxt}</span>${baixo?'<span class="tag" style="background:#C63A3A;color:#fff">abaixo do mínimo</span>':''}</div>`;
+    }).join('')||'<div class="linha">Nada encontrado.</div>'}</div>`;
   }
 
   const agora=new Date().toLocaleString('pt-BR');
@@ -519,13 +492,12 @@ async function imprimirEstoque(){
   .rodape{font-size:11.5px;color:var(--tinta2);line-height:1.6;background:#fff;border:1.5px solid var(--linha);border-radius:14px;padding:14px}
   @media print{.header{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
   </style></head><body>
-  <div class="header"><div class="eyebrow">Nutríssima · Fábrica</div><h1>${titulo}</h1><div class="sub">foto de agora · gerado em ${agora}</div></div>
+  <div class="header"><div class="eyebrow">Nutríssima · Fábrica</div><h1>${titulo}</h1><div class="sub">exatamente o que estava filtrado na tela · gerado em ${agora}</div></div>
   <main>
     ${corpo}
     <div class="rodape">
-      <p><b>Como ler:</b> abaixo do mínimo = comprar já; perto do mínimo = ficar de olho; zerada (embalagem sem mínimo) = considerar cadastrar um mínimo.</p>
-      ${premissaExtra}
-      <p><b>Procedência:</b> tabelas itens, estoque_balde e produto_acabado · filtro aplicado: ${titulo.split('—')[1]||'geral'} — gerado em ${agora}.</p>
+      <p><b>Como ler:</b> "abaixo do mínimo" aparece marcado em vermelho quando o saldo já está menor que o mínimo cadastrado.</p>
+      <p><b>Procedência:</b> mesma lista exibida na tela Estoque, com o filtro "${titulo.split('—')[1]?.trim()||'geral'}"${q?' e busca "'+q+'"':''} — gerado em ${agora}.</p>
     </div>
   </main></body></html>`;
   const w=window.open('','_blank');w.document.write(html);w.document.close();
@@ -1459,6 +1431,8 @@ const MV_CONF={
   balde_saida:{titulo:'Baixa de balde',unidade:'kg',rpc:'baixa_balde',paramId:'p_produto_id',paramQtd:'p_kg',decimal:true,cor:'var(--morango)'},
   mp_entrada:{titulo:'Entrada de matéria-prima',unidade:'',rpc:'entrada_item',paramId:'p_item',paramQtd:'p_qtd',decimal:true,cor:'var(--pistache)'},
   mp_saida:{titulo:'Baixa de matéria-prima',unidade:'',rpc:'baixa_item',paramId:'p_item',paramQtd:'p_qtd',decimal:true,cor:'var(--morango)'},
+  embalagem_entrada:{titulo:'Entrada de embalagem',unidade:'',rpc:'entrada_item',paramId:'p_item',paramQtd:'p_qtd',decimal:true,cor:'var(--pistache)'},
+  embalagem_saida:{titulo:'Baixa de embalagem',unidade:'',rpc:'baixa_item',paramId:'p_item',paramQtd:'p_qtd',decimal:true,cor:'var(--morango)'},
   pote_entrada:{titulo:'Entrada no estoque',unidade:'potes',rpc:'entrada_potes',paramId:'p_pa',paramQtd:'p_potes',decimal:false,cor:'var(--pistache)'},
   pote_saida:{titulo:'Baixa de potes (separação)',unidade:'potes',rpc:'baixa_despacho',paramId:'p_pa',paramQtd:'p_potes',decimal:false,cor:'var(--morango)'}
 };
@@ -1484,12 +1458,19 @@ async function tMovimento(){
     }
   }else if(EST.mv.material==='mp'){
     if(EST.mv.dir==='entrada'){
-      const {data}=await sb.from('itens').select('id,nome,unidade,saldo_atual').order('nome');
+      const {data}=await sb.from('itens').select('id,nome,unidade,saldo_atual').eq('categoria','materia_prima').order('nome');
       lista=(data||[]).map(i=>({id:i.id,nome:i.nome,extra:i.unidade||'',saldoAtual:Number(i.saldo_atual)||0,saldoUnidade:i.unidade||''}));
     }else{
-      const {data}=await sb.from('itens').select('id,nome,unidade,saldo_atual').gt('saldo_atual',0).order('nome');
+      const {data}=await sb.from('itens').select('id,nome,unidade,saldo_atual').eq('categoria','materia_prima').gt('saldo_atual',0).order('nome');
       lista=(data||[]).map(i=>({id:i.id,nome:i.nome,extra:fmt(i.saldo_atual)+' '+(i.unidade||''),saldoAtual:Number(i.saldo_atual),saldoUnidade:i.unidade||''}));
     }
+  }else if(EST.mv.material==='embalagem'){
+    let q=sb.from('itens').select('id,nome,unidade,saldo_atual').eq('categoria','embalagem').order('nome');
+    if(EST.mv.dir==='saida')q=q.gt('saldo_atual',0);
+    const {data}=await q;
+    let L=data||[];
+    if(EST.mv.embSub&&EST.mv.embSub!=='todas')L=L.filter(i=>classificaEmbalagem(i.nome)===EST.mv.embSub);
+    lista=L.map(i=>({id:i.id,nome:i.nome,extra:i.unidade||'',saldoAtual:Number(i.saldo_atual)||0,saldoUnidade:i.unidade||''}));
   }else{
     if(EST.mv.dir==='entrada'){
       const {data}=await sb.from('produto_acabado').select('id,nome,linha,saldo_potes').eq('ativo',true).order('linha').order('nome');
@@ -1544,7 +1525,15 @@ async function tMovimento(){
     <div class="mv-layout">
       <div class="card" style="margin-top:0">
         <span class="step-label">material</span>
-        <div class="chips">${chipM('balde','🪣 Balde')}${chipM('mp','🌰 Matéria-prima')}${chipM('pote','🫙 Pote')}</div>
+        <div class="chips">${chipM('balde','🪣 Balde')}${chipM('mp','🌰 Matéria-prima')}${chipM('embalagem','📦 Embalagem')}${chipM('pote','🫙 Pote')}</div>
+        ${EST.mv.material==='embalagem'?`<span class="step-label" style="margin-top:14px">tipo de embalagem</span>
+        <div class="chips">
+          <button style="min-height:auto;padding:7px 14px;font-size:13px" class="${(EST.mv.embSub||'todas')==='todas'?'sel':''}" onclick="mvSetEmbSub('todas')">Todas</button>
+          <button style="min-height:auto;padding:7px 14px;font-size:13px" class="${EST.mv.embSub==='caixa'?'sel':''}" onclick="mvSetEmbSub('caixa')">Caixas</button>
+          <button style="min-height:auto;padding:7px 14px;font-size:13px" class="${EST.mv.embSub==='pote'?'sel':''}" onclick="mvSetEmbSub('pote')">Potes</button>
+          <button style="min-height:auto;padding:7px 14px;font-size:13px" class="${EST.mv.embSub==='tampa'?'sel':''}" onclick="mvSetEmbSub('tampa')">Tampas</button>
+          <button style="min-height:auto;padding:7px 14px;font-size:13px" class="${EST.mv.embSub==='rotulo'?'sel':''}" onclick="mvSetEmbSub('rotulo')">Rótulos</button>
+        </div>`:''}
         <span class="step-label" style="margin-top:14px">direção</span>
         <div class="chips">${chipD('entrada','⬆️ Entrada')}${chipD('saida','⬇️ Saída')}</div>
       </div>
@@ -1555,7 +1544,8 @@ async function tMovimento(){
     </div>
   </main>`;
 }
-function mvSetMaterial(m){EST.mv.material=m;EST.mv.prodId=null;EST.mv.valor=0;tela('movimento')}
+function mvSetEmbSub(s){EST.mv.embSub=s;EST.mv.prodId=null;EST.mv.valor=0;tela('movimento')}
+function mvSetMaterial(m){EST.mv.material=m;EST.mv.prodId=null;EST.mv.valor=0;EST.mv.embSub='todas';tela('movimento')}
 function mvSetDir(d){EST.mv.dir=d;EST.mv.prodId=null;EST.mv.valor=0;tela('movimento')}
 function mvEscolhe(id){EST.mv.prodId=id;EST.mv.valor=0;tela('movimento')}
 function mvVoltar(){EST.mv.prodId=null;EST.mv.valor=0;tela('movimento')}
