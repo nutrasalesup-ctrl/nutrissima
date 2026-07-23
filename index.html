@@ -401,7 +401,8 @@ async function tEstoque(){
           <button data-f="balde" onclick="fCat(this)">🪣 Baldes</button>
           <button data-f="alerta" onclick="fCat(this)">🔴 Abaixo do mín.</button>
         </div>
-        <p style="font-size:12px;color:#8A7A64;margin:0">Toque em ✏️ pra ajustar um saldo pela contagem física (pede motivo e fica registrado).</p>
+        <p style="font-size:12px;color:#8A7A64;margin:0 0 10px">Toque em ✏️ pra ajustar um saldo pela contagem física (pede motivo e fica registrado).</p>
+        <button class="btnSec" onclick="imprimirEstoque()">🖨️ Imprimir relatório de estoque</button>
       </div>
       <div id="lista"></div>
     </div>
@@ -413,6 +414,65 @@ function linhaEst(tipo,id,nome,saldo,un,baixo){
   return `<div class="item-row ${baixo?'baixo':''}"><span>${baixo?'⬤ ':''}${nome}</span>`+
     `<span style="display:flex;align-items:center;gap:10px"><span class="saldo mono">${fmt(saldo)} ${un}</span>`+
     `<button data-t="${tipo}" data-i="${id}" data-s="${saldo}" data-u="${un}" onclick="ajuste(this)" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer;font-size:15px" title="Ajustar saldo">✏️</button></span></div>`;
+}
+async function imprimirEstoque(){
+  const itens=EST.cache.itens||[], pa=EST.cache.paEst||[], baldes=EST.cache.baldeEst||[];
+  const statusMP=i=>{
+    const v=Number(i.saldo_atual);
+    if(v<0)return['NEGATIVO — investigar','#fff','#C63A3A'];
+    if(i.estoque_minimo==null)return['sem mínimo definido','#7A6A57','#F0EBDD'];
+    const min=Number(i.estoque_minimo);
+    if(v<min)return['abaixo do mínimo','#fff','#C63A3A'];
+    if(v<min*1.3)return['perto do mínimo','#fff','#D9772B'];
+    return['ok','#fff','#3E7C45'];
+  };
+  const linhaItem=i=>{const[st,fg,bg]=statusMP(i);const minTxt=i.estoque_minimo!=null?` · mínimo ${fmt(i.estoque_minimo)}`:'';
+    return `<div class="linha"><span class="nome">${i.nome}</span><span class="valores"><b class="mono">${fmt(i.saldo_atual)}</b> <span class="un">${i.unidade||''}</span>${minTxt}</span><span class="tag" style="background:${bg};color:${fg}">${st}</span></div>`;};
+  const mp=itens.filter(i=>i.categoria==='materia_prima');
+  const alerta=mp.filter(i=>['NEGATIVO — investigar','abaixo do mínimo'].includes(statusMP(i)[0]));
+  const perto=mp.filter(i=>statusMP(i)[0]==='perto do mínimo');
+  const ok=mp.filter(i=>!alerta.includes(i)&&!perto.includes(i));
+  const negativos=mp.filter(i=>Number(i.saldo_atual)<0);
+  const baldesHtml=baldes.map(b=>`<div class="linha"><span class="nome">🪣 ${b.produtos.nome}</span><span class="valores"><b class="mono">${fmt(b.quantidade_kg)}</b> <span class="un">kg</span></span><span class="tag" style="background:${Number(b.quantidade_kg)>0?'#3E7C45':'#F0EBDD'};color:${Number(b.quantidade_kg)>0?'#fff':'#7A6A57'}">${Number(b.quantidade_kg)>0?'em uso':'vazio'}</span></div>`).join('');
+  let poteHtml='',linhaAtual=null;
+  pa.forEach(p=>{if(p.linha!==linhaAtual){poteHtml+=`<p class="grupo-titulo">${p.linha||'Sem linha'}</p>`;linhaAtual=p.linha}
+    const saldo=Number(p.saldo_potes);const cor=saldo===0?'#C63A3A':(saldo<10?'#D9772B':'#3E7C45');const tag=saldo===0?'zerado':(saldo<10?'baixo':'ok');
+    poteHtml+=`<div class="linha"><span class="nome">${p.nome}</span><span class="valores"><b class="mono">${fmt(p.saldo_potes,0)}</b> <span class="un">potes</span></span><span class="tag" style="background:${cor};color:#fff">${tag}</span></div>`;});
+  const agora=new Date().toLocaleString('pt-BR');
+  const html=`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Nutríssima — Relatório de Estoque</title>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <style>
+  :root{--cacau:#33200F;--casca:#EFE7DC;--linha:#DCD2C4;--tinta2:#7A6A57;--header:#22303A}
+  *{box-sizing:border-box}body{margin:0;background:var(--casca);font-family:'Archivo',sans-serif;color:var(--cacau)}
+  .mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
+  .header{background:var(--header);color:#FFFDF9;padding:24px}
+  .header .eyebrow{text-transform:uppercase;letter-spacing:.16em;font-size:11px;color:#B9C4CB;font-weight:700}
+  .header h1{font-size:22px;margin:4px 0 2px;font-weight:800}.header .sub{font-size:12px;color:#B9C4CB}
+  main{max-width:900px;margin:0 auto;padding:18px}
+  .card{background:#fff;border:1.5px solid var(--linha);border-radius:14px;margin-bottom:14px;overflow:hidden;break-inside:avoid}
+  .card h2{margin:0;padding:11px 14px;font-size:14px;background:var(--casca);border-bottom:1px solid var(--linha)}
+  .linha{display:flex;align-items:center;gap:10px;padding:8px 14px;border-top:1px solid #F0EBDD;font-size:13px}
+  .nome{flex:1;min-width:0}.valores{white-space:nowrap;color:var(--tinta2);font-size:12.5px}
+  .tag{font-size:10px;font-weight:800;text-transform:uppercase;padding:3px 8px;border-radius:20px;white-space:nowrap}
+  .grupo-titulo{margin:8px 14px 2px;font-size:10.5px;font-weight:800;color:var(--tinta2);text-transform:uppercase}
+  .rodape{font-size:11.5px;color:var(--tinta2);line-height:1.6;background:#fff;border:1.5px solid var(--linha);border-radius:14px;padding:14px}
+  @media print{.header{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+  </style></head><body>
+  <div class="header"><div class="eyebrow">Nutríssima · Fábrica</div><h1>Relatório de Estoque</h1><div class="sub">foto de agora · gerado em ${agora}</div></div>
+  <main>
+    <div class="card"><h2>🔴 Matéria-prima — abaixo do mínimo</h2>${alerta.map(linhaItem).join('')||'<div class="linha">Nada abaixo do mínimo.</div>'}</div>
+    <div class="card"><h2>🟠 Matéria-prima — perto do mínimo</h2>${perto.map(linhaItem).join('')||'<div class="linha">Nada nessa faixa.</div>'}</div>
+    <div class="card"><h2>🪣 Baldes</h2>${baldesHtml}</div>
+    <div class="card"><h2>🫙 Potes por linha</h2>${poteHtml}</div>
+    <div class="card"><h2>🟢 Matéria-prima — normal</h2>${ok.map(linhaItem).join('')}</div>
+    <div class="rodape">
+      <p><b>Como ler:</b> abaixo do mínimo = comprar já; perto do mínimo = ficar de olho; baldes mostram o que já foi refinado.</p>
+      ${negativos.length?`<p><b>⚠️ Atenção:</b> ${negativos.length} item(ns) com saldo negativo (${negativos.map(i=>i.nome).join(', ')}) — provável erro de lançamento, recomenda-se contagem física.</p>`:''}
+      <p><b>Procedência:</b> tabelas itens, estoque_balde e produto_acabado — gerado em ${agora}.</p>
+    </div>
+  </main></body></html>`;
+  const w=window.open('','_blank');w.document.write(html);w.document.close();
+  setTimeout(()=>{try{w.print()}catch(e){}},300);
 }
 function fEstoque(){
   const q=(document.getElementById('busca').value||'').toLowerCase();
@@ -547,6 +607,7 @@ async function tProg(){
   const dias=[0,1,2,3,4,5,6].map(i=>addDias(ini,i));
   const hojeStr=new Date().toISOString().slice(0,10);
   const porDia={};linhas.forEach(p=>{(porDia[p.data]=porDia[p.data]||[]).push(p)});
+  EST.progImpressao={dias,porDia};
   const antes=linhas.filter(p=>p.data<ini).length, depois=linhas.filter(p=>p.data>fim).length;
   const wname=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR',{weekday:'short'}).replace('.','');
   const dnum=d=>new Date(d+'T12:00').getDate();
@@ -647,6 +708,7 @@ async function tProg(){
       <div class="calweek-t"><b>${dnum(ini)}–${dnum(fim)} ${mesNome}</b><button class="calhoje" onclick="progHoje()">Hoje</button></div>
       <button onclick="progSemana(7)">${depois?`<i>${depois}</i> `:''}›</button>
     </div>
+    <button class="btnSec" onclick="imprimirProgSemana()" style="margin-bottom:10px">🖨️ Imprimir programação da semana</button>
     <div class="calscroll">${dias.map(colHTML).join('')}</div>
     <div class="card" style="margin-top:14px"><b>＋ Programar produto</b>
       <label>Produto</label><select id="pProd">${EST.cache.prods.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('')}</select>
@@ -658,6 +720,63 @@ async function tProg(){
     </div>
   </main>`;
   previewBat();
+}
+function imprimirProgSemana(){
+  const {dias,porDia}=EST.progImpressao||{};if(!dias)return;
+  const STATUS_INFO={programado:['aguardando pesagem','#B8862B'],pesado:['pesado, aguardando mistura','#2B5A78'],mistura:['em mistura','#7A5A14'],refino:['em refino','#B0510F'],balde:['concluído — no balde','#2E5F34']};
+  const wname=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR',{weekday:'long'});
+  const dd=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR');
+  let totalSemana=0,pendentes=0;
+  const blocos=dias.map(d=>{
+    const itens=porDia[d]||[];
+    if(!itens.length)return '';
+    const porEquip={};itens.forEach(p=>{(porEquip[p.equipamentos?.nome||'—']=porEquip[p.equipamentos?.nome||'—']||[]).push(p)});
+    let totalDia=0;
+    const corpo=Object.entries(porEquip).map(([eq,lista])=>{
+      const linhas=lista.map(p=>{
+        totalDia+=Number(p.quantidade_kg);totalSemana+=Number(p.quantidade_kg);
+        if(p.status==='programado')pendentes++;
+        const[label,cor]=STATUS_INFO[p.status]||[p.status,'#7A6A57'];
+        const loteTxt=p.lote?` · lote ${p.lote}`:'';
+        return `<div class="linha"><span class="nome">${p.produtos?.nome||'—'}${loteTxt}</span><span class="valores"><b class="mono">${fmt(p.quantidade_kg,0)} kg</b></span><span class="tag" style="background:${cor};color:#fff">${label}</span></div>`;
+      }).join('');
+      return `<p class="equip">⚙️ ${eq}</p>${linhas}`;
+    }).join('');
+    return `<div class="card"><h2>${wname(d)} · ${dd(d)} <span class="total">total ${fmt(totalDia,0)} kg</span></h2>${corpo}</div>`;
+  }).join('');
+  const agora=new Date().toLocaleString('pt-BR');
+  const html=`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Nutríssima — Programação da Semana</title>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <style>
+  :root{--cacau:#33200F;--casca:#EFE7DC;--linha:#DCD2C4;--tinta2:#7A6A57;--header:#22303A}
+  *{box-sizing:border-box}body{margin:0;background:var(--casca);font-family:'Archivo',sans-serif;color:var(--cacau)}
+  .mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
+  .header{background:var(--header);color:#FFFDF9;padding:24px}
+  .header .eyebrow{text-transform:uppercase;letter-spacing:.16em;font-size:11px;color:#B9C4CB;font-weight:700}
+  .header h1{font-size:22px;margin:4px 0 2px;font-weight:800}.header .sub{font-size:12px;color:#B9C4CB}
+  .header .kpis{display:flex;gap:18px;margin-top:12px}.header .kpi b{display:block;font-size:19px}.header .kpi span{font-size:10.5px;color:#B9C4CB;text-transform:uppercase}
+  main{max-width:900px;margin:0 auto;padding:18px}
+  .card{background:#fff;border:1.5px solid var(--linha);border-radius:14px;margin-bottom:14px;overflow:hidden;break-inside:avoid}
+  .card h2{margin:0;padding:11px 14px;font-size:14px;background:var(--casca);border-bottom:1px solid var(--linha);display:flex;justify-content:space-between;text-transform:capitalize}
+  .card h2 .total{font-size:11.5px;color:var(--tinta2);font-weight:600;text-transform:none}
+  .equip{margin:8px 14px 2px;font-size:10.5px;font-weight:800;color:var(--tinta2);text-transform:uppercase}
+  .linha{display:flex;align-items:center;gap:10px;padding:7px 14px;border-top:1px solid #F0EBDD;font-size:13px}
+  .nome{flex:1;min-width:0}.valores{white-space:nowrap;color:var(--cacau);font-size:12.5px}
+  .tag{font-size:10px;font-weight:800;text-transform:uppercase;padding:3px 8px;border-radius:20px;white-space:nowrap}
+  .rodape{font-size:11.5px;color:var(--tinta2);line-height:1.6;background:#fff;border:1.5px solid var(--linha);border-radius:14px;padding:14px}
+  @media print{.header{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+  </style></head><body>
+  <div class="header"><div class="eyebrow">Nutríssima · Fábrica</div><h1>Programação da Semana</h1><div class="sub">${dd(dias[0])} a ${dd(dias[6])} · gerado em ${agora}</div>
+  <div class="kpis"><div class="kpi"><b>${fmt(totalSemana,0)} kg</b><span>total programado</span></div><div class="kpi"><b>${pendentes}</b><span>aguardando pesagem</span></div></div></div>
+  <main>${blocos||'<div class="card"><div style="padding:16px">Nada programado nesta semana.</div></div>'}
+    <div class="rodape">
+      <p><b>Como ler:</b> cada bloco é um dia, dividido por moinho. A etiqueta mostra a etapa: aguardando pesagem → pesado → mistura → refino → concluído no balde.</p>
+      <p><b>Premissas:</b> quantidades são o programado, antes da perda de processo de 3% aplicada na pesagem.</p>
+      <p><b>Procedência:</b> tabela programacao_refino — gerado em ${agora}.</p>
+    </div>
+  </main></body></html>`;
+  const w=window.open('','_blank');w.document.write(html);w.document.close();
+  setTimeout(()=>{try{w.print()}catch(e){}},300);
 }
 async function criarProg(){
   if(precisaOperador())return;
@@ -879,12 +998,26 @@ async function tMRP(){
     <button class="btnSec" onclick="tela('receber')">📦 Ir para Receber</button></div>
   </main>`;
 }
+async function escolherFornecedor(rotulo){
+  const f=EST.cache.forns||[];
+  const nomes=f.map((x,i)=>(i+1)+') '+x.nome).join('\n');
+  const esc=prompt((rotulo||'Fornecedor')+':\n'+(nomes?nomes+'\n':'')+'0) Outro (digitar nome novo)\n\nDigite o número:','1');
+  if(esc==null)return null;
+  if(esc.trim()==='0'){
+    const novoNome=prompt('Nome do novo fornecedor:');
+    if(novoNome==null||!novoNome.trim())return null;
+    const {data,error}=await sb.from('fornecedores').insert({nome:novoNome.trim()}).select().single();
+    if(error){msg(error.message,true);return null;}
+    EST.cache.forns=EST.cache.forns||[];EST.cache.forns.push(data);
+    return data;
+  }
+  const fi=f[parseInt(esc)-1];
+  if(!fi){msg('Fornecedor inválido',true);return null;}
+  return fi;
+}
 async function novoPedido(itemId,nome,qtd){
   if(precisaOperador())return;
-  const f=EST.cache.forns; if(!f.length)return msg('Cadastre um fornecedor antes',true);
-  const nomes=f.map((x,i)=>(i+1)+') '+x.nome).join('\n');
-  const esc=prompt('Fornecedor para '+nome+':\n'+nomes+'\n\nDigite o número:','1');
-  if(esc==null)return; const fi=f[parseInt(esc)-1]; if(!fi)return msg('Fornecedor inválido',true);
+  const fi=await escolherFornecedor('Fornecedor para '+nome); if(!fi)return;
   const q=prompt('Quantidade a pedir:',qtd); if(q==null)return;
   const dt=prompt('Entrega prevista (AAAA-MM-DD):',new Date(Date.now()+5*864e5).toISOString().slice(0,10)); if(dt==null)return;
   const {error}=await sb.from('compras').insert({item_id:itemId,fornecedor_id:fi.id,fornecedor_nome:fi.nome,quantidade_solicitada:Number(String(q).replace(',','.')),status:'liberado',data_pedido:new Date().toISOString().slice(0,10),data_prevista_entrega:dt});
@@ -905,10 +1038,7 @@ async function editarPedido(id){
     await sb.from('atividades').insert({tipo:'compra',descricao:'Pedido editado — '+nome+': quantidade para '+fmt(n)+' '+un,responsavel:EST.operador});
     msg('✅ Quantidade alterada');
   }else if(o==='2'){
-    const f=EST.cache.forns; if(!f.length)return msg('Cadastre um fornecedor antes',true);
-    const nomes=f.map((x,i)=>(i+1)+') '+x.nome).join('\n');
-    const esc=prompt('Novo fornecedor para '+nome+':\n'+nomes+'\n\nDigite o número:','1'); if(esc==null)return;
-    const fi=f[parseInt(esc)-1]; if(!fi)return msg('Fornecedor inválido',true);
+    const fi=await escolherFornecedor('Novo fornecedor para '+nome); if(!fi)return;
     const {error}=await sb.from('compras').update({fornecedor_id:fi.id,fornecedor_nome:fi.nome}).eq('id',id); if(error)return msg(error.message,true);
     await sb.from('atividades').insert({tipo:'compra',descricao:'Pedido editado — '+nome+': fornecedor para '+fi.nome,responsavel:EST.operador});
     msg('✅ Fornecedor alterado');
