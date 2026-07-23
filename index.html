@@ -276,7 +276,7 @@ async function login(){
 }
 
 /* ================= NAVEGAÇÃO ================= */
-const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada};
+const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao};
 function tela(n,arg){TELAS[n](arg)}
 
 /* ================= INÍCIO ================= */
@@ -296,6 +296,7 @@ async function tInicio(){
       <button onclick="tela('vendas')"><span class="ico" style="background:#EAF3EA">🛍️</span><span><b>Vendas / Despacho</b><small>Demanda dos marketplaces — o que envasar</small></span></button>
       <button onclick="tela('receber')"><span class="ico" style="background:#E7F0E4">📦</span><span><b>Receber mercadoria</b><small>Confirmar chegada das compras</small></span></button>
       <button onclick="tela('movimento')"><span class="ico" style="background:#EAE4F2">🔄</span><span><b>Entrada / Saída de Estoque</b><small>Balde, matéria-prima ou pote — escolha e conte</small></span></button>
+      <button onclick="tela('producao')"><span class="ico" style="background:#EAF3EA">📊</span><span><b>Relatório de Produção</b><small>Entradas e saídas do dia — meça como foi</small></span></button>
       <button onclick="tela('estoque')"><span class="ico" style="background:#E4EDF2">📋</span><span><b>Conferir estoque</b><small>Matéria-prima, balde e potes</small></span></button>
       <button onclick="tela('metas')"><span class="ico" style="background:#F6ECD6">🎯</span><span><b>Metas do dia</b><small>Definir o quadro (PIN do gestor)</small></span></button>
       <button onclick="tela('tv')"><span class="ico" style="background:#33200F;color:#fff">📺</span><span><b>Modo TV</b><small>Quadro do dia em tela cheia</small></span></button>
@@ -1436,6 +1437,50 @@ const MV_CONF={
   pote_entrada:{titulo:'Entrada no estoque',unidade:'potes',rpc:'entrada_potes',paramId:'p_pa',paramQtd:'p_potes',decimal:false,cor:'var(--pistache)'},
   pote_saida:{titulo:'Baixa de potes (separação)',unidade:'potes',rpc:'baixa_despacho',paramId:'p_pa',paramQtd:'p_potes',decimal:false,cor:'var(--morango)'}
 };
+async function tProducao(){
+  if(!EST.prod)EST.prod={data:hojeLocal(),tipo:'todos'};
+  const dia=EST.prod.data;
+  const iniISO=new Date(dia+'T00:00:00-03:00').toISOString();
+  const fimISO=new Date(dia+'T23:59:59-03:00').toISOString();
+  const [potesMov,baldeMov]=await Promise.all([
+    sb.from('produto_acabado_movimentos').select('tipo,quantidade,lote,responsavel,criado_em,produto_acabado(nome,linha)').gte('criado_em',iniISO).lte('criado_em',fimISO).order('criado_em',{ascending:false}),
+    sb.from('estoque_balde_movimentos').select('tipo,quantidade_kg,lote,responsavel,criado_em,produtos(nome)').gte('criado_em',iniISO).lte('criado_em',fimISO).order('criado_em',{ascending:false})
+  ]);
+  const pm=(potesMov.data||[]), bm=(baldeMov.data||[]);
+  const totPoteEnt=pm.filter(m=>m.tipo==='entrada').reduce((s,m)=>s+Number(m.quantidade),0);
+  const totPoteSai=pm.filter(m=>m.tipo==='saida').reduce((s,m)=>s+Number(m.quantidade),0);
+  const totBaldeEnt=bm.filter(m=>m.tipo==='entrada').reduce((s,m)=>s+Number(m.quantidade_kg),0);
+  const totBaldeSai=bm.filter(m=>m.tipo==='saida').reduce((s,m)=>s+Number(m.quantidade_kg),0);
+  const hora=iso=>new Date(iso).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  let linhas=[];
+  if(EST.prod.tipo==='todos'||EST.prod.tipo==='potesEnt')pm.filter(m=>m.tipo==='entrada').forEach(m=>linhas.push({hora:m.criado_em,nome:m.produto_acabado?.nome||'—',qtd:fmt(m.quantidade,0)+' potes',tag:'🫙 entrada pote',cor:'#3E7C45',resp:m.responsavel,lote:m.lote}));
+  if(EST.prod.tipo==='todos'||EST.prod.tipo==='potesSai')pm.filter(m=>m.tipo==='saida').forEach(m=>linhas.push({hora:m.criado_em,nome:m.produto_acabado?.nome||'—',qtd:fmt(m.quantidade,0)+' potes',tag:'📤 saída pote',cor:'#C63A3A',resp:m.responsavel,lote:m.lote}));
+  if(EST.prod.tipo==='todos'||EST.prod.tipo==='baldeEnt')bm.filter(m=>m.tipo==='entrada').forEach(m=>linhas.push({hora:m.criado_em,nome:m.produtos?.nome||'—',qtd:fmt(m.quantidade_kg)+' kg',tag:'🪣 entrada balde',cor:'#2B5A78',resp:m.responsavel,lote:m.lote}));
+  if(EST.prod.tipo==='todos'||EST.prod.tipo==='baldeSai')bm.filter(m=>m.tipo==='saida').forEach(m=>linhas.push({hora:m.criado_em,nome:m.produtos?.nome||'—',qtd:fmt(m.quantidade_kg)+' kg',tag:'🪣 saída balde',cor:'#B8862B',resp:m.responsavel,lote:m.lote}));
+  linhas.sort((a,b)=>new Date(b.hora)-new Date(a.hora));
+  const chip=(k,l)=>`<button style="min-height:auto;padding:7px 14px;font-size:13px" class="${EST.prod.tipo===k?'sel':''}" onclick="prodSetTipo('${k}')">${l}</button>`;
+  document.getElementById('app').innerHTML=`
+  ${trilha('')}${topo('Relatório de Produção','entradas e saídas do dia')}
+  <main>
+    <div class="card" style="margin-top:0">
+      <label style="margin-top:0">Dia</label>
+      <input type="date" id="prodData" value="${dia}" onchange="EST.prod.data=this.value;tela('producao')">
+    </div>
+    <div class="kpis">
+      <div class="kpi"><b style="color:#3E7C45">${fmt(totPoteEnt,0)}</b><p>potes envasados</p></div>
+      <div class="kpi"><b style="color:#C63A3A">${fmt(totPoteSai,0)}</b><p>potes separados/saída</p></div>
+      <div class="kpi"><b style="color:#2B5A78">${fmt(totBaldeEnt)}</b><p>kg entrada balde</p></div>
+      <div class="kpi"><b style="color:#B8862B">${fmt(totBaldeSai)}</b><p>kg saída balde</p></div>
+    </div>
+    <div class="card"><span class="step-label">filtrar por tipo</span>
+      <div class="chips">${chip('todos','Todos')}${chip('potesEnt','🫙 Entrada pote')}${chip('potesSai','📤 Saída pote')}${chip('baldeEnt','🪣 Entrada balde')}${chip('baldeSai','🪣 Saída balde')}</div>
+    </div>
+    <div class="card"><b>Movimentações (${linhas.length})</b>
+      ${linhas.length?linhas.map(l=>`<div class="item-row"><span><small class="mono" style="color:#7A6A57">${hora(l.hora)}</small> <span class="chip" style="background:${l.cor}22;color:${l.cor};font-weight:700">${l.tag}</span><br>${l.nome}${l.resp?' <small style="color:#7A6A57">· '+l.resp+'</small>':''}</span><b class="mono">${l.qtd}</b></div>`).join(''):'<div class="center">Nenhuma movimentação nesse dia/filtro.</div>'}
+    </div>
+  </main>`;
+}
+function prodSetTipo(t){EST.prod.tipo=t;tela('producao')}
 async function tMovimento(){
   if(!EST.mv)EST.mv={material:'pote',dir:'entrada',prodId:null,valor:0,caixa:28};
   const conf=MV_CONF[EST.mv.material+'_'+EST.mv.dir];
@@ -1486,17 +1531,8 @@ async function tMovimento(){
   const chipD=(k,l)=>`<button style="min-height:auto;padding:7px 14px;font-size:13px" class="${EST.mv.dir===k?'sel':''}" onclick="mvSetDir('${k}')">${l}</button>`;
   let corpo;
   if(!p){
-    if(EST.mv.material==='pote'){
-      const porLinha={};lista.forEach(x=>{(porLinha[x.linha||'Outros']=porLinha[x.linha||'Outros']||[]).push(x)});
-      corpo=`<div class="card" style="margin-top:0"><span class="step-label">toca no produto</span></div>`+
-        (lista.length?`<div class="mv-grupos">`+Object.entries(porLinha).map(([linha,items])=>`<div class="card"><small style="color:#7A6A57;font-weight:700">${linha}</small><div class="chips" style="margin-top:8px">
-        ${items.map(x=>`<button style="min-height:auto;padding:7px 14px;font-size:13px" onclick="mvEscolhe('${x.id}')">${x.nome}${x.extra?' <small>('+x.extra+')</small>':''}</button>`).join('')}
-        </div></div>`).join('')+`</div>`:'<div class="card"><div class="center">Nada disponível.</div></div>');
-    }else{
-      corpo=`<div class="card" style="margin-top:0"><span class="step-label">toca no produto</span><div class="chips">
-        ${lista.length?lista.map(x=>`<button style="min-height:auto;padding:7px 14px;font-size:13px" onclick="mvEscolhe('${x.id}')">${x.nome}${x.extra?' <small>('+x.extra+')</small>':''}</button>`).join(''):'<p style="color:var(--morango)">Nada disponível.</p>'}
-      </div></div>`;
-    }
+    const campoBusca=`<div class="card" style="margin-top:0"><input id="mvBusca" placeholder="🔍 Buscar produto…" value="${(EST.mv.busca||'').replace(/"/g,'&quot;')}" oninput="mvBuscar(this.value)"></div>`;
+    corpo=campoBusca+`<div id="mvListaBox">${mvListaHTML()}</div>`;
   }else{
     const passo=conf.decimal?10:(EST.mv.caixa||28);
     const passoLabel=conf.decimal?`+${passo} kg`:`📦 +1 caixa (${passo})`;
@@ -1544,9 +1580,25 @@ async function tMovimento(){
     </div>
   </main>`;
 }
+function mvListaHTML(){
+  const lista=EST.cache.mvLista||[];
+  const buscaTxt=(EST.mv.busca||'').toLowerCase();
+  const listaFiltrada=buscaTxt?lista.filter(x=>x.nome.toLowerCase().includes(buscaTxt)):lista;
+  if(EST.mv.material==='pote'){
+    const porLinha={};listaFiltrada.forEach(x=>{(porLinha[x.linha||'Outros']=porLinha[x.linha||'Outros']||[]).push(x)});
+    return `<div class="card" style="margin-top:0"><span class="step-label">toca no produto</span></div>`+
+      (listaFiltrada.length?`<div class="mv-grupos">`+Object.entries(porLinha).map(([linha,items])=>`<div class="card"><small style="color:#7A6A57;font-weight:700">${linha}</small><div class="chips" style="margin-top:8px">
+      ${items.map(x=>`<button style="min-height:auto;padding:7px 14px;font-size:13px" onclick="mvEscolhe('${x.id}')">${x.nome}${x.extra?' <small>('+x.extra+')</small>':''}</button>`).join('')}
+      </div></div>`).join('')+`</div>`:'<div class="card"><div class="center">Nada encontrado.</div></div>');
+  }
+  return `<div class="card" style="margin-top:0"><span class="step-label">toca no produto</span><div class="chips">
+    ${listaFiltrada.length?listaFiltrada.map(x=>`<button style="min-height:auto;padding:7px 14px;font-size:13px" onclick="mvEscolhe('${x.id}')">${x.nome}${x.extra?' <small>('+x.extra+')</small>':''}</button>`).join(''):'<p style="color:var(--morango)">Nada encontrado.</p>'}
+  </div></div>`;
+}
+function mvBuscar(v){EST.mv.busca=v;const el=document.getElementById('mvListaBox');if(el)el.innerHTML=mvListaHTML();}
 function mvSetEmbSub(s){EST.mv.embSub=s;EST.mv.prodId=null;EST.mv.valor=0;tela('movimento')}
-function mvSetMaterial(m){EST.mv.material=m;EST.mv.prodId=null;EST.mv.valor=0;EST.mv.embSub='todas';tela('movimento')}
-function mvSetDir(d){EST.mv.dir=d;EST.mv.prodId=null;EST.mv.valor=0;tela('movimento')}
+function mvSetMaterial(m){EST.mv.material=m;EST.mv.prodId=null;EST.mv.valor=0;EST.mv.embSub='todas';EST.mv.busca='';tela('movimento')}
+function mvSetDir(d){EST.mv.dir=d;EST.mv.prodId=null;EST.mv.valor=0;EST.mv.busca='';tela('movimento')}
 function mvEscolhe(id){EST.mv.prodId=id;EST.mv.valor=0;tela('movimento')}
 function mvVoltar(){EST.mv.prodId=null;EST.mv.valor=0;tela('movimento')}
 function mvAdd(n){EST.mv.valor=Math.max(0,Number(((EST.mv.valor||0)+n).toFixed(2)));tela('movimento')}
