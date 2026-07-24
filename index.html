@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Nutríssima Fábrica</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -232,6 +235,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
+const APP_VERSAO='2026-07-24b';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -311,6 +315,7 @@ async function tInicio(){
       <button onclick="tela('tv')"><span class="ico" style="background:#33200F;color:#fff">📺</span><span><b>Modo TV</b><small>Quadro do dia em tela cheia</small></span></button>
     </div>
     <button class="btnSec" style="margin-top:20px" onclick="sb.auth.signOut().then(boot)">Sair da conta</button>
+    <p style="text-align:center;margin-top:16px;font-size:12px;color:#7A6A57">versão <b class="mono">${APP_VERSAO}</b> · <a href="#" onclick="location.reload(true);return false" style="color:#7A6A57">forçar atualização</a></p>
   </main>`;
 }
 async function setOp(n){
@@ -1002,7 +1007,7 @@ async function tBaldeEntrada(ctx){
       <p style="font-size:14px">Previsto: <b class="mono">${fmt(kgPrevisto,0)} kg</b> · já lançado: <b class="mono">${fmt(total,0)} kg</b> · falta: <b class="mono" style="color:${restante>0?'var(--morango)':'var(--pistache)'}">${fmt(restante,0)} kg</b></p>
       ${lista.length?`<div style="margin:10px 0 4px">${lista.map(m=>`<div class="item-row"><span>${new Date(m.criado_em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}${m.responsavel?' · '+m.responsavel:''}</span><b class="mono">${fmt(m.quantidade_kg,0)} kg</b></div>`).join('')}</div>`:'<p style="font-size:13px;color:#7A6A57;margin:8px 0">nenhum balde lançado ainda pra este lote</p>'}
       <label style="margin-top:10px">Novo balde (kg)</label>
-      <input class="campoG" id="baldeKg" inputmode="decimal" placeholder="${restante>0?fmt(restante,1):'0'}" value="${restante>0?fmt(restante,1):''}">
+      <input class="campoG" id="baldeKg" inputmode="decimal" placeholder="${restante>0?Number(restante).toFixed(1):'0'}" value="${restante>0?Number(restante).toFixed(1):''}">
       <button class="btnP" onclick='addBaldeEntrada("${produtoId}","${nomeEsc}","${lote||''}",${Number(kgPrevisto)})'>+ Adicionar balde</button>
       <button class="btnSec" style="margin-top:8px" onclick="tela('programacao')">✓ Concluir e voltar pra Programação</button>
     </div>
@@ -1655,7 +1660,7 @@ async function tMovimento(){
       </div>
       <div style="margin-top:14px;display:flex;gap:8px;justify-content:center;align-items:center">
         <button class="btnSec" style="min-height:auto;padding:8px 14px;font-size:13px" onclick="mvAdd(-1)">−1</button>
-        <input id="mvManual" class="campoG" style="max-width:110px;text-align:center" inputmode="decimal" value="${fmt(EST.mv.valor||0,conf.decimal?1:0)}" onchange="mvSetValor(this.value)">
+        <input id="mvManual" class="campoG" style="max-width:110px;text-align:center" inputmode="decimal" value="${EST.mv.valor||0}" onchange="mvSetValor(this.value)">
         <button class="btnSec" style="min-height:auto;padding:8px 14px;font-size:13px" onclick="mvZerar()">zerar</button>
       </div>
       ${!conf.decimal?`<p style="margin-top:14px"><a href="#" onclick="mvMudarCaixa();return false" style="color:#7A6A57;font-size:12.5px">caixa tem ${EST.mv.caixa} potes · toque pra mudar</a></p>`:''}
