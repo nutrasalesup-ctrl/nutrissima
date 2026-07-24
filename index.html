@@ -704,7 +704,7 @@ async function tProg(){
            })();
         const chipCor=st==='programado'?'mel':st==='pesado'?'azul':st==='mistura'?'mel':st==='refino'?'laranja':'ok';
         const chipTxt=st==='programado'?'a pesar':st==='pesado'?'pesado':st==='mistura'?'em mistura':st==='refino'?'em refino':'refino concluído';
-        return '<div class="calbat"><div class="calbat-h"><span>B'+(ix+1)+' · <b class="mono">'+fmt(p.quantidade_kg,0)+'</b> kg</span>'+(p.lote?'<span class="mono lote">'+p.lote+'</span>':'')+'</div><span class="chip '+chipCor+'">'+chipTxt+'</span>'+acao+'<button class="caltrilha" onclick="tela(\''+'lote\',\''+p.id+'\')">🔎 trilha</button></div>';
+        return '<div class="calbat"><div class="calbat-h"><span>B'+(ix+1)+' · <b class="mono">'+fmt(p.quantidade_kg,0)+'</b> kg</span>'+(p.lote?'<span class="mono lote">'+p.lote+'</span>':'')+'</div><span class="chip '+chipCor+'">'+chipTxt+'</span>'+acao+'<button class="caltrilha" onclick="tela(\''+'lote\',\''+p.id+'\')">🔎 trilha</button><button class="caltrilha" onclick="imprimirCartaoBat(\''+p.id+'\')">🖨️ cartão de identificação</button></div>';
       }).join('');
       const nProg=g.filter(p=>p.status==='programado').length;const nPes=g.filter(p=>p.status==='pesado').length;const nMist=g.filter(p=>p.status==='mistura').length;const nRef=g.filter(p=>p.status==='refino').length;const nBal=g.filter(p=>p.status==='balde').length;const cnt=[];if(nProg)cnt.push(nProg+' a pesar');if(nPes)cnt.push(nPes+' pesado');if(nMist)cnt.push(nMist+' em mistura');if(nRef)cnt.push(nRef+' em refino');if(nBal)cnt.push(nBal+' concluído'+(nBal>1?'s':''));
       return '<details class="calgrp"><summary class="calgrp-h"><span class="calmo '+m+'">'+(m==='m1'?'M1':'M2')+'</span><div style="flex:1"><b>'+nome+'</b><small>'+fmt(total,0)+' kg · '+g.length+' bat · '+cnt.join(' · ')+'</small></div></summary>'+bats+'</details>';
@@ -739,7 +739,10 @@ async function tProg(){
       <div class="calweek-t"><b>${dnum(ini)}–${dnum(fim)} ${mesNome}</b><button class="calhoje" onclick="progHoje()">Hoje</button></div>
       <button onclick="progSemana(7)">${depois?`<i>${depois}</i> `:''}›</button>
     </div>
-    <button class="btnSec" onclick="imprimirProgSemana()" style="margin-bottom:10px">🖨️ Imprimir programação da semana</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <button class="btnSec" onclick="imprimirProgSemana()" style="margin-bottom:0">🖨️ Imprimir programação da semana</button>
+      <button class="btnSec" onclick="imprimirCartoesPesagem()" style="margin-bottom:0">🖨️ Cartões de pesagem da semana</button>
+    </div>
     <div class="calscroll">${dias.map(colHTML).join('')}</div>
     <div class="card" style="margin-top:14px"><b>＋ Programar produto</b>
       <label>Produto</label><select id="pProd">${EST.cache.prods.map(p=>`<option value="${p.id}">${p.nome}</option>`).join('')}</select>
@@ -808,6 +811,88 @@ function imprimirProgSemana(){
   </main></body></html>`;
   const w=window.open('','_blank');w.document.write(html);w.document.close();
   setTimeout(()=>{try{w.print()}catch(e){}},300);
+}
+function cartoesBatPrint(lista){
+  if(!lista||!lista.length){msg('Nenhuma batelada pra imprimir',true);return}
+  const all=[];Object.values(EST.progImpressao?.porDia||{}).forEach(a=>all.push(...a));
+  const idxDe=p=>{
+    const g=all.filter(x=>x.produto_id===p.produto_id&&x.equipamento_id===p.equipamento_id&&x.data===p.data).sort((a,b)=>new Date(a.criado_em)-new Date(b.criado_em));
+    const i=g.findIndex(x=>x.id===p.id);return [i>=0?i+1:1,g.length||1];
+  };
+  const cardHTML=p=>{
+    const m=moinhoTipo(p.equipamentos?.nome);
+    const corM=m==='m1'?'#B8862B':'#2B5A78';
+    const rotM=m==='m1'?'Moinho 1':'Moinho 2';
+    const par=idxDe(p);
+    const loteBloco=p.lote
+      ?'<div class="lote-num mono">'+p.lote+'</div>'
+      :'<div class="lote-escrever"></div><div class="lote-obs">preencher com o lote gerado na pesagem</div>';
+    return '<div class="cartao">'
+      +'<div class="c-topo"><div class="c-te"><div class="eyebrow">Nutríssima · Identificação de batelada</div><div class="produto">'+(p.produtos?.nome||'—')+'</div></div>'
+      +'<div class="moinho" style="background:'+corM+'"><div class="letra mono">'+(m==='m1'?'M1':'M2')+'</div><div class="rot">'+rotM+'</div></div></div>'
+      +'<div class="c-lote"><div class="rotulo">Lote de produção</div>'+loteBloco+'</div>'
+      +'<div class="c-grid">'
+      +'<div class="c-cel"><div class="rotulo">Quantidade</div><div class="c-val mono">'+fmt(p.quantidade_kg,0)+' <small>kg</small></div></div>'
+      +'<div class="c-cel"><div class="rotulo">Data programada</div><div class="c-val mono">'+brData(p.data)+'</div></div>'
+      +'<div class="c-cel"><div class="rotulo">Batelada</div><div class="c-val mono">'+par[0]+'<small> de '+par[1]+'</small></div></div>'
+      +'</div>'
+      +'<div class="c-ass"><div class="la"><div class="rotulo">Pesado por</div><div class="campo"></div></div><div class="la"><div class="rotulo">Hora</div><div class="campo"></div></div></div>'
+      +'<div class="c-dest"><span>PESAGEM PRONTA — LEVAR PARA A SALA DE MISTURA · '+rotM.toUpperCase()+'</span><span>→</span></div>'
+      +'<div class="c-conf"><div class="la"><div class="rotulo">Recebido na mistura por</div><div class="campo"></div></div><div class="la"><div class="rotulo">Hora</div><div class="campo"></div></div></div>'
+      +'</div>';
+  };
+  const cards=lista.map(cardHTML);
+  const pags=[];for(let i=0;i<cards.length;i+=2)pags.push(cards.slice(i,i+2).join('<div class="corte"></div>'));
+  const agora=new Date().toLocaleString('pt-BR');
+  const html='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Nutríssima — Cartões de batelada</title>'
+  +'<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">'
+  +'<style>'
+  +'*{box-sizing:border-box;margin:0;padding:0}'
+  +"body{font-family:'Archivo',sans-serif;color:#33200F;background:#fff}"
+  +".mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;font-weight:600}"
+  +'.pg{max-width:19cm;margin:0 auto;padding:14px 10px;page-break-after:always}'
+  +'.pg:last-child{page-break-after:auto}'
+  +'.cartao{border:2px solid #33200F;border-radius:14px;overflow:hidden;page-break-inside:avoid}'
+  +'.c-topo{display:flex;justify-content:space-between;border-bottom:2px solid #33200F}'
+  +'.c-te{padding:10px 14px}'
+  +'.eyebrow{font-size:10px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#7A6A57}'
+  +'.produto{font-size:24px;font-weight:800;line-height:1.1;margin-top:2px}'
+  +'.moinho{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:100px;color:#fff;padding:6px 12px;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+  +'.moinho .letra{font-size:36px;line-height:1}'
+  +'.moinho .rot{font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}'
+  +'.c-lote{text-align:center;padding:10px 14px 4px}'
+  +'.rotulo{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#7A6A57}'
+  +'.lote-num{font-size:54px;line-height:1.05;letter-spacing:.04em}'
+  +'.lote-escrever{border-bottom:2px solid #33200F;height:52px;max-width:60%;margin:6px auto 0}'
+  +'.lote-obs{font-size:10px;color:#7A6A57;margin-top:3px}'
+  +'.c-grid{display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1.5px solid #DCD2C4;border-bottom:1.5px solid #DCD2C4;margin-top:8px}'
+  +'.c-cel{padding:8px 10px;text-align:center;border-right:1.5px solid #DCD2C4}'
+  +'.c-cel:last-child{border-right:none}'
+  +'.c-val{font-size:20px}.c-val small{font-size:12px;font-weight:500}'
+  +'.c-ass,.c-conf{padding:10px 14px;display:grid;grid-template-columns:2fr 1fr;gap:12px}'
+  +'.c-conf{background:#F7F1E8;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+  +'.la .campo{border-bottom:1.5px solid #33200F;height:24px}'
+  +'.c-dest{background:#33200F;color:#FFFDF9;padding:8px 14px;display:flex;justify-content:space-between;font-weight:700;font-size:12.5px;letter-spacing:.02em;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+  +'.corte{border-top:2px dashed #7A6A57;margin:16px 0;position:relative}'
+  +'.geracao{font-size:10px;color:#7A6A57;text-align:right;margin-top:8px}'
+  +'</style></head><body>'
+  +pags.map((pg,i)=>'<div class="pg">'+pg+(i===pags.length-1?'<div class="geracao">gerado em '+agora+' · programacao_refino</div>':'')+'</div>').join('')
+  +'</body></html>';
+  const w=window.open('','_blank');w.document.write(html);w.document.close();
+  setTimeout(()=>{try{w.print()}catch(e){}},300);
+}
+function imprimirCartaoBat(id){
+  const all=[];Object.values(EST.progImpressao?.porDia||{}).forEach(a=>all.push(...a));
+  const p=all.find(x=>x.id===id);
+  if(!p){msg('Batelada não encontrada — recarregue a tela',true);return}
+  cartoesBatPrint([p]);
+}
+function imprimirCartoesPesagem(){
+  const o=EST.progImpressao||{};if(!o.dias)return;
+  const lista=[];
+  o.dias.forEach(d=>(o.porDia[d]||[]).forEach(p=>{if(p.status==='programado'||p.status==='pesado')lista.push(p)}));
+  if(!lista.length){msg('Nenhuma batelada a pesar ou pesada nesta semana',true);return}
+  cartoesBatPrint(lista);
 }
 async function criarProg(){
   if(precisaOperador())return;
