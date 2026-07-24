@@ -814,8 +814,9 @@ function imprimirProgSemana(){
   const w=window.open('','_blank');w.document.write(html);w.document.close();
   setTimeout(()=>{try{w.print()}catch(e){}},300);
 }
-function cartoesBatPrint(lista){
+function cartoesBatPrint(lista,obs){
   if(!lista||!lista.length){msg('Nenhuma batelada pra imprimir',true);return}
+  const obsEsc=(obs||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const all=[];Object.values(EST.progImpressao?.porDia||{}).forEach(a=>all.push(...a));
   const idxDe=p=>{
     const g=all.filter(x=>x.produto_id===p.produto_id&&x.equipamento_id===p.equipamento_id&&x.data===p.data).sort((a,b)=>new Date(a.criado_em)-new Date(b.criado_em));
@@ -839,6 +840,7 @@ function cartoesBatPrint(lista){
       +'<div class="c-cel"><div class="rotulo">Batelada</div><div class="c-val mono">'+par[0]+'<small> de '+par[1]+'</small></div></div>'
       +'</div>'
       +'<div class="c-ass"><div class="la"><div class="rotulo">Pesado por</div><div class="campo"></div></div><div class="la"><div class="rotulo">Hora</div><div class="campo"></div></div></div>'
+      +'<div class="c-obs"><div class="rotulo">Observações</div>'+(obsEsc?'<div class="obs-txt">'+obsEsc+'</div>':'<div class="campo"></div>')+'</div>'
       +'<div class="c-dest"><span>PESAGEM PRONTA — LEVAR PARA A SALA DE MISTURA · '+rotM.toUpperCase()+'</span><span>→</span></div>'
       +'<div class="c-conf"><div class="la"><div class="rotulo">Recebido na mistura por</div><div class="campo"></div></div><div class="la"><div class="rotulo">Hora</div><div class="campo"></div></div></div>'
       +'</div>';
@@ -873,7 +875,9 @@ function cartoesBatPrint(lista){
   +'.c-val{font-size:20px}.c-val small{font-size:12px;font-weight:500}'
   +'.c-ass,.c-conf{padding:10px 14px;display:grid;grid-template-columns:2fr 1fr;gap:12px}'
   +'.c-conf{background:#F7F1E8;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
-  +'.la .campo{border-bottom:1.5px solid #33200F;height:24px}'
+  +'.la .campo,.c-obs .campo{border-bottom:1.5px solid #33200F;height:24px}'
+  +'.c-obs{padding:0 14px 10px}'
+  +'.obs-txt{font-size:15px;font-weight:700;border:1.5px dashed #33200F;border-radius:8px;padding:6px 10px;margin-top:3px}'
   +'.c-dest{background:#33200F;color:#FFFDF9;padding:8px 14px;display:flex;justify-content:space-between;font-weight:700;font-size:12.5px;letter-spacing:.02em;-webkit-print-color-adjust:exact;print-color-adjust:exact}'
   +'.corte{border-top:2px dashed #7A6A57;margin:16px 0;position:relative}'
   +'.geracao{font-size:10px;color:#7A6A57;text-align:right;margin-top:8px}'
@@ -887,7 +891,9 @@ function imprimirCartaoBat(id){
   const all=[];Object.values(EST.progImpressao?.porDia||{}).forEach(a=>all.push(...a));
   const p=all.find(x=>x.id===id);
   if(!p){msg('Batelada não encontrada — recarregue a tela',true);return}
-  cartoesBatPrint([p]);
+  const obs=prompt('Observação pro cartão? (deixe vazio se não tiver)','');
+  if(obs===null)return;
+  cartoesBatPrint([p],obs.trim());
 }
 function imprimirCartoesDia(d){
   const o=EST.progImpressao||{};
