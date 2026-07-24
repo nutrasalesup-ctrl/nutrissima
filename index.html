@@ -233,6 +233,14 @@ let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
+/* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
+   Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
+   Corrige o bug de 24/07: replace(',','.') sozinho lia "2.600" como 2,6 (dividia por 1000). */
+function parseNumBR(v){
+  const s=String(v==null?'':v).trim();
+  if(!s)return NaN;
+  return Number(s.replace(/\./g,'').replace(',','.'));
+}
 function hoje(){return new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}
 function loteSugestao(seq){const d=new Date();const dia=Math.floor((d-new Date(d.getFullYear(),0,0))/864e5);const s=String(d.getFullYear()).slice(2)+String(dia).padStart(3,'0');return s+'-'+(seq||1)}
 function msg(t,erro){const m=el(`<div class="msg ${erro?'erro':''}">${t}</div>`);document.body.appendChild(m);setTimeout(()=>m.remove(),3800)}
@@ -538,7 +546,7 @@ async function ajuste(btn){
   const nome=btn.closest('.item-row').querySelector('span').textContent.replace('⬤ ','').replace('🪣 ','');
   const real=prompt('Ajuste de estoque — '+nome+'\nSaldo no sistema: '+fmt(atual)+' '+un+'\n\nQual é o saldo REAL contado?',atual);
   if(real==null)return;
-  const n=Number(String(real).replace(',','.'));
+  const n=parseNumBR(real);
   if(isNaN(n)||n<0)return msg('Valor inválido',true);
   const motivo=prompt('Motivo do ajuste (obrigatório):\nex.: contagem física, perda, vencimento, erro de lançamento');
   if(motivo==null)return; if(!motivo.trim())return msg('O motivo é obrigatório',true);
@@ -580,7 +588,7 @@ async function confReceber(id){
   if(precisaOperador())return;
   const c=(EST.cache.compras||[]).find(x=>x.id===id); if(!c)return msg('Pedido não encontrado',true);
   const un=(c.itens&&c.itens.unidade)||'';
-  const q=Number(document.getElementById('rQtd').value.replace(',','.'));
+  const q=parseNumBR(document.getElementById('rQtd').value);
   if(!q||q<=0)return msg('Informe a quantidade',true);
   const lote=document.getElementById('rLote').value.trim()||null;
   const ped=Number(c.quantidade_solicitada)||0, falta=Math.round((ped-q)*1000)/1000;
@@ -611,7 +619,7 @@ function progSemana(delta){EST.progSemana=addDias(EST.progSemana||mondayOf(),del
 function progHoje(){EST.progSemana=mondayOf();tela('programacao')}
 function previewBat(){
   const kgEl=document.getElementById('pKg');if(!kgEl)return;
-  const kg=Number((kgEl.value||'').replace(',','.'));
+  const kg=parseNumBR(kgEl.value||'');
   const eqSel=document.getElementById('pEquip');
   const eqNome=(EST.cache.equip.find(e=>e.id===eqSel.value)||{}).nome||'';
   const cap=capDe(eqNome);const box=document.getElementById('pPreview');
@@ -910,7 +918,7 @@ function imprimirCartoesPesagem(){
 }
 async function criarProg(){
   if(precisaOperador())return;
-  const kg=Number(document.getElementById('pKg').value.replace(',','.'));
+  const kg=parseNumBR(document.getElementById('pKg').value);
   if(!kg||kg<=0)return msg('Informe os kg',true);
   const eqNome=(EST.cache.equip.find(e=>e.id===pEquip.value)||{}).nome||'';
   const cap=capDe(eqNome);
@@ -1003,7 +1011,7 @@ async function tBaldeEntrada(ctx){
 async function addBaldeEntrada(produtoId,nome,lote,kgPrevisto){
   if(precisaOperador())return;
   const v=document.getElementById('baldeKg').value;
-  const n=Number(String(v).replace(',','.'));
+  const n=parseNumBR(v);
   if(!n||n<=0)return msg('Quantidade inválida',true);
   const {error}=await sb.rpc('entrada_balde',{p_produto_id:produtoId,p_kg:n,p_responsavel:EST.operador,p_lote:lote||'MANUAL'});
   if(error)return msg(error.message,true);
@@ -1053,7 +1061,7 @@ async function mudarDataProg(id,nome,atual){
 async function mudarQtdProg(id,nome,atual){
   if(precisaOperador())return;
   const nova=prompt('Nova quantidade (kg) para '+nome+':',atual);
-  if(nova==null)return; const n=Number(String(nova).replace(',','.'));
+  if(nova==null)return; const n=parseNumBR(nova);
   if(!n||n<=0)return msg('Quantidade inválida',true);
   if(n===atual)return;
   const {error}=await sb.from('programacao_refino').update({quantidade_kg:n}).eq('id',id).eq('status','programado');
@@ -1176,9 +1184,9 @@ async function novoPedido(itemId,nome,qtd){
   const fi=await escolherFornecedor('Fornecedor para '+nome); if(!fi)return;
   const q=prompt('Quantidade a pedir:',qtd); if(q==null)return;
   const dt=prompt('Entrega prevista (AAAA-MM-DD):',new Date(Date.now()+5*864e5).toISOString().slice(0,10)); if(dt==null)return;
-  const {error}=await sb.from('compras').insert({item_id:itemId,fornecedor_id:fi.id,fornecedor_nome:fi.nome,quantidade_solicitada:Number(String(q).replace(',','.')),status:'liberado',data_pedido:new Date().toISOString().slice(0,10),data_prevista_entrega:dt});
+  const {error}=await sb.from('compras').insert({item_id:itemId,fornecedor_id:fi.id,fornecedor_nome:fi.nome,quantidade_solicitada:parseNumBR(q),status:'liberado',data_pedido:new Date().toISOString().slice(0,10),data_prevista_entrega:dt});
   if(error)return msg(error.message,true);
-  await sb.from('atividades').insert({tipo:'compra',descricao:'Pedido criado — '+fmt(Number(String(q).replace(',','.')))+' de '+nome+' ('+fi.nome+')',responsavel:EST.operador});
+  await sb.from('atividades').insert({tipo:'compra',descricao:'Pedido criado — '+fmt(parseNumBR(q))+' de '+nome+' ('+fi.nome+')',responsavel:EST.operador});
   msg('✅ Pedido criado');tela('mrp');
 }
 async function editarPedido(id){
@@ -1189,7 +1197,7 @@ async function editarPedido(id){
   if(op==null)return; const o=op.trim();
   if(o==='1'){
     const q=prompt('Nova quantidade ('+un+'):',fmt(c.quantidade_solicitada)); if(q==null)return;
-    const n=Number(String(q).replace(',','.')); if(!(n>0))return msg('Quantidade inválida',true);
+    const n=parseNumBR(q); if(!(n>0))return msg('Quantidade inválida',true);
     const {error}=await sb.from('compras').update({quantidade_solicitada:n}).eq('id',id); if(error)return msg(error.message,true);
     await sb.from('atividades').insert({tipo:'compra',descricao:'Pedido editado — '+nome+': quantidade para '+fmt(n)+' '+un,responsavel:EST.operador});
     msg('✅ Quantidade alterada');
@@ -1513,7 +1521,7 @@ async function tBaixa(){
 function bxEscolheProduto(id){EST.bx={paId:id,potes:0,caixa:EST.bx.caixa||28};tela('baixa')}
 function bxVoltar(){EST.bx={paId:null,potes:0,caixa:EST.bx?.caixa||28};tela('baixa')}
 function bxAdd(n){EST.bx.potes=Math.max(0,(EST.bx.potes||0)+n);tela('baixa')}
-function bxSetPotes(v){EST.bx.potes=Math.max(0,parseInt(v)||0);tela('baixa')}
+function bxSetPotes(v){EST.bx.potes=Math.max(0,Math.round(parseNumBR(v))||0);tela('baixa')}
 function bxZerar(){EST.bx.potes=0;tela('baixa')}
 function bxMudarCaixa(){const v=prompt('Quantos potes cabem numa caixa?',EST.bx.caixa);if(v==null)return;const n=parseInt(v);if(!n||n<=0)return;EST.bx.caixa=n;tela('baixa')}
 async function confBaixa(){
@@ -1701,7 +1709,7 @@ function mvSetDir(d){EST.mv.dir=d;EST.mv.prodId=null;EST.mv.valor=0;EST.mv.busca
 function mvEscolhe(id){EST.mv.prodId=id;EST.mv.valor=0;tela('movimento')}
 function mvVoltar(){EST.mv.prodId=null;EST.mv.valor=0;tela('movimento')}
 function mvAdd(n){EST.mv.valor=Math.max(0,Number(((EST.mv.valor||0)+n).toFixed(2)));tela('movimento')}
-function mvSetValor(v){const n=parseFloat(String(v).replace(',','.'));EST.mv.valor=Math.max(0,isNaN(n)?0:n);tela('movimento')}
+function mvSetValor(v){const n=parseNumBR(v);EST.mv.valor=Math.max(0,isNaN(n)?0:n);tela('movimento')}
 function mvZerar(){EST.mv.valor=0;tela('movimento')}
 function mvMudarCaixa(){const v=prompt('Quantos potes cabem numa caixa?',EST.mv.caixa);if(v==null)return;const n=parseInt(v);if(!n||n<=0)return;EST.mv.caixa=n;tela('movimento')}
 async function confMovimento(){
@@ -1795,7 +1803,7 @@ function esEscolheBalde(pid){EST.es.baldeId=pid;tela('envase')}
 function esTrocarBalde(){EST.es.baldeId=null;EST.es.forcarBalde=true;tela('envase')}
 function esVoltar(){EST.es={paId:null,baldeId:null,potes:0,caixa:EST.es?.caixa||28,forcarBalde:false};tela('envase')}
 function esAdd(n){EST.es.potes=Math.max(0,(EST.es.potes||0)+n);tela('envase')}
-function esSetPotes(v){EST.es.potes=Math.max(0,parseInt(v)||0);tela('envase')}
+function esSetPotes(v){EST.es.potes=Math.max(0,Math.round(parseNumBR(v))||0);tela('envase')}
 function esZerar(){EST.es.potes=0;tela('envase')}
 function esMudarCaixa(){const v=prompt('Quantos potes cabem numa caixa?',EST.es.caixa);if(v==null)return;const n=parseInt(v);if(!n||n<=0)return;EST.es.caixa=n;tela('envase')}
 async function confEnvaseSimples(){
@@ -1861,7 +1869,7 @@ function ePeso(){
 function eResumo(){
   const p=EST.cache.pa.find(x=>x.id===ePa.value);
   const peso=p?.peso_pote_kg??Number((document.getElementById('ePeso')?.value||'').replace(',','.'));
-  const n=Number(ePotes.value)||0;
+  const n=Math.round(parseNumBR(ePotes.value))||0;
   const kg=peso?n*peso:0;
   const mix=eMistura();
   let html='Preencha acima…';
@@ -1883,7 +1891,7 @@ function eResumo(){
 async function confEnvase(){
   if(precisaOperador())return;
   const p=EST.cache.pa.find(x=>x.id===ePa.value);
-  const n=parseInt(ePotes.value);if(!n||n<=0)return msg('Informe os potes',true);
+  const n=Math.round(parseNumBR(ePotes.value));if(!n||n<=0)return msg('Informe os potes',true);
   if(p.peso_pote_kg==null){
     const peso=Number((document.getElementById('ePeso')?.value||'').replace(',','.'));
     if(!peso||peso<=0)return msg('Informe o peso do pote',true);
@@ -2063,7 +2071,7 @@ async function salvarRecado(){
 }
 async function salvarMeta(){
   const area=document.getElementById('mArea').value, ref=document.getElementById('mRef').value;
-  const meta=Number(document.getElementById('mMeta').value.replace(',','.'));
+  const meta=parseNumBR(document.getElementById('mMeta').value);
   if(!meta||meta<=0)return msg('Informe a meta',true);
   const lista=area==='envase'?EST.cache.mPa:EST.cache.mProds;
   const item=lista.find(x=>x.id===ref);
