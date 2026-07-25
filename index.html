@@ -1554,11 +1554,12 @@ async function tProducao(){
   const dia=EST.prod.data;
   const iniISO=new Date(dia+'T00:00:00-03:00').toISOString();
   const fimISO=new Date(dia+'T23:59:59-03:00').toISOString();
-  const [potesMov,baldeMov]=await Promise.all([
+  const [potesMov,baldeMov,recebMov]=await Promise.all([
     sb.from('produto_acabado_movimentos').select('tipo,quantidade,lote,responsavel,criado_em,produto_acabado(nome,linha)').gte('criado_em',iniISO).lte('criado_em',fimISO).order('criado_em',{ascending:false}),
-    sb.from('estoque_balde_movimentos').select('tipo,quantidade_kg,lote,responsavel,criado_em,produtos(nome)').gte('criado_em',iniISO).lte('criado_em',fimISO).order('criado_em',{ascending:false})
+    sb.from('estoque_balde_movimentos').select('tipo,quantidade_kg,lote,responsavel,criado_em,produtos(nome)').gte('criado_em',iniISO).lte('criado_em',fimISO).order('criado_em',{ascending:false}),
+    sb.from('compras').select('id,fornecedor_nome,quantidade_solicitada,quantidade_recebida,lote_fornecedor,data_recebimento,itens(nome,unidade,categoria)').eq('status','recebido').eq('data_recebimento',dia).order('id',{ascending:false})
   ]);
-  const pm=(potesMov.data||[]), bm=(baldeMov.data||[]);
+  const pm=(potesMov.data||[]), bm=(baldeMov.data||[]), rc=(recebMov.data||[]);
   const totPoteEnt=pm.filter(m=>m.tipo==='entrada').reduce((s,m)=>s+Number(m.quantidade),0);
   const totPoteSai=pm.filter(m=>m.tipo==='saida').reduce((s,m)=>s+Number(m.quantidade),0);
   const totBaldeEnt=bm.filter(m=>m.tipo==='entrada').reduce((s,m)=>s+Number(m.quantidade_kg),0);
@@ -1583,6 +1584,10 @@ async function tProducao(){
       <div class="kpi"><b style="color:#C63A3A">${fmt(totPoteSai,0)}</b><p>potes separados/saída</p></div>
       <div class="kpi"><b style="color:#2B5A78">${fmt(totBaldeEnt)}</b><p>kg entrada balde</p></div>
       <div class="kpi"><b style="color:#B8862B">${fmt(totBaldeSai)}</b><p>kg saída balde</p></div>
+      <div class="kpi"><b style="color:#2B5A78">${fmt(rc.length,0)}</b><p>recebimentos</p></div>
+    </div>
+    <div class="card"><b>📥 Recebimentos (${rc.length})</b>
+      ${rc.length?rc.map(c=>{const cat=c.itens?.categoria;const icone=cat==='embalagem'?'📦':'🌰';const un=c.itens?.unidade||'';const sol=Number(c.quantidade_solicitada||0),rec=Number(c.quantidade_recebida||0);const diverge=Math.abs(rec-sol)>0.01;return `<div class="item-row"><span><span class="chip" style="background:#2B5A7822;color:#2B5A78;font-weight:700">${icone} recebimento</span><br>${c.itens?.nome||'—'}${c.fornecedor_nome?' <small style="color:#7A6A57">· '+c.fornecedor_nome+'</small>':''}${c.lote_fornecedor?' <small style="color:#7A6A57">· lote '+c.lote_fornecedor+'</small>':''}${diverge?`<br><small class="mono" style="color:#7A6A57">${fmt(sol)} pedido → ${fmt(rec)} recebido</small>`:''}</span><b class="mono">${fmt(rec)} ${un}</b></div>`}).join(''):'<div class="center">Nenhum recebimento nesse dia.</div>'}
     </div>
     <div class="card"><span class="step-label">filtrar por tipo</span>
       <div class="chips">${chip('todos','Todos')}${chip('potesEnt','🫙 Entrada pote')}${chip('potesSai','📤 Saída pote')}${chip('baldeEnt','🪣 Entrada balde')}${chip('baldeSai','🪣 Saída balde')}</div>
