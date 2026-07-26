@@ -360,7 +360,7 @@ async function tPainel(){
   const kgBalde=(balde.data||[]).reduce((a,b)=>a+Number(b.quantidade_kg),0);
   const potes=(pa.data||[]).reduce((a,b)=>a+Number(b.saldo_potes),0);
   const paOrdenado=(pa.data||[]).filter(p=>p.ativo).slice().sort((a,b)=>Number(a.saldo_potes)-Number(b.saldo_potes));
-  const hj=new Date().toISOString().slice(0,10);
+  const hj=hojeLocal();
   const chegaHoje=(compras.data||[]).filter(c=>c.data_prevista_entrega===hj).length;
   document.getElementById('app').innerHTML=`
   ${trilha('')}${topo('Painel','Nutríssima agora · '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}))}
@@ -657,7 +657,7 @@ async function tProg(){
   if(!EST.progSemana)EST.progSemana=mondayOf();
   const ini=EST.progSemana, fim=addDias(ini,6);
   const dias=[0,1,2,3,4,5,6].map(i=>addDias(ini,i));
-  const hojeStr=new Date().toISOString().slice(0,10);
+  const hojeStr=hojeLocal();
   const porDia={};linhas.forEach(p=>{(porDia[p.data]=porDia[p.data]||[]).push(p)});
   EST.progImpressao={dias,porDia};
   const antes=linhas.filter(p=>p.data<ini).length, depois=linhas.filter(p=>p.data>fim).length;
@@ -702,7 +702,7 @@ async function tProg(){
       if(!doDia.length)return;
       corpoDias+=kanDiaHead(d,ix,doDia.length)+doDia.map(kanCardHTML).join('');
     });
-    return '<div class="kancol"><div class="kancol-h" style="color:'+cor+'"><span>'+titulo+'</span><span class="mono">'+list.length+'</span></div>'+(list.length?corpoDias:'<div class="kanvazio">—</div>')+'</div>';
+    return '<div class="kancol"><div class="kancol-h" style="color:'+cor+'"><span>'+titulo+'</span><span class="mono">'+list.length+' <span style="font-weight:400;opacity:.5">/3d</span></span></div>'+(list.length?corpoDias:'<div class="kanvazio">—</div>')+'</div>';
   };
   const kanHTML='<div class="kanscroll">'
     +kanColHTML('programado','📋 Pesar','#7A6A57')
@@ -1207,7 +1207,7 @@ async function novoPedido(itemId,nome,qtd){
   const fi=await escolherFornecedor('Fornecedor para '+nome); if(!fi)return;
   const q=prompt('Quantidade a pedir:',qtd); if(q==null)return;
   const dt=prompt('Entrega prevista (AAAA-MM-DD):',new Date(Date.now()+5*864e5).toISOString().slice(0,10)); if(dt==null)return;
-  const {error}=await sb.from('compras').insert({item_id:itemId,fornecedor_id:fi.id,fornecedor_nome:fi.nome,quantidade_solicitada:parseNumBR(q),status:'liberado',data_pedido:new Date().toISOString().slice(0,10),data_prevista_entrega:dt});
+  const {error}=await sb.from('compras').insert({item_id:itemId,fornecedor_id:fi.id,fornecedor_nome:fi.nome,quantidade_solicitada:parseNumBR(q),status:'liberado',data_pedido:hojeLocal(),data_prevista_entrega:dt});
   if(error)return msg(error.message,true);
   await sb.from('atividades').insert({tipo:'compra',descricao:'Pedido criado — '+fmt(parseNumBR(q))+' de '+nome+' ('+fi.nome+')',responsavel:EST.operador});
   msg('✅ Pedido criado');tela('mrp');
@@ -1266,7 +1266,7 @@ async function tVendas(){
     if(d.data_despacho&&(!byPa[pid].prazo||d.data_despacho<byPa[pid].prazo)) byPa[pid].prazo=d.data_despacho;
     if(d.plataforma) byPa[pid].plats[d.plataforma]=(byPa[pid].plats[d.plataforma]||0)+(Number(d.qtd_potes)||0);
   });
-  const hj=new Date().toISOString().slice(0,10);
+  const hj=hojeLocal();
   const grade=x=>{
     const falta=Math.max(0,x.dem-x.saldo), venc=x.prazo&&x.prazo<=hj;
     let rank,cor,bg,tag;
@@ -1471,7 +1471,7 @@ async function tPesagem(progId){
   if(!EST.cache.itensById){const {data}=await sb.from('itens').select('id,nome');EST.cache.itensById=Object.fromEntries((data||[]).map(i=>[i.id,i]))}
   const {data:prodsAll}=await sb.from('produtos').select('id,nome');
   const prodBy=Object.fromEntries((prodsAll||[]).map(p=>[p.id,p.nome]));
-  const {count}=await sb.from('programacao_refino').select('id',{count:'exact',head:true}).not('lote','is',null).gte('criado_em',new Date().toISOString().slice(0,10));
+  const {count}=await sb.from('programacao_refino').select('id',{count:'exact',head:true}).not('lote','is',null).gte('criado_em',hojeLocal());
   const insumos=(exp||[]).filter(e=>e.item_id);
   const baldes=(exp||[]).filter(e=>e.balde_produto_id);
   document.getElementById('app').innerHTML=`
