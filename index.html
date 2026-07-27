@@ -1500,8 +1500,10 @@ async function importarVarejo(files){
     const ok=await carregarXLSX();
     if(!ok)return msg('Não consegui carregar o leitor de planilha — verifique a internet e tente de novo',true);
   }
-  msg('⏳ Lendo planilha do varejo…');
+  msg('⏳ Lendo pedidos do varejo…');
   const norm=s=>String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
+  const lim=s=>{const t=String(s==null?'':s).replace(/\s+/g,' ').trim();const m=t.match(/^="(.*)"$/);return m?m[1].trim():t;};
+  const dataBR=s=>{const m=String(s||'').match(/(\d{2})\/(\d{2})\/(\d{4})/);return m?(m[3]+'-'+m[2]+'-'+m[1]):null;};
   let dados=[];
   try{
     for(const file of arq){
@@ -1509,41 +1511,64 @@ async function importarVarejo(files){
       const wb=XLSX.read(buf,{type:'array'});
       wb.SheetNames.forEach(sn=>{
         const linhas=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:''});
-        const iCab=linhas.findIndex(r=>Array.isArray(r)&&r.some(c=>norm(c)==='codigo'));
-        if(iCab<0)return;
-        const cab=linhas[iCab].map(norm);
-        const iCod=cab.indexOf('codigo');
-        const iProd=cab.indexOf('produto');
-        let iQtd=cab.indexOf('qtde'); if(iQtd<0)iQtd=cab.indexOf('qtd'); if(iQtd<0)iQtd=cab.indexOf('quantidade');
-        if(iCod<0||iQtd<0)return;
-        for(let k=iCab+1;k<linhas.length;k++){
-          const r=linhas[k]||[];
-          const cod=String(r[iCod]==null?'':r[iCod]).trim();
-          if(!cod)continue;
-          dados.push({codigo:cod,nome:iProd>=0?String(r[iProd]||'').replace(/\s+/g,' ').trim():'',qtd:Number(r[iQtd])||0});
+        let ped=null,iCod=-1,iProd=-1,iQtd=-1,iUni=-1;
+        for(const r0 of linhas){
+          const r=Array.isArray(r0)?r0:[];
+          const a=lim(r[0]);
+          if(/^-?\s*Pedido:/i.test(a)){
+            const g=re=>{const m=a.match(re);return m?m[1].trim():'';};
+            ped={pedido:g(/Pedido:\s*([^\s-]+)/),
+                 entrega:dataBR(g(/Entrega:\s*([\d\/]+)/)),
+                 cliente:g(/Cliente:\s*(.*?)\s+-\s*Cidade:/),
+                 cidade:g(/Cidade:\s*(.*?)\s+-\s*Valor/)};
+            iCod=-1;continue;
+          }
+          const cab=r.map(norm);
+          if(cab.indexOf('codigo')>=0){
+            iCod=cab.indexOf('codigo');iProd=cab.indexOf('produto');
+            iQtd=cab.indexOf('qtde');if(iQtd<0)iQtd=cab.indexOf('qtd');if(iQtd<0)iQtd=cab.indexOf('quantidade');
+            iUni=cab.indexOf('unitario');
+            continue;
+          }
+          if(iCod<0||!ped)continue;
+          if(/^total/i.test(a))continue;
+          const cod=lim(r[iCod]);
+          if(!cod||!/^[A-Za-z0-9._-]+$/.test(cod))continue;
+          const q=Number(r[iQtd]);
+          dados.push({pedido:ped.pedido,entrega:ped.entrega,cliente:ped.cliente,cidade:ped.cidade,
+            codigo:cod,nome:iProd>=0?lim(r[iProd]):'',qtd:isFinite(q)?q:0,
+            unit:iUni>=0?(Number(r[iUni])||null):null});
         }
       });
     }
   }catch(e){return msg('Erro ao ler o arquivo: '+e.message,true);}
-  if(!dados.length)return msg('Não achei o cabeçalho "Código / Produto / Qtde" na planilha',true);
+  if(!dados.length)return msg('Não achei pedidos nesta planilha. Este import espera o relatório detalhado por cliente (com as linhas "- Pedido: … - Cliente: …").',true);
   const {data:dep}=await sb.from('depara_sku').select('codigo,produto_acabado_id');
   const mapa={};(dep||[]).forEach(d=>{if(d.produto_acabado_id)mapa[String(d.codigo).trim()]=d.produto_acabado_id;});
-  const prazo=somaDiasUteis(hojeLocal(),7);
-  const agg={},nao={};let semQtd=0;
+  const fallback=somaDiasUteis(hojeLocal(),7);
+  const agg={},nao={};let semQtd=0,semData=0;
   for(const l of dados){
     if(!l.qtd){semQtd++;continue;}
     const pid=mapa[l.codigo];
     if(!pid){nao[l.codigo]=nao[l.codigo]||{codigo:l.codigo,plataforma:'Varejo',nome:l.nome,qtd:0};nao[l.codigo].qtd+=l.qtd;continue;}
-    agg[pid]=agg[pid]||{produto_acabado_id:pid,qtd_potes:0};
-    agg[pid].qtd_potes+=l.qtd;
+    if(!l.entrega)semData++;
+    const k=l.pedido+'|'+pid;
+    if(!agg[k])agg[k]={produto_acabado_id:pid,qtd_potes:0,data_despacho:l.entrega||fallback,
+      pedido_numero:l.pedido||null,cliente:l.cliente||null,cidade:l.cidade||null,valor_unitario:l.unit};
+    agg[k].qtd_potes+=l.qtd;
+    if(l.unit&&!agg[k].valor_unitario)agg[k].valor_unitario=l.unit;
   }
   await sb.from('demanda_vendas').delete().eq('origem','import_varejo').eq('status','aberto');
-  const rows=Object.values(agg).map(a=>({produto_acabado_id:a.produto_acabado_id,data_despacho:prazo,plataforma:'Varejo',qtd_potes:a.qtd_potes,status:'aberto',origem:'import_varejo',criado_por:EST.operador}));
+  const rows=Object.values(agg).map(a=>({produto_acabado_id:a.produto_acabado_id,data_despacho:a.data_despacho,
+    plataforma:'Varejo',qtd_potes:a.qtd_potes,status:'aberto',origem:'import_varejo',criado_por:EST.operador,
+    pedido_numero:a.pedido_numero,cliente:a.cliente,cidade:a.cidade,valor_unitario:a.valor_unitario}));
   if(rows.length){const {error}=await sb.from('demanda_vendas').insert(rows);if(error)return msg(error.message,true);}
+  const nPed=new Set(dados.map(d=>d.pedido)).size;
   const nMap=Object.keys(nao).length, potesNao=Object.values(nao).reduce((s,x)=>s+x.qtd,0);
-  await sb.from('atividades').insert({tipo:'compra',descricao:'Demanda do varejo importada — '+rows.length+' SKUs, prazo '+prazo+(nMap?(', '+nMap+' códigos a mapear ('+potesNao+' un)'):'')+(semQtd?(', '+semQtd+' linha(s) sem quantidade'):''),responsavel:EST.operador});
+  const totUn=dados.reduce((s,x)=>s+(x.qtd||0),0);
+  await sb.from('atividades').insert({tipo:'compra',descricao:'Demanda do varejo (detalhado por cliente) — '+nPed+' pedidos, '+rows.length+' linhas, '+totUn+' un'+(nMap?(', '+nMap+' códigos a mapear ('+potesNao+' un)'):'')+(semQtd?(', '+semQtd+' linha(s) sem quantidade'):'')+(semData?(', '+semData+' sem data de entrega'):''),responsavel:EST.operador});
   EST.cache.naoMapeados=Object.values(nao);
-  msg('✅ '+rows.length+' SKUs do varejo · prazo '+new Date(prazo+'T12:00').toLocaleDateString('pt-BR')+(nMap?' · '+nMap+' a mapear':'')+(semQtd?' · '+semQtd+' sem qtde':''));
+  msg('✅ '+nPed+' pedidos · '+rows.length+' linhas · '+totUn+' un'+(nMap?' · '+nMap+' a mapear':'')+(semQtd?' · '+semQtd+' sem qtde':''));
   tela('vendas');
 }
 async function mapearCodigo(cod){
