@@ -1288,6 +1288,7 @@ async function tVendas(){
     if(n.includes('tiktok'))return['#000','#fff'];
     if(n.includes('shopee'))return['#EE4D2D','#fff'];
     if(n.includes('mercado'))return['#FFE600','#5A4A00'];
+    if(n.includes('varejo'))return['#2F6DA8','#fff'];
     return['#8A6B3D','#fff'];
   };
   const cartao=x=>{const g=x.g;const platsArr=Object.entries(x.plats).sort((a,b)=>b[1]-a[1]);return `
@@ -1308,10 +1309,11 @@ async function tVendas(){
       ${items.length?items.map(cartao).join(''):'<p style="color:#A99A82;font-size:13px;margin:0">vazio</p>'}
     </div>`;
   document.getElementById('app').innerHTML=`
-  ${topo('Vendas / Despacho','demanda dos marketplaces × estoque de potes')}
+  ${topo('Vendas / Despacho','demanda e-commerce + varejo × estoque de potes')}
   <main>
     <input type="file" id="upFile" accept=".xlsx,.xls,.csv" multiple style="display:none" onchange="if(this.files.length){importarUpSeller(Array.from(this.files));this.value='';}">
     <input type="file" id="upFileSimples" accept=".xlsx,.xls,.csv" multiple style="display:none" onchange="if(this.files.length){importarSimplificada(Array.from(this.files));this.value='';}">
+    <input type="file" id="upFileVarejo" accept=".xlsx,.xls,.csv" multiple style="display:none" onchange="if(this.files.length){importarVarejo(Array.from(this.files));this.value='';}">
     <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
       <div class="kpis" style="flex:1;min-width:220px">
         <div class="kpi"><b>${fmt(totPot,0)}</b><p>potes a despachar</p></div>
@@ -1320,6 +1322,7 @@ async function tVendas(){
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btnP" style="min-height:44px" onclick="document.getElementById('upFile').click()">⬆️ Importar Up Seller</button>
         <button class="btnSec" style="min-height:44px" onclick="document.getElementById('upFileSimples').click()">📋 Importar planilha simplificada</button>
+        <button class="btnSec" style="min-height:44px" onclick="document.getElementById('upFileVarejo').click()">🏪 Importar Varejo</button>
       </div>
     </div>
     ${canais.length?`<div class="card" style="padding:12px 14px"><small style="color:#7A6A57;font-weight:700;letter-spacing:.02em">NECESSIDADE POR CANAL</small>
@@ -1445,6 +1448,87 @@ async function importarSimplificada(files){
   await sb.from('atividades').insert({tipo:'compra',descricao:'Demanda de vendas (planilha simplificada) — '+rows.length+' linhas, '+Object.keys(nao).length+' a mapear',responsavel:EST.operador});
   EST.cache.naoMapeados=Object.values(nao);
   msg('✅ '+rows.length+' linhas importadas'+(Object.keys(nao).length?' · '+Object.keys(nao).length+' a mapear':''));
+  tela('vendas');
+}
+/* ---- Varejo: prazo = 7 dias úteis após o pagamento (feriados nacionais) ---- */
+function isoData(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function pascoa(a){
+  const f=Math.floor,c=f(a/100),n=a-19*f(a/19),k=f((c-17)/25);
+  let i=c-f(c/4)-f((c-k)/3)+19*n+15; i=i-30*f(i/30);
+  i=i-f(i/28)*(1-f(i/28)*f(29/(i+1))*f((21-n)/11));
+  let j=a+f(a/4)+i+2-c+f(c/4); j=j-7*f(j/7);
+  const l=i-j,m=3+f((l+40)/44),d=l+28-31*f(m/4);
+  return new Date(a,m-1,d);
+}
+function feriados(ano){
+  const s=new Set(['01-01','21-04','01-05','07-09','12-10','02-11','15-11','20-11','25-12'].map(x=>ano+'-'+x.split('-')[1]+'-'+x.split('-')[0]));
+  const pa=pascoa(ano), mv=(n)=>{const d=new Date(pa);d.setDate(d.getDate()+n);return isoData(d)};
+  s.add(mv(-48)); s.add(mv(-47)); s.add(mv(-2)); s.add(mv(60));
+  return s;
+}
+function somaDiasUteis(dataISO,n){
+  const d=new Date(dataISO+'T12:00'); let f=feriados(d.getFullYear()), ano=d.getFullYear(), c=0;
+  while(c<n){
+    d.setDate(d.getDate()+1);
+    if(d.getFullYear()!==ano){ano=d.getFullYear();f=feriados(ano);}
+    const dow=d.getDay();
+    if(dow!==0&&dow!==6&&!f.has(isoData(d))) c++;
+  }
+  return isoData(d);
+}
+async function importarVarejo(files){
+  if(precisaOperador())return;
+  const arq=Array.isArray(files)?files:[files];
+  if(!arq.length)return;
+  if(typeof XLSX==='undefined'){
+    msg('⏳ Carregando leitor de planilha…');
+    const ok=await carregarXLSX();
+    if(!ok)return msg('Não consegui carregar o leitor de planilha — verifique a internet e tente de novo',true);
+  }
+  msg('⏳ Lendo planilha do varejo…');
+  const norm=s=>String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
+  let dados=[];
+  try{
+    for(const file of arq){
+      const buf=await file.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'array'});
+      wb.SheetNames.forEach(sn=>{
+        const linhas=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:''});
+        const iCab=linhas.findIndex(r=>Array.isArray(r)&&r.some(c=>norm(c)==='codigo'));
+        if(iCab<0)return;
+        const cab=linhas[iCab].map(norm);
+        const iCod=cab.indexOf('codigo');
+        const iProd=cab.indexOf('produto');
+        let iQtd=cab.indexOf('qtde'); if(iQtd<0)iQtd=cab.indexOf('qtd'); if(iQtd<0)iQtd=cab.indexOf('quantidade');
+        if(iCod<0||iQtd<0)return;
+        for(let k=iCab+1;k<linhas.length;k++){
+          const r=linhas[k]||[];
+          const cod=String(r[iCod]==null?'':r[iCod]).trim();
+          if(!cod)continue;
+          dados.push({codigo:cod,nome:iProd>=0?String(r[iProd]||'').replace(/\s+/g,' ').trim():'',qtd:Number(r[iQtd])||0});
+        }
+      });
+    }
+  }catch(e){return msg('Erro ao ler o arquivo: '+e.message,true);}
+  if(!dados.length)return msg('Não achei o cabeçalho "Código / Produto / Qtde" na planilha',true);
+  const {data:dep}=await sb.from('depara_sku').select('codigo,produto_acabado_id');
+  const mapa={};(dep||[]).forEach(d=>{if(d.produto_acabado_id)mapa[String(d.codigo).trim()]=d.produto_acabado_id;});
+  const prazo=somaDiasUteis(hojeLocal(),7);
+  const agg={},nao={};let semQtd=0;
+  for(const l of dados){
+    if(!l.qtd){semQtd++;continue;}
+    const pid=mapa[l.codigo];
+    if(!pid){nao[l.codigo]=nao[l.codigo]||{codigo:l.codigo,plataforma:'Varejo',nome:l.nome,qtd:0};nao[l.codigo].qtd+=l.qtd;continue;}
+    agg[pid]=agg[pid]||{produto_acabado_id:pid,qtd_potes:0};
+    agg[pid].qtd_potes+=l.qtd;
+  }
+  await sb.from('demanda_vendas').delete().eq('origem','import_varejo').eq('status','aberto');
+  const rows=Object.values(agg).map(a=>({produto_acabado_id:a.produto_acabado_id,data_despacho:prazo,plataforma:'Varejo',qtd_potes:a.qtd_potes,status:'aberto',origem:'import_varejo',criado_por:EST.operador}));
+  if(rows.length){const {error}=await sb.from('demanda_vendas').insert(rows);if(error)return msg(error.message,true);}
+  const nMap=Object.keys(nao).length, potesNao=Object.values(nao).reduce((s,x)=>s+x.qtd,0);
+  await sb.from('atividades').insert({tipo:'compra',descricao:'Demanda do varejo importada — '+rows.length+' SKUs, prazo '+prazo+(nMap?(', '+nMap+' códigos a mapear ('+potesNao+' un)'):'')+(semQtd?(', '+semQtd+' linha(s) sem quantidade'):''),responsavel:EST.operador});
+  EST.cache.naoMapeados=Object.values(nao);
+  msg('✅ '+rows.length+' SKUs do varejo · prazo '+new Date(prazo+'T12:00').toLocaleDateString('pt-BR')+(nMap?' · '+nMap+' a mapear':'')+(semQtd?' · '+semQtd+' sem qtde':''));
   tela('vendas');
 }
 async function mapearCodigo(cod){
