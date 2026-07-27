@@ -1258,8 +1258,16 @@ async function tVendas(){
     sb.from('produto_acabado').select('id,nome').eq('ativo',true).order('nome')
   ]);
   EST.cache.paLista=pa.data||[];
+  if(!EST.filtroVendas)EST.filtroVendas='varejo';
+  const ehVarejo=d=>String(d.plataforma||'').toLowerCase().includes('varejo');
+  const todos=dem.data||[];
+  const somaP=arr=>arr.reduce((s,d)=>s+(Number(d.qtd_potes)||0),0);
+  const totV=somaP(todos.filter(ehVarejo)), totE=somaP(todos.filter(d=>!ehVarejo(d)));
+  const fv=EST.filtroVendas;
+  const linhas=fv==='todos'?todos:(fv==='varejo'?todos.filter(ehVarejo):todos.filter(d=>!ehVarejo(d)));
+  const ocultos=fv==='varejo'?totE:(fv==='ecom'?totV:0);
   const byPa={};
-  (dem.data||[]).forEach(d=>{
+  linhas.forEach(d=>{
     const pid=d.produto_acabado_id, info=d.produto_acabado||{};
     if(!byPa[pid]) byPa[pid]={nome:info.nome||'—',saldo:Number(info.saldo_potes)||0,dem:0,prazo:null,plats:{}};
     byPa[pid].dem+=Number(d.qtd_potes)||0;
@@ -1279,7 +1287,7 @@ async function tVendas(){
   lista.sort((a,b)=>a.g.rank-b.g.rank||((a.prazo||'9')<(b.prazo||'9')?-1:1));
   const totPot=lista.reduce((s,x)=>s+x.dem,0), totFalta=lista.reduce((s,x)=>s+x.g.falta,0);
   const nm=EST.cache.naoMapeados||[];
-  const porCanal={};(dem.data||[]).forEach(d=>{if(d.plataforma)porCanal[d.plataforma]=(porCanal[d.plataforma]||0)+(Number(d.qtd_potes)||0)});
+  const porCanal={};linhas.forEach(d=>{if(d.plataforma)porCanal[d.plataforma]=(porCanal[d.plataforma]||0)+(Number(d.qtd_potes)||0)});
   const canais=Object.entries(porCanal).sort((a,b)=>b[1]-a[1]);
   const urgentes=lista.filter(x=>x.g.rank===1);
   const envasar=lista.filter(x=>x.g.rank===2);
@@ -1325,6 +1333,13 @@ async function tVendas(){
         <button class="btnSec" style="min-height:44px" onclick="document.getElementById('upFileVarejo').click()">🏪 Importar Varejo</button>
       </div>
     </div>
+    <div class="card" style="padding:10px 14px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <small style="color:#7A6A57;font-weight:700;letter-spacing:.02em;margin-right:4px">MOSTRANDO</small>
+        ${[['varejo','Varejo',totV],['ecom','E-commerce',totE],['todos','Todos',totV+totE]].map(([k,rot,q])=>`<button onclick="EST.filtroVendas='${k}';tela('vendas')" style="border:1.5px solid ${fv===k?'var(--cacau)':'var(--linha)'};background:${fv===k?'var(--cacau)':'#fff'};color:${fv===k?'#fff':'var(--cacau)'};border-radius:20px;padding:6px 14px;font-weight:800;font-size:12.5px;min-height:36px">${rot} · ${fmt(q,0)}</button>`).join('')}
+      </div>
+      ${ocultos?`<small style="color:#7A6A57;display:block;margin-top:7px">⚠️ ${fmt(ocultos,0)} potes do outro canal estão fora desta conta</small>`:''}
+    </div>
     ${canais.length?`<div class="card" style="padding:12px 14px"><small style="color:#7A6A57;font-weight:700;letter-spacing:.02em">NECESSIDADE POR CANAL</small>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${canais.map(([nome,q])=>{const[bg,fg]=corCanal(nome);return `<span style="background:${bg};color:${fg};border-radius:20px;padding:5px 14px;font-weight:800;font-size:13px">${nome} · ${fmt(q,0)}</span>`}).join('')}</div>
     </div>`:''}
@@ -1333,7 +1348,7 @@ async function tVendas(){
       ${coluna('🔴 Envasar já','#C63A3A',urgentes)}
       ${coluna('🟠 Envasar','#D9772B',envasar)}
       ${coluna('🟢 Em estoque','#3E7C45',emEstoque)}
-    </div>`:'<div class="card"><div class="center">Sem demanda importada. Toque em “Importar Up Seller”. 🛍️</div></div>'}
+    </div>`:`<div class="card"><div class="center">Sem demanda em aberto ${fv==='varejo'?'no varejo':(fv==='ecom'?'no e-commerce':'')}. 🛍️</div></div>`}
   </main>`;
 }
 function carregarXLSX(){
