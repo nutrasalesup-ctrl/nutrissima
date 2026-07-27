@@ -296,7 +296,7 @@ async function login(){
 }
 
 /* ================= NAVEGAÇÃO ================= */
-const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao};
+const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao};
 function tela(n,arg){TELAS[n](arg)}
 
 /* ================= INÍCIO ================= */
@@ -314,6 +314,7 @@ async function tInicio(){
       <button onclick="tela('programacao')"><span class="ico" style="background:#F3EAD8">🗓️</span><span><b>Programação</b><small>Moinhos 1 e 2 — pesar e lançar no balde</small></span></button>
       <button onclick="tela('mrp')"><span class="ico" style="background:#FBEAEA">🛒</span><span><b>Compras / MRP</b><small>O que comprar, quanto e até quando</small></span></button>
       <button onclick="tela('vendas')"><span class="ico" style="background:#EAF3EA">🛍️</span><span><b>Vendas / Despacho</b><small>Demanda dos marketplaces — o que envasar</small></span></button>
+      <button onclick="tela('carteira')"><span class="ico" style="background:#E4EDF2">📑</span><span><b>Carteira de pedidos</b><small>Quem está esperando, o que venceu e o que trava</small></span></button>
       <button onclick="tela('receber')"><span class="ico" style="background:#E7F0E4">📦</span><span><b>Receber mercadoria</b><small>Confirmar chegada das compras</small></span></button>
       <button onclick="tela('movimento')"><span class="ico" style="background:#EAE4F2">🔄</span><span><b>Entrada / Saída de Estoque</b><small>Balde, matéria-prima ou pote — escolha e conte</small></span></button>
       <button onclick="tela('producao')"><span class="ico" style="background:#EAF3EA">📊</span><span><b>Relatório de Produção</b><small>Entradas e saídas do dia — meça como foi</small></span></button>
@@ -1571,6 +1572,133 @@ async function importarVarejo(files){
   msg('✅ '+nPed+' pedidos · '+rows.length+' linhas · '+totUn+' un'+(nMap?' · '+nMap+' a mapear':'')+(semQtd?' · '+semQtd+' sem qtde':''));
   tela('vendas');
 }
+async function tCarteira(){
+  document.getElementById('app').innerHTML=topo('Carteira de pedidos','pedidos em aberto por cliente e prazo')+'<main><div class="center">Carregando…</div></main>';
+  const {data:dem,error:errD}=await sb.from('demanda_vendas')
+    .select('produto_acabado_id,qtd_potes,data_despacho,plataforma,pedido_numero,cliente,cidade,valor_unitario,produto_acabado(nome,saldo_potes)')
+    .eq('status','aberto');
+  if(errD){document.getElementById('app').innerHTML=topo('Carteira de pedidos','erro')+'<main><div class="card"><p>'+errD.message+'</p></div></main>';return;}
+  const linhas=(dem||[]).map(d=>({pid:d.produto_acabado_id,qtd:Number(d.qtd_potes)||0,
+    dt:d.data_despacho||'9999-12-31',ped:d.pedido_numero||null,cli:d.cliente||null,cid:d.cidade||'',
+    plat:d.plataforma||'',uni:Number(d.valor_unitario)||0,
+    nome:(d.produto_acabado||{}).nome||'—',saldo:Number((d.produto_acabado||{}).saldo_potes)||0}));
+  const hj=hojeLocal();
+  const dbr=s=>s&&s!=='9999-12-31'?new Date(s+'T12:00').toLocaleDateString('pt-BR'):'sem prazo';
+  const rs=v=>'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  if(!linhas.length){
+    document.getElementById('app').innerHTML=topo('Carteira de pedidos','nenhum pedido em aberto')+
+    '<main><div class="card"><p style="margin:0">Nenhuma demanda em aberto. Importe a planilha do varejo na tela <b>Vendas / Despacho</b> para a carteira aparecer aqui.</p>'+
+    '<button class="btnSec" style="margin-top:10px" onclick="tela(\'vendas\')">Ir para Vendas / Despacho</button></div></main>';return;}
+  const disp={};linhas.forEach(l=>{if(!(l.pid in disp))disp[l.pid]=l.saldo;});
+  linhas.slice().sort((a,b)=>a.dt<b.dt?-1:(a.dt>b.dt?1:String(a.ped||'').localeCompare(String(b.ped||''))))
+    .forEach(l=>{const a=Math.min(l.qtd,Math.max(0,disp[l.pid]||0));disp[l.pid]=(disp[l.pid]||0)-a;l.atend=a;l.falta=l.qtd-a;});
+  const gr={};
+  linhas.forEach(l=>{const k=l.ped?('p|'+l.ped):('s|'+l.plat);
+    if(!gr[k])gr[k]={ped:l.ped,cli:l.cli,cid:l.cid,plat:l.plat,dt:l.dt,itens:[],qtd:0,atend:0,falta:0,val:0,vfalta:0};
+    const g=gr[k];g.itens.push(l);g.qtd+=l.qtd;g.atend+=l.atend;g.falta+=l.falta;
+    g.val+=l.qtd*l.uni;g.vfalta+=l.falta*l.uni;if(l.dt<g.dt)g.dt=l.dt;});
+  const lista=Object.values(gr).map(g=>{
+    const dias=g.dt==='9999-12-31'?null:Math.round((new Date(g.dt+'T12:00')-new Date(hj+'T12:00'))/86400000);
+    let rank,cor,tag;
+    if(dias===null){rank=5;cor='#7A6A57';tag='SEM PRAZO';}
+    else if(dias<0){rank=1;cor='#C63A3A';tag='VENCIDO';}
+    else if(g.falta===0){rank=4;cor='#3E7C45';tag='PRONTO PRA SEPARAR';}
+    else if(dias<=4){rank=2;cor='#D9772B';tag='TRAVADO · PRAZO CURTO';}
+    else{rank=3;cor='#B8862B';tag='TRAVADO · COM FOLGA';}
+    return Object.assign({},g,{dias:dias,rank:rank,cor:cor,tag:tag});});
+  lista.sort((a,b)=>a.rank-b.rank||(a.dt<b.dt?-1:1));
+  const totQ=lista.reduce((s,g)=>s+g.qtd,0), totF=lista.reduce((s,g)=>s+g.falta,0);
+  const totV=lista.reduce((s,g)=>s+g.val,0), totVF=lista.reduce((s,g)=>s+g.vfalta,0);
+  const nVenc=lista.filter(g=>g.rank===1).length, nPed=lista.filter(g=>g.ped).length;
+  const semPed=lista.filter(g=>!g.ped).reduce((s,g)=>s+g.qtd,0);
+  const porCli={};linhas.forEach(l=>{const c=l.cli||('('+(l.plat||'sem cliente')+')');
+    if(!porCli[c])porCli[c]={q:0,v:0,f:0};porCli[c].q+=l.qtd;porCli[c].v+=l.qtd*l.uni;porCli[c].f+=l.falta;});
+  const cli=Object.entries(porCli).sort((a,b)=>b[1].v-a[1].v||b[1].q-a[1].q);
+  const maiorV=cli.length?Math.max(cli[0][1].v,1):1;
+  const env={};
+  linhas.forEach(l=>{if(!env[l.pid])env[l.pid]={nome:l.nome,saldo:l.saldo,ped:0,falta:0,dt:'9999-12-31',peds:{}};
+    env[l.pid].ped+=l.qtd;
+    if(l.falta>0){env[l.pid].falta+=l.falta;if(l.dt<env[l.pid].dt)env[l.pid].dt=l.dt;if(l.ped)env[l.pid].peds[l.ped]=1;}});
+  const envL=Object.values(env).filter(e=>e.falta>0).sort((a,b)=>a.dt<b.dt?-1:(a.dt>b.dt?1:b.falta-a.falta));
+  const cartao=g=>{
+    const its=g.itens.slice().sort((a,b)=>b.falta-a.falta||a.nome.localeCompare(b.nome)).map(l=>
+      '<tr><td style="padding:4px 6px;border-bottom:1px solid var(--linha)">'+l.nome+'</td>'+
+      '<td class="mono" style="padding:4px 6px;text-align:right;border-bottom:1px solid var(--linha)">'+fmt(l.qtd,0)+'</td>'+
+      '<td class="mono" style="padding:4px 6px;text-align:right;border-bottom:1px solid var(--linha)">'+fmt(l.atend,0)+'</td>'+
+      '<td class="mono" style="padding:4px 6px;text-align:right;border-bottom:1px solid var(--linha);color:'+(l.falta>0?'var(--morango)':'var(--pistache)')+';font-weight:700">'+(l.falta>0?fmt(l.falta,0):'ok')+'</td></tr>').join('');
+    const quando=g.dias===null?'sem prazo definido':(g.dias<0?('vencido há '+(-g.dias)+(g.dias===-1?' dia':' dias')):(g.dias===0?'vence hoje':('faltam '+g.dias+(g.dias===1?' dia':' dias'))));
+    return '<div style="background:#fff;border:1.5px solid var(--linha);border-left:6px solid '+g.cor+';border-radius:12px;padding:12px 14px;margin-bottom:10px">'+
+      '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">'+
+        '<div><small style="color:#7A6A57;font-weight:700;letter-spacing:.08em">'+(g.ped?'PEDIDO':'SEM PEDIDO')+'</small>'+
+        '<div class="mono" style="font-size:16px;font-weight:700">'+(g.ped||g.plat||'—')+'</div>'+
+        '<div style="font-weight:700;font-size:13.5px;margin-top:4px">'+(g.cli||'cliente não informado')+'</div>'+
+        (g.cid?'<div style="font-size:12px;color:#7A6A57">'+g.cid+'</div>':'')+'</div>'+
+        '<div style="text-align:right"><small style="color:#7A6A57;font-weight:700;letter-spacing:.08em">ENTREGA</small>'+
+        '<div class="mono" style="font-size:15px;font-weight:700">'+dbr(g.dt)+'</div>'+
+        '<div style="font-size:11.5px;font-weight:800;color:'+g.cor+'">'+quando+'</div></div>'+
+      '</div>'+
+      '<div style="margin:10px 0;padding:8px 10px;background:#F7F2EA;border-radius:8px;font-size:12.5px" class="mono">'+
+        '<b style="font-size:15px">'+fmt(g.qtd,0)+'</b> pedidas <span style="color:#7A6A57">−</span> '+
+        '<b style="font-size:15px;color:var(--pistache)">'+fmt(g.atend,0)+'</b> em estoque <span style="color:#7A6A57">=</span> '+
+        '<b style="font-size:15px;color:'+(g.falta>0?'var(--morango)':'var(--pistache)')+'">'+fmt(g.falta,0)+'</b> faltam</div>'+
+      (g.val>0?'<div style="display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:#7A6A57;margin-bottom:8px">'+
+        '<span>valor do pedido <b class="mono" style="color:var(--cacau)">'+rs(g.val)+'</b></span>'+
+        (g.vfalta>0?'<span>não dá pra entregar <b class="mono" style="color:var(--morango)">'+rs(g.vfalta)+'</b></span>':'')+'</div>':'')+
+      '<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr>'+
+        '<th style="text-align:left;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 4px">PRODUTO</th>'+
+        '<th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 4px">PEDIDO</th>'+
+        '<th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 4px">ATENDE</th>'+
+        '<th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 4px">FALTA</th>'+
+      '</tr></thead><tbody>'+its+'</tbody></table></div>';};
+  const bloco=(rank,titulo,desc)=>{const ps=lista.filter(g=>g.rank===rank);if(!ps.length)return '';
+    const cor=ps[0].cor, q=ps.reduce((s,g)=>s+g.qtd,0), f=ps.reduce((s,g)=>s+g.falta,0);
+    return '<div class="card"><div style="border-left:6px solid '+cor+';padding-left:12px;margin-bottom:12px">'+
+      '<b style="font-size:16px">'+titulo+'</b>'+
+      '<p style="margin:3px 0 0;font-size:13px;color:#7A6A57">'+desc+'</p>'+
+      '<div class="mono" style="margin-top:6px;font-size:12.5px;font-weight:700;color:'+cor+'">'+ps.length+(ps.length===1?' pedido':' pedidos')+' · '+fmt(q,0)+' potes · '+fmt(f,0)+' faltando</div>'+
+      '</div>'+ps.map(cartao).join('')+'</div>';};
+  document.getElementById('app').innerHTML=topo('Carteira de pedidos','pedidos em aberto por cliente e prazo de entrega')+'<main>'+
+    '<div class="card"><div class="kpis">'+
+      '<div class="kpi"><b>'+fmt(totQ,0)+'</b><p>potes em aberto</p></div>'+
+      '<div class="kpi '+(totF?'alerta':'')+'"><b>'+fmt(totF,0)+'</b><p>não dá pra entregar</p></div>'+
+      '<div class="kpi '+(nVenc?'alerta':'')+'"><b>'+nVenc+'</b><p>pedidos vencidos</p></div>'+
+      '<div class="kpi"><b>'+nPed+'</b><p>pedidos identificados</p></div>'+
+    '</div>'+
+    (totV>0?'<div style="margin-top:10px;font-size:13px;color:#7A6A57">valor em aberto <b class="mono" style="color:var(--cacau)">'+rs(totV)+'</b>'+(totVF>0?' · sem cobertura de estoque <b class="mono" style="color:var(--morango)">'+rs(totVF)+'</b>':'')+'</div>':'')+
+    (semPed?'<small style="color:#7A6A57;display:block;margin-top:8px">⚠️ '+fmt(semPed,0)+' potes vêm de importações sem número de pedido (e-commerce ou import antigo do varejo) e aparecem agrupados no fim.</small>':'')+
+    '</div>'+
+    bloco(1,'Vencidos','A data de entrega prometida já passou. Se o estoque cobre, o pedido só depende de separar e dar baixa em Produtos separados.')+
+    bloco(2,'Travado, prazo curto','Falta pote e a entrega é em até 4 dias. É o que precisa entrar na programação primeiro.')+
+    bloco(3,'Travado, com folga','Falta pote, mas ainda há tempo de envasar antes do prazo.')+
+    bloco(4,'Pronto pra separar','O estoque cobre o pedido inteiro.')+
+    bloco(5,'Sem prazo','Linhas sem data de entrega — normalmente import antigo ou e-commerce.')+
+    (envL.length?'<div class="card"><b style="font-size:16px">O que envasar pra destravar</b>'+
+      '<p style="margin:3px 0 10px;font-size:13px;color:#7A6A57">Consolidado por produto, já descontando o estoque na ordem da fila: quem tem entrega mais cedo consome o saldo primeiro.</p>'+
+      '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>'+
+      '<th style="text-align:left;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 5px">PRODUTO</th>'+
+      '<th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 5px">PEDIDO</th>'+
+      '<th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 5px">ESTOQUE</th>'+
+      '<th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 5px">ENVASAR</th>'+
+      '<th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 5px">PRAZO</th></tr></thead><tbody>'+
+      envL.map(e=>{const np=Object.keys(e.peds).length;const venc=e.dt!=='9999-12-31'&&e.dt<=hj;
+        return '<tr><td style="padding:5px 6px;border-bottom:1px solid var(--linha)">'+e.nome+
+        (np?'<div style="font-size:11px;color:#7A6A57">'+np+(np===1?' pedido':' pedidos')+'</div>':'')+'</td>'+
+        '<td class="mono" style="padding:5px 6px;text-align:right;border-bottom:1px solid var(--linha)">'+fmt(e.ped,0)+'</td>'+
+        '<td class="mono" style="padding:5px 6px;text-align:right;border-bottom:1px solid var(--linha)">'+fmt(e.saldo,0)+'</td>'+
+        '<td class="mono" style="padding:5px 6px;text-align:right;border-bottom:1px solid var(--linha);color:var(--morango);font-weight:700">'+fmt(e.falta,0)+'</td>'+
+        '<td class="mono" style="padding:5px 6px;text-align:right;border-bottom:1px solid var(--linha)'+(venc?';color:var(--morango);font-weight:700':'')+'">'+dbr(e.dt)+'</td></tr>';}).join('')+
+      '</tbody></table></div>':'')+
+    (cli.length>1?'<div class="card"><b style="font-size:16px">Concentração por cliente</b>'+
+      '<p style="margin:3px 0 10px;font-size:13px;color:#7A6A57">Quanto da carteira depende de cada cliente.</p>'+
+      cli.map(([nome,v])=>'<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;gap:10px;font-size:13px">'+
+        '<span style="font-weight:700">'+nome+'</span>'+
+        '<span class="mono" style="white-space:nowrap">'+fmt(v.q,0)+' un'+(v.v>0?' · '+rs(v.v):'')+(v.f>0?' · <b style="color:var(--morango)">'+fmt(v.f,0)+' falta</b>':'')+'</span></div>'+
+        '<div style="height:8px;background:#EFE7DC;border-radius:4px;margin-top:4px;overflow:hidden"><span style="display:block;height:8px;background:#22303A;width:'+(v.v>0?Math.round(100*v.v/maiorV):Math.round(100*v.q/Math.max(1,cli[0][1].q)))+'%"></span></div></div>').join('')+
+      '</div>':'')+
+    '<div class="card"><small style="color:#7A6A57"><b>Como ler.</b> <b>Em estoque</b> é quanto do pedido o saldo cobre <i>depois</i> de atender os pedidos com entrega mais próxima — o mesmo pote não é prometido a dois clientes. <b>Falta</b> é o que sobra dessa fila e precisa ser envasado. Não considera produção programada nem potes já separados que ainda não foram baixados em Produtos separados.</small></div>'+
+  '</main>';
+}
+
 async function mapearCodigo(cod){
   if(precisaOperador())return;
   const pas=EST.cache.paLista||[];if(!pas.length)return msg('Recarregue a tela',true);
