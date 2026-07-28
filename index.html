@@ -1389,19 +1389,30 @@ async function importarUpSeller(files){
       wb.SheetNames.forEach(sn=>{linhas=linhas.concat(XLSX.utils.sheet_to_json(wb.Sheets[sn],{defval:''}));});
     }
   }catch(e){return msg('Erro ao ler o arquivo: '+e.message,true);}
-  msg('⏳ Registrando a carteira…');
-  const payload=dados.map(l=>({pedido_numero:l.pedido,cliente:l.cliente,cidade:l.cidade,codigo:l.codigo,
-    produto_nome:l.nome,qtd:l.qtd,valor_unitario:l.unit,emissao:l.emissao,entrega:l.entrega}));
-  const semQtd=dados.filter(l=>!l.qtd).length, semData=dados.filter(l=>l.qtd&&!l.entrega).length;
-  const {data:res,error:errR}=await sb.rpc('registrar_carteira',
-    {p_canal:'Varejo',p_linhas:payload,p_responsavel:EST.operador});
-  if(errR)return msg('Erro ao registrar a carteira: '+errR.message,true);
-  const r=res||{};
-  const nao=Array.isArray(r.nao_mapeados)?r.nao_mapeados:[];
-  EST.cache.naoMapeados=nao.map(x=>({codigo:x.codigo,plataforma:'Varejo',nome:x.nome,qtd:x.qtd}));
-  const nPed=new Set(dados.map(d=>d.pedido)).size;
-  msg('✅ '+nPed+' pedidos · '+(r.unidades||0)+' un · '+(r.novas||0)+' novas · '+(r.baixadas||0)+' baixadas'+
-      (nao.length?' · '+nao.length+' a mapear':'')+(semQtd?' · '+semQtd+' sem qtde':'')+(semData?' · '+semData+' sem data':''));
+  const {data:dep}=await sb.from('depara_sku').select('codigo,produto_acabado_id');
+  const mapa={};(dep||[]).forEach(d=>{if(d.produto_acabado_id)mapa[String(d.codigo).trim()]=d.produto_acabado_id;});
+  const agg={},nao={};let ign=0;
+  for(const r of linhas){
+    const enviado=String(r['Enviado']||'').trim();
+    const canc=String(r['Pós-venda/Cancelado/Devolvido']||'').toLowerCase();
+    if(enviado){ign++;continue;}
+    if(canc.includes('cancel')||canc.includes('devolv')){ign++;continue;}
+    const cod=String(r['SKU']||'').trim();if(!cod){ign++;continue;}
+    const q=Number(r['Qtd. do Produto'])||0;if(!q)continue;
+    const plat=String(r['Plataformas']||'').trim();
+    const prazo=String(r['Prazo de Envio']||'').slice(0,10)||null;
+    const pid=mapa[cod];
+    if(!pid){nao[cod]=nao[cod]||{codigo:cod,plataforma:plat,nome:String(r['Nome do Anúncio']||''),qtd:0};nao[cod].qtd+=q;continue;}
+    const k=pid+'|'+(prazo||'')+'|'+plat;
+    agg[k]=agg[k]||{produto_acabado_id:pid,data_despacho:prazo,plataforma:plat,qtd_potes:0};
+    agg[k].qtd_potes+=q;
+  }
+  await sb.from('demanda_vendas').delete().eq('origem','import_upseller').eq('status','aberto');
+  const rows=Object.values(agg).map(a=>({produto_acabado_id:a.produto_acabado_id,data_despacho:a.data_despacho,plataforma:a.plataforma,qtd_potes:a.qtd_potes,status:'aberto',origem:'import_upseller',criado_por:EST.operador}));
+  if(rows.length){const {error}=await sb.from('demanda_vendas').insert(rows);if(error)return msg(error.message,true);}
+  await sb.from('atividades').insert({tipo:'compra',descricao:'Demanda de vendas importada — '+arq.length+(arq.length>1?' planilhas, ':' planilha, ')+rows.length+' linhas, '+Object.keys(nao).length+' a mapear',responsavel:EST.operador});
+  EST.cache.naoMapeados=Object.values(nao);
+  msg('✅ '+rows.length+' linhas importadas de '+arq.length+(arq.length>1?' planilhas':' planilha')+(Object.keys(nao).length?' · '+Object.keys(nao).length+' a mapear':''));
   tela('vendas');
 }
 async function importarSimplificada(files){
@@ -1534,32 +1545,21 @@ async function importarVarejo(files){
     }
   }catch(e){return msg('Erro ao ler o arquivo: '+e.message,true);}
   if(!dados.length)return msg('Não achei pedidos nesta planilha. Este import espera o relatório detalhado por cliente (com as linhas "- Pedido: … - Cliente: …").',true);
-  const {data:dep}=await sb.from('depara_sku').select('codigo,produto_acabado_id');
-  const mapa={};(dep||[]).forEach(d=>{if(d.produto_acabado_id)mapa[String(d.codigo).trim()]=d.produto_acabado_id;});
+  msg('⏳ Registrando a carteira…');
   const fallback=somaDiasUteis(hojeLocal(),7);
-  const agg={},nao={};let semQtd=0,semData=0;
-  for(const l of dados){
-    if(!l.qtd){semQtd++;continue;}
-    const pid=mapa[l.codigo];
-    if(!pid){nao[l.codigo]=nao[l.codigo]||{codigo:l.codigo,plataforma:'Varejo',nome:l.nome,qtd:0};nao[l.codigo].qtd+=l.qtd;continue;}
-    if(!l.entrega)semData++;
-    const k=l.pedido+'|'+pid;
-    if(!agg[k])agg[k]={produto_acabado_id:pid,qtd_potes:0,data_despacho:l.entrega||fallback,
-      pedido_numero:l.pedido||null,cliente:l.cliente||null,cidade:l.cidade||null,valor_unitario:l.unit};
-    agg[k].qtd_potes+=l.qtd;
-    if(l.unit&&!agg[k].valor_unitario)agg[k].valor_unitario=l.unit;
-  }
-  await sb.from('demanda_vendas').delete().eq('origem','import_varejo').eq('status','aberto');
-  const rows=Object.values(agg).map(a=>({produto_acabado_id:a.produto_acabado_id,data_despacho:a.data_despacho,
-    plataforma:'Varejo',qtd_potes:a.qtd_potes,status:'aberto',origem:'import_varejo',criado_por:EST.operador,
-    pedido_numero:a.pedido_numero,cliente:a.cliente,cidade:a.cidade,valor_unitario:a.valor_unitario}));
-  if(rows.length){const {error}=await sb.from('demanda_vendas').insert(rows);if(error)return msg(error.message,true);}
+  const payload=dados.map(l=>({pedido_numero:l.pedido,cliente:l.cliente,cidade:l.cidade,codigo:l.codigo,
+    produto_nome:l.nome,qtd:l.qtd,valor_unitario:l.unit,emissao:l.emissao,entrega:l.entrega||fallback}));
+  const semQtd=dados.filter(l=>!l.qtd).length, semData=dados.filter(l=>l.qtd&&!l.entrega).length;
+  const {data:res,error:errR}=await sb.rpc('registrar_carteira',
+    {p_canal:'Varejo',p_linhas:payload,p_responsavel:EST.operador});
+  if(errR)return msg('Erro ao registrar a carteira: '+errR.message,true);
+  const r=res||{};
+  const nao=Array.isArray(r.nao_mapeados)?r.nao_mapeados:[];
+  EST.cache.naoMapeados=nao.map(x=>({codigo:x.codigo,plataforma:'Varejo',nome:x.nome,qtd:x.qtd}));
   const nPed=new Set(dados.map(d=>d.pedido)).size;
-  const nMap=Object.keys(nao).length, potesNao=Object.values(nao).reduce((s,x)=>s+x.qtd,0);
-  const totUn=dados.reduce((s,x)=>s+(x.qtd||0),0);
-  await sb.from('atividades').insert({tipo:'compra',descricao:'Demanda do varejo (detalhado por cliente) — '+nPed+' pedidos, '+rows.length+' linhas, '+totUn+' un'+(nMap?(', '+nMap+' códigos a mapear ('+potesNao+' un)'):'')+(semQtd?(', '+semQtd+' linha(s) sem quantidade'):'')+(semData?(', '+semData+' sem data de entrega'):''),responsavel:EST.operador});
-  EST.cache.naoMapeados=Object.values(nao);
-  msg('✅ '+nPed+' pedidos · '+rows.length+' linhas · '+totUn+' un'+(nMap?' · '+nMap+' a mapear':'')+(semQtd?' · '+semQtd+' sem qtde':''));
+  msg('✅ '+nPed+' pedidos · '+(r.unidades||0)+' un · '+(r.novas||0)+' novas · '+(r.atualizadas||0)+' atualizadas'+
+      (r.baixadas?' · '+r.baixadas+' baixadas':'')+(nao.length?' · '+nao.length+' a mapear':'')+
+      (semQtd?' · '+semQtd+' sem qtde':'')+(semData?' · '+semData+' sem data':''));
   tela('vendas');
 }
 async function tCarteira(){
