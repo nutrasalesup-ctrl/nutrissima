@@ -253,7 +253,8 @@ function parseNumBR(v){
   return Number(s.replace(/\./g,'').replace(',','.'));
 }
 function hoje(){return new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}
-function loteSugestao(seq){const d=new Date();const dia=Math.floor((d-new Date(d.getFullYear(),0,0))/864e5);const s=String(d.getFullYear()).slice(2)+String(dia).padStart(3,'0');return s+'-'+(seq||1)}
+function loteDiaAtual(){const d=new Date();const dia=Math.floor((d-new Date(d.getFullYear(),0,0))/864e5);return String(d.getFullYear()).slice(2)+String(dia).padStart(3,'0')}
+function loteSugestao(seq){return loteDiaAtual()+'-'+(seq||1)}
 function msg(t,erro){const m=el(`<div class="msg ${erro?'erro':''}">${t}</div>`);document.body.appendChild(m);setTimeout(()=>m.remove(),3800)}
 const brData=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR');
 function trilha(atual){const etapas=['Programação','Compra','Receber','Pesagem','Moinho','Balde','Envase','Estoque'];return '<div class="trilha">'+etapas.map(e=>`<span class="${e===atual?'atual':''}">${e}</span>`).join('')+'</div>'}
@@ -670,11 +671,14 @@ async function tProg(){
     const label=d===janelaKan[0]?'hoje':d===janelaKan[1]?'amanhã':wname(d);
     return label+' <span style="font-size:9px;color:#A99A82;font-weight:400">'+dnum(d)+'/'+(new Date(d+'T12:00').getMonth()+1)+'</span>';
   };
-  const kanItens=linhas.filter(p=>janelaKan.includes(p.data));
   const porStatusKan={programado:[],pesado:[],mistura:[],refino:[],balde:[]};
-  kanItens.forEach(p=>{(porStatusKan[p.status]=porStatusKan[p.status]||[]).push(p)});
-  const kanCardHTML=p=>{
+  linhas.forEach(p=>{
+    if(p.status==='programado'){if(janelaKan.includes(p.data))porStatusKan.programado.push(p)}
+    else{(porStatusKan[p.status]=porStatusKan[p.status]||[]).push(p)}
+  });
+  const kanCardHTML=(p,mostrarData)=>{
     const nome=p.produtos?.nome||'—';const nomeEsc=nome.replace(/'/g,"\\'");const m=moinhoTipo(p.equipamentos?.nome);
+    const dataTag=mostrarData&&p.data!==hojeStr?'<div style="font-size:11px;color:#A99A82;margin-top:2px">programado '+brData(p.data)+'</div>':'';
     const acao=p.status==='programado'
       ?'<button class="calbtn" onclick="tela(\''+'pesagem\',\''+p.id+'\')">⚖️ Pesar</button>'
       :p.status==='pesado'
@@ -688,7 +692,7 @@ async function tProg(){
          if(p.entrada_confirmada)return '<div class="calinfo ok">✓ lançado (confirmado manualmente)</div>';
          return '<div class="calinfo pend">🛢️ aguardando lançamento (verifique em Entrada de balde)</div><button class="calbtn" style="margin-top:6px;background:#7A6A57" onclick="marcarBaldeLancado(\''+p.id+'\',\''+nomeEsc+'\')">✓ Marcar como lançado</button>';
        })();
-    return '<div class="kancard"><div class="kd"><span class="calmo '+m+'">'+(m==='m1'?'M1':'M2')+'</span></div><b>'+nome+'</b><div class="mono" style="font-size:13px;margin:2px 0 6px">'+fmt(p.quantidade_kg,0)+' kg'+(p.lote?' · <span class="mono" style="color:#A99A82;font-size:11px">'+p.lote+'</span>':'')+'</div>'+acao+'</div>';
+    return '<div class="kancard"><div class="kd"><span class="calmo '+m+'">'+(m==='m1'?'M1':'M2')+'</span></div><b>'+nome+'</b><div class="mono" style="font-size:13px;margin:2px 0 6px">'+fmt(p.quantidade_kg,0)+' kg'+(p.lote?' · <span class="mono" style="color:#A99A82;font-size:11px">'+p.lote+'</span>':'')+'</div>'+dataTag+acao+'</div>';
   };
   const kanDiaHead=(d,ix,n)=>{
     const nm=ix===0?'Hoje':ix===1?'Amanhã':wname(d);
@@ -697,13 +701,20 @@ async function tProg(){
   };
   const kanColHTML=(status,titulo,cor)=>{
     const list=porStatusKan[status]||[];
-    let corpoDias='';
-    janelaKan.forEach(function(d,ix){
-      const doDia=list.filter(function(p){return p.data===d});
-      if(!doDia.length)return;
-      corpoDias+=kanDiaHead(d,ix,doDia.length)+doDia.map(kanCardHTML).join('');
-    });
-    return '<div class="kancol"><div class="kancol-h" style="color:'+cor+'"><span>'+titulo+'</span><span class="mono">'+list.length+' <span style="font-weight:400;opacity:.5">/3d</span></span></div>'+(list.length?corpoDias:'<div class="kanvazio">—</div>')+'</div>';
+    let corpo;
+    if(status==='programado'){
+      let corpoDias='';
+      janelaKan.forEach(function(d,ix){
+        const doDia=list.filter(function(p){return p.data===d});
+        if(!doDia.length)return;
+        corpoDias+=kanDiaHead(d,ix,doDia.length)+doDia.map(function(p){return kanCardHTML(p,false)}).join('');
+      });
+      corpo=corpoDias;
+    }else{
+      corpo=list.slice().sort(function(a,b){return new Date(a.data)-new Date(b.data)}).map(function(p){return kanCardHTML(p,true)}).join('');
+    }
+    const contagem=status==='programado'?list.length+' <span style="font-weight:400;opacity:.5">/3d</span>':String(list.length);
+    return '<div class="kancol"><div class="kancol-h" style="color:'+cor+'"><span>'+titulo+'</span><span class="mono">'+contagem+'</span></div>'+(list.length?corpo:'<div class="kanvazio">—</div>')+'</div>';
   };
   const kanHTML='<div class="kanscroll">'
     +kanColHTML('programado','📋 Pesar','#7A6A57')
@@ -766,7 +777,7 @@ async function tProg(){
   ${trilha('Programação')}${topo('Programação','Moinhos 1 e 2 em paralelo')}
   <main>
     ${(alertas.data||[]).length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-bottom:12px"><b style="color:var(--morango)">⚠️ Insumo chega depois da produção</b>${alertas.data.map(al=>`<p style="font-size:14px;margin-top:6px"><b>${al.item}</b> · produção de ${brData(al.data_producao)}: precisa <b class="mono">${fmt(al.necessario_ate)}</b> acumulado, terá <b class="mono">${fmt(al.disponivel_ate)}</b> — falta <b class="mono" style="color:var(--morango)">${fmt(al.falta)} ${al.unidade||''}</b>${al.proxima_entrega?` · próxima entrega ${brData(al.proxima_entrega)}`:' · sem pedido a caminho'}</p>`).join('')}<small style="color:#7A6A57">solução: remarcar a produção (🗓️ no cartão) ou a entrega do pedido (✏️ em Compras)</small></div>`:''}
-    <p style="font-size:11px;font-weight:800;color:#8A7A64;letter-spacing:.04em;text-transform:uppercase;margin:0 0 6px 2px">hoje + próx. 2 dias</p>
+    <p style="font-size:11px;font-weight:800;color:#8A7A64;letter-spacing:.04em;text-transform:uppercase;margin:0 0 6px 2px">pesar: hoje + próx. 2 dias · demais colunas: tudo em aberto</p>
     ${kanHTML}
     <div class="calweek">
       <button onclick="progSemana(-7)">‹${antes?` <i>${antes}</i>`:''}</button>
@@ -1693,7 +1704,7 @@ async function tPesagem(progId){
   if(!EST.cache.itensById){const {data}=await sb.from('itens').select('id,nome');EST.cache.itensById=Object.fromEntries((data||[]).map(i=>[i.id,i]))}
   const {data:prodsAll}=await sb.from('produtos').select('id,nome');
   const prodBy=Object.fromEntries((prodsAll||[]).map(p=>[p.id,p.nome]));
-  const {count}=await sb.from('programacao_refino').select('id',{count:'exact',head:true}).not('lote','is',null).gte('criado_em',hojeLocal());
+  const {count}=await sb.from('programacao_refino').select('id',{count:'exact',head:true}).like('lote',loteDiaAtual()+'-%');
   const insumos=(exp||[]).filter(e=>e.item_id);
   const baldes=(exp||[]).filter(e=>e.balde_produto_id);
   document.getElementById('app').innerHTML=`
