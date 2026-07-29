@@ -692,7 +692,8 @@ async function tProg(){
          if(p.entrada_confirmada)return '<div class="calinfo ok">✓ lançado (confirmado manualmente)</div>';
          return '<div class="calinfo pend">🛢️ aguardando lançamento (verifique em Entrada de balde)</div><button class="calbtn" style="margin-top:6px;background:#7A6A57" onclick="marcarBaldeLancado(\''+p.id+'\',\''+nomeEsc+'\')">✓ Marcar como lançado</button>';
        })();
-    return '<div class="kancard"><div class="kd"><span class="calmo '+m+'">'+(m==='m1'?'M1':'M2')+'</span></div><b>'+nome+'</b><div class="mono" style="font-size:13px;margin:2px 0 6px">'+fmt(p.quantidade_kg,0)+' kg'+(p.lote?' · <span class="mono" style="color:#A99A82;font-size:11px">'+p.lote+'</span>':'')+'</div>'+dataTag+acao+'</div>';
+    const dataBtn=['pesado','mistura','refino'].includes(p.status)?'<div class="calmini"><button onclick="mudarDataProg(\''+p.id+'\',\''+nomeEsc+'\',\''+p.data+'\')">🗓️ remarcar ('+brData(p.data)+')</button></div>':'';
+    return '<div class="kancard"><div class="kd"><span class="calmo '+m+'">'+(m==='m1'?'M1':'M2')+'</span></div><b>'+nome+'</b><div class="mono" style="font-size:13px;margin:2px 0 6px">'+fmt(p.quantidade_kg,0)+' kg'+(p.lote?' · <span class="mono" style="color:#A99A82;font-size:11px">'+p.lote+'</span>':'')+'</div>'+dataTag+acao+dataBtn+'</div>';
   };
   const kanDiaHead=(d,ix,n)=>{
     const nm=ix===0?'Hoje':ix===1?'Amanhã':wname(d);
@@ -757,18 +758,10 @@ async function tProg(){
   const colHTML=d=>{
     const itens=porDia[d]||[];
     const pesagemItens=itens.filter(p=>p.status==='programado');
-    const refinoItens=itens.filter(p=>p.status!=='programado');
     const totalPesagem=pesagemItens.reduce((a,p)=>a+Number(p.quantidade_kg),0);
-    const refPorEquip={};refinoItens.forEach(p=>{(refPorEquip[p.equipamento_id]=refPorEquip[p.equipamento_id]||[]).push(p)});
-    const secPesagem=itens.length
-      ?'<div class="calsec"><div class="calsec-h mel"><span>⚖ Pesagem do dia</span><b>'+fmt(totalPesagem,0)+' kg</b></div>'+(pesagemItens.length?gruposHTML(pesagemItens):'<div class="calvazio">—</div>')+'</div>'
-      :'';
-    const secRefino=Object.entries(refPorEquip).map(([eqId,list])=>{
-      const eqNome=list[0].equipamentos?.nome||'';
-      const tot=list.reduce((a,p)=>a+Number(p.quantidade_kg),0);
-      return '<div class="calsec"><div class="calsec-h azul"><span>🌀 Refino do dia — '+eqNome+'</span><b>'+fmt(tot,0)+' kg</b></div>'+gruposHTML(list)+'</div>';
-    }).join('');
-    const body=(secPesagem+secRefino)||'<div class="calvazio">—</div>';
+    const body=pesagemItens.length
+      ?'<div class="calsec"><div class="calsec-h mel"><span>⚖ Pesagem do dia</span><b>'+fmt(totalPesagem,0)+' kg</b></div>'+gruposHTML(pesagemItens)+'</div>'
+      :'<div class="calvazio">—</div>';
     const temCartao=itens.some(p=>p.status==='programado'||p.status==='pesado');
     return '<div class="calday '+(d===hojeStr?'hoje':'')+'"><header><b>'+wname(d)+'</b>'+(temCartao?'<button class="calimp" title="Imprimir cartões de pesagem do dia" onclick="imprimirCartoesDia(\''+d+'\')">🖨️</button>':'')+'<span>'+dnum(d)+'</span></header>'+body+'</div>';
   };
@@ -1088,7 +1081,7 @@ async function mudarDataProg(id,nome,atual){
   if(nova==null)return; const v=nova.trim();
   if(!/^\d{4}-\d{2}-\d{2}$/.test(v))return msg('Data inválida — use AAAA-MM-DD',true);
   if(v===atual)return;
-  const {error}=await sb.from('programacao_refino').update({data:v}).eq('id',id).eq('status','programado');
+  const {error}=await sb.from('programacao_refino').update({data:v}).eq('id',id).in('status',['programado','pesado','mistura','refino']);
   if(error)return msg(error.message,true);
   await sb.from('atividades').insert({tipo:'ajuste',descricao:'Produção remarcada — '+nome+' de '+brData(atual)+' para '+brData(v),responsavel:EST.operador});
   msg('✅ Data alterada');tela('programacao');
