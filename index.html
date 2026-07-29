@@ -232,6 +232,14 @@ body{overflow-x:hidden}
   .tv-desp h2{font-size:clamp(24px,1.8vw,34px)}
   .tv-desp .item-row{font-size:clamp(18px,1.3vw,24px)}
 }
+
+@media print {
+  .btn-impr-carteira, .btn-impr-envase { display:none!important; }
+  .no-print { display:none!important; }
+  .print-only { display:block!important; }
+}
+.print-only { display:none; }
+
 </style>
 </head>
 <body>
@@ -1648,6 +1656,10 @@ async function tCarteira(){
     '</div>'+
     (semPed?'<small style="color:#7A6A57;display:block;margin-top:8px">⚠️ '+fmt(semPed,0)+' potes vêm de importações sem número de pedido e aparecem agrupados no fim.</small>':'')+
     '</div>'+
+    '<div style="display:flex;gap:10px;margin-bottom:8px">'+
+    '<button class="btn-impr-carteira" onclick="imprimirCarteira()" style="background:#22303A;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px">🖨️ Imprimir carteira de pedidos</button>'+
+    '<button class="btn-impr-envase" onclick="imprimirEnvase()" style="background:#3E7C45;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px">🖨️ Imprimir fila de envase</button>'+
+    '</div>'+
     bloco(1,'Vencidos','A data de entrega prometida já passou. Se o estoque cobre, o pedido só depende de separar e dar baixa em Produtos separados.')+
     bloco(2,'Travado, prazo curto','Falta pote e a entrega é em até 4 dias. É o que precisa entrar na programação primeiro.')+
     bloco(3,'Travado, com folga','Falta pote, mas ainda há tempo de envasar antes do prazo.')+
@@ -1671,6 +1683,101 @@ async function tCarteira(){
       '</tbody></table></div>':'')+
     '<div class="card"><small style="color:#7A6A57"><b>Como ler.</b> <b>Em estoque</b> é quanto do pedido o saldo cobre <i>depois</i> de atender os pedidos com entrega mais próxima — o mesmo pote não é prometido a dois clientes. <b>Falta</b> é o que sobra dessa fila e precisa ser envasado. Não considera produção programada nem potes já separados que ainda não foram baixados em Produtos separados.<br><br>Cliente e valor do pedido <b>não aparecem aqui</b> — são dados comerciais e ficam restritos à área Comercial, com login próprio.</small></div>'+
   '</main>';
+}
+
+
+function imprimirCarteira(){
+  const hj=new Date().toLocaleDateString('pt-BR');
+  const conteudo=document.getElementById('app').innerHTML;
+  const w=window.open('','_blank','width=900,height=700');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>Carteira de Pedidos — ${hj}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Archivo,sans-serif;color:#33200F;background:#fff;padding:20px;font-size:13px}
+    .mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
+    header{background:#22303A;color:#fff;border-radius:12px;padding:16px 20px;margin-bottom:16px}
+    header h1{font-size:18px;font-weight:800}
+    header p{font-size:12px;opacity:.7;margin-top:4px}
+    .card{background:#fff;border:1.5px solid #DCD2C4;border-radius:14px;padding:14px 16px;margin-bottom:12px;break-inside:avoid}
+    .tarja{border-left:7px solid}
+    .tarja-morango{border-left-color:#C63A3A}
+    .tarja-laranja{border-left-color:#D9772B}
+    .tarja-mel{border-left-color:#B8862B}
+    .tarja-pistache{border-left-color:#3E7C45}
+    .kpis{display:flex;gap:12px;flex-wrap:wrap}
+    .kpi{text-align:center;flex:1;min-width:90px}
+    .kpi b{font-size:22px;font-weight:800;display:block;font-family:'IBM Plex Mono',monospace}
+    .kpi p{font-size:11px;color:#7A6A57;margin-top:2px}
+    .kpi.alerta b{color:#C63A3A}
+    table{width:100%;border-collapse:collapse;font-size:12px}
+    th{text-align:left;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 5px}
+    td{padding:5px 6px;border-bottom:1px solid #DCD2C4}
+    .btn-impr-carteira,.btn-impr-envase,.no-print,nav,button{display:none!important}
+    @media print{body{padding:10px}header{border-radius:0}}
+  </style></head><body>
+  <header><h1>📑 Carteira de Pedidos</h1><p>Gerado em ${hj}</p></header>
+  ${conteudo}
+  </body></html>`);
+  w.document.close();
+  setTimeout(()=>{w.focus();w.print();},800);
+}
+
+function imprimirEnvase(){
+  const hj=new Date().toLocaleDateString('pt-BR');
+  // Pegar só a tabela de envase do DOM atual
+  const cards=[...document.querySelectorAll('.card')];
+  const cardEnvase=cards.find(c=>c.querySelector('b')?.textContent?.includes('envasar pra destravar'));
+  if(!cardEnvase){alert('Nenhum item para envasar no momento.');return;}
+  const tabela=cardEnvase.querySelector('table');
+  if(!tabela){alert('Tabela de envase não encontrada.');return;}
+  const linhas=[...tabela.querySelectorAll('tbody tr')].map(tr=>{
+    const tds=[...tr.querySelectorAll('td')];
+    return {nome:tds[0]?.innerText?.split('\n')[0]||'',ped:tds[1]?.innerText||'',est:tds[2]?.innerText||'',env:tds[3]?.innerText||'',prazo:tds[4]?.innerText||''};
+  });
+  const w=window.open('','_blank','width=700,height=500');
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>Fila de Envase — ${hj}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Archivo,sans-serif;color:#33200F;background:#fff;padding:20px}
+    header{background:#22303A;color:#fff;border-radius:12px;padding:14px 18px;margin-bottom:16px}
+    header h1{font-size:17px;font-weight:800}
+    header p{font-size:12px;opacity:.7;margin-top:3px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    thead th{background:#EFE7DC;font-size:10px;letter-spacing:.08em;color:#7A6A57;padding:8px 10px;text-align:right}
+    thead th:first-child{text-align:left}
+    tbody td{padding:9px 10px;border-bottom:1px solid #DCD2C4;text-align:right;font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
+    tbody td:first-child{text-align:left;font-family:Archivo,sans-serif;font-weight:700}
+    .envasar{color:#C63A3A;font-weight:800}
+    tfoot td{padding:8px 10px;font-size:11px;color:#7A6A57;font-style:italic}
+    @media print{body{padding:10px}}
+  </style></head><body>
+  <header><h1>📦 Fila de Envase — O que falta para destravar</h1><p>Gerado em ${hj} · Estoque já descontado em ordem de fila por prazo</p></header>
+  <table>
+    <thead><tr>
+      <th style="text-align:left">PRODUTO</th>
+      <th>PEDIDO</th>
+      <th>ESTOQUE</th>
+      <th>ENVASAR</th>
+      <th>PRAZO</th>
+    </tr></thead>
+    <tbody>
+      ${linhas.map(l=>`<tr>
+        <td>${l.nome}</td>
+        <td>${l.ped}</td>
+        <td>${l.est}</td>
+        <td class="envasar">${l.env}</td>
+        <td>${l.prazo}</td>
+      </tr>`).join('')}
+    </tbody>
+    <tfoot><tr><td colspan="5">* Quantidade a envasar considera o estoque disponível alocado em fila (prazo mais cedo consome primeiro). Não inclui produção programada.</td></tr></tfoot>
+  </table>
+  </body></html>`);
+  w.document.close();
+  setTimeout(()=>{w.focus();w.print();},800);
 }
 
 async function mapearCodigo(cod){
