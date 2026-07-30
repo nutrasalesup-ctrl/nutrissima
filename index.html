@@ -665,11 +665,12 @@ function previewBat(){
   box.innerHTML='= <b>'+bs.length+' batelada'+(bs.length>1?'s':'')+'</b> (máx '+cap+' kg/batelada no '+eqNome+'): <span class="mono">'+bs.map(x=>fmt(x,0)).join(' + ')+' kg</span>';
 }
 async function tProg(){
-  const [prog,prods,equip,alertas]=await Promise.all([
+  const [prog,prods,equip,alertas,pa]=await Promise.all([
     sb.from('programacao_refino').select('*, produtos(nome,estocavel_balde), equipamentos(nome)').order('data'),
     sb.from('produtos').select('id,nome').eq('ativo',true).order('nome'),
     sb.from('equipamentos').select('id,nome').eq('ativo',true).order('nome'),
-    sb.rpc('fn_alerta_entregas')
+    sb.rpc('fn_alerta_entregas'),
+    sb.from('produto_acabado').select('nome,linha,saldo_potes,estoque_minimo,ativo')
   ]);
   EST.cache.prods=prods.data||[];EST.cache.equip=equip.data||[];
   const linhas=prog.data||[];
@@ -1434,7 +1435,7 @@ async function importarUpSeller(files){
     const q=Number(r['Qtd. do Produto'])||0;if(!q)continue;
     const plat=String(r['Plataformas']||'').trim();
     const prazo=String(r['Prazo de Envio']||'').slice(0,10)||null;
-    const pid=mapa[cod];
+    let pid=mapa[cod];
     if(!pid){pid='14de9ebe-09df-483d-8c03-9bb6eef186d6';nao[cod]=nao[cod]||{codigo:cod,plataforma:plat,nome:String(r['Nome do Anúncio']||''),qtd:0};nao[cod].qtd+=q;}
     const k=pid+'|'+(prazo||'')+'|'+plat;
     agg[k]=agg[k]||{produto_acabado_id:pid,data_despacho:prazo,plataforma:plat,qtd_potes:0};
