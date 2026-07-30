@@ -381,6 +381,19 @@ async function tPainel(){
       <div class="kpi"><b>${fmt(kgBalde)}<small style="font-size:15px"> kg</small></b><p>creme em balde<br><small style="color:#7A6A57">${(balde.data||[]).length} base(s)</small></p></div>
       <div class="kpi"><b>${fmt(potes,0)}</b><p>potes em estoque</p></div>
     </div>
+    ${(() => {
+      const criticos = (pa.data||[]).filter(p => p.estoque_minimo && Number(p.saldo_potes) < Number(p.estoque_minimo) && p.ativo);
+      if (!criticos.length) return '';
+      const ordenados = criticos.sort((a,b) => (Number(a.saldo_potes) - Number(a.estoque_minimo)) - (Number(b.saldo_potes) - Number(b.estoque_minimo)));
+      return `<div class="card" style="border-color:#C63A3A;background:#FFFBFB;margin-top:12px;border-left:7px solid var(--morango)"><b style="color:var(--morango)">🔴 PROGRAMAÇÃO URGENTE — ${criticos.length} produtos abaixo do mínimo</b>
+        <small style="color:#7A6A57;display:block;margin-bottom:8px">produção necessária para atingir o estoque mínimo</small>
+        ${ordenados.map(p=>{
+          const falta = Number(p.estoque_minimo) - Number(p.saldo_potes);
+          return `<div class="item-row baixo" style="background:#FFFBFB"><span style="flex:1"><b>${p.nome}</b><br><small style="color:#7A6A57">saldo ${Number(p.saldo_potes)} · mínimo ${Number(p.estoque_minimo)}</small></span><span class="saldo mono" style="color:var(--morango);font-weight:700;white-space:nowrap">+ ${fmt(falta,0)} potes</span></div>`;
+        }).join('')}
+        <small style="color:#7A6A57;display:block;margin-top:8px">➜ ir para <b>Programação</b> para criar as bateladas</small>
+      </div>`;
+    })()}
     ${(alertas.data||[]).length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-top:12px"><b style="color:var(--morango)">⚠️ Insumo chega depois da produção</b>${alertas.data.slice(0,5).map(al=>`<div class="item-row baixo"><span>${al.item} · prod. ${brData(al.data_producao)}</span><span class="saldo mono" style="color:var(--morango)">falta ${fmt(al.falta)}</span></div>`).join('')}</div>`:''}
     ${abaixo.length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-top:12px"><b style="color:var(--morango)">Precisa de atenção (${abaixo.length})</b>${abaixo.map(i=>`<div class="item-row baixo"><span>${i.nome}</span><span class="saldo mono">${fmt(i.saldo_atual)} <small style="color:#7A6A57">/ mín. ${fmt(i.estoque_minimo)}</small></span></div>`).join('')}</div>`:''}
     ${embCritico.length?`<div class="card" style="border-color:#F0D9B8;background:#FDF8F0;margin-top:12px"><b style="color:var(--laranja)">📦 Embalagens (${embCritico.length})</b><small style="color:#7A6A57;display:block;margin-bottom:4px">potes, tampas, rótulos e caixas — zeradas ou abaixo do mínimo</small>${embCritico.map(i=>`<div class="item-row baixo"><span>${i.nome}</span><span class="saldo mono">${fmt(i.saldo_atual)}${i.estoque_minimo!=null?' <small style="color:#7A6A57">/ mín. '+fmt(i.estoque_minimo)+'</small>':''}</span></div>`).join('')}</div>`:''}
