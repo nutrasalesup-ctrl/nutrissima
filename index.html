@@ -559,7 +559,7 @@ function fEstoque(){
     if(q)L=L.filter(i=>i.nome.toLowerCase().includes(q));
     html=L.map(i=>{
       const baixo=i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo);
-      return linhaEst('item',i.id,i.nome,i.saldo_atual,i.unidade,baixo);
+      return linhaEst('item',i.id,i.nome,i.saldo_atual,i.unidade,baixo,i.variacao);
     }).join('');
   }
   document.getElementById('lista').innerHTML=html||'<div class="center">Nada encontrado.</div>';
