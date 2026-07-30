@@ -419,7 +419,7 @@ async function tPainel(){
 async function tEstoque(){
   document.getElementById('app').innerHTML=trilha('Estoque')+topo('Estoque','carregando…')+'<main><div class="center">Carregando…</div></main>';
   const [itens,pa,balde]=await Promise.all([
-    sb.from('itens').select('id,nome,categoria,unidade,saldo_atual,estoque_minimo').order('ordem'),
+    sb.from('itens').select('id,nome,categoria,unidade,saldo_atual,estoque_minimo,variacao').order('ordem'),
     sb.from('produto_acabado').select('id,nome,linha,saldo_potes').eq('ativo',true).order('linha').order('nome'),
     sb.from('estoque_balde').select('produto_id,quantidade_kg,produtos(nome)').order('quantidade_kg',{ascending:false})
   ]);
@@ -466,10 +466,11 @@ function classificaEmbalagem(nome){
   if(n.startsWith('rótulo')||n.startsWith('rotulo'))return 'rotulo';
   return 'outro';
 }
-function linhaEst(tipo,id,nome,saldo,un,baixo){
-  return `<div class="item-row ${baixo?'baixo':''}"><span>${baixo?'⬤ ':''}${nome}</span>`+
+function linhaEst(tipo,id,nome,saldo,un,baixo,variacao){
+  const varTxt=variacao?` <span style="font-size:12px;color:#7A6A57;font-weight:normal">(${variacao})</span>`:'';
+  return `<div class="item-row ${baixo?'baixo':''}"><span>${baixo?'⬇ ':''}${nome}${varTxt}</span>`+
     `<span style="display:flex;align-items:center;gap:10px"><span class="saldo mono">${fmt(saldo)} ${un}</span>`+
-    `<button data-t="${tipo}" data-i="${id}" data-s="${saldo}" data-u="${un}" onclick="ajuste(this)" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer;font-size:15px" title="Ajustar saldo">✏️</button></span></div>`;
+    `<button data-t="${tipo}" data-i="${id}" data-s="${saldo}" data-u="${un}" data-v="${variacao||''}" onclick="ajuste(this)" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer;font-size:15px" title="Ajustar saldo e variação">✏️</button></span></div>`;
 }
 async function imprimirEstoque(){
   const q=(document.getElementById('busca')?.value||'').toLowerCase();
@@ -500,7 +501,8 @@ async function imprimirEstoque(){
     corpo=`<div class="card"><h2>${nomeCat} (${L.length})</h2>${L.map(i=>{
       const baixo=i.estoque_minimo!=null&&Number(i.saldo_atual)<Number(i.estoque_minimo);
       const minTxt=i.estoque_minimo!=null?` · mínimo ${fmt(i.estoque_minimo)}`:'';
-      return `<div class="linha"><span class="nome">${i.nome}</span><span class="valores"><b class="mono">${fmt(i.saldo_atual)}</b> <span class="un">${i.unidade||''}</span>${minTxt}</span>${baixo?'<span class="tag" style="background:#C63A3A;color:#fff">abaixo do mínimo</span>':''}</div>`;
+      const varTxt=i.variacao?` · <span style="color:#7A6A57">${i.variacao}</span>`:'';
+      return `<div class="linha"><span class="nome">${i.nome}${varTxt}</span><span class="valores"><b class="mono">${fmt(i.saldo_atual)}</b> <span class="un">${i.unidade||''}</span>${minTxt}</span>${baixo?'<span class="tag" style="background:#C63A3A;color:#fff">abaixo do mínimo</span>':''}</div>`;
     }).join('')||'<div class="linha">Nada encontrado.</div>'}</div>`;
   }
 
@@ -564,8 +566,8 @@ function fEstoque(){
 }
 async function ajuste(btn){
   if(precisaOperador())return;
-  const t=btn.dataset.t, id=btn.dataset.i, atual=btn.dataset.s, un=btn.dataset.u;
-  const nome=btn.closest('.item-row').querySelector('span').textContent.replace('⬤ ','').replace('🪣 ','');
+  const t=btn.dataset.t, id=btn.dataset.i, atual=btn.dataset.s, un=btn.dataset.u, varAtual=btn.dataset.v||'';
+  const nome=btn.closest('.item-row').querySelector('span').textContent.replace('⬇ ','').replace('⬤ ','').replace('🪣 ','').replace(/\s*\(.*\)$/,'');
   const real=prompt('Ajuste de estoque — '+nome+'\nSaldo no sistema: '+fmt(atual)+' '+un+'\n\nQual é o saldo REAL contado?',atual);
   if(real==null)return;
   const n=parseNumBR(real);
