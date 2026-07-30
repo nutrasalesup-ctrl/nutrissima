@@ -1,0 +1,864 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Nutríssima — Comercial</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ard:#22303A; --cacau:#33200F; --leite:#FFFDF9; --casca:#EFE7DC;
+  --linha:#DCD2C4; --tinta2:#7A6A57;
+  --pist:#3E7C45; --mor:#C63A3A; --mel:#B8862B; --lar:#D9772B;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--casca); color:var(--cacau);
+  font-family:Archivo,system-ui,-apple-system,sans-serif; font-weight:500;
+  line-height:1.5; font-size:15px;
+}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace; font-variant-numeric:tabular-nums}
+
+/* ---------- topo ---------- */
+header{background:var(--ard); color:#fff; padding:14px 0 0}
+.wrap{max-width:1040px; margin:0 auto; padding:0 14px}
+.hd{display:flex; align-items:center; justify-content:space-between; gap:10px}
+.hd .marca{font-weight:800; font-size:17px; letter-spacing:-.01em}
+.hd .marca span{opacity:.62; font-weight:600}
+.hd .quem{font-size:12px; opacity:.72; text-align:right; line-height:1.3}
+.hd .quem b{display:block; font-weight:600}
+nav{display:flex; gap:6px; overflow-x:auto; padding:12px 0 0; scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{
+  flex:0 0 auto; background:rgba(255,255,255,.08); color:#fff;
+  border:1px solid rgba(255,255,255,.16); border-bottom:none;
+  border-radius:11px 11px 0 0; padding:9px 14px; font:inherit; font-size:13px;
+  font-weight:600; cursor:pointer;
+}
+nav button.on{background:var(--casca); color:var(--cacau); border-color:transparent}
+nav button:focus-visible{outline:2px solid #fff; outline-offset:2px}
+
+main{max-width:1040px; margin:0 auto; padding:18px 14px 70px}
+
+/* ---------- blocos ---------- */
+h2{font-size:19px; font-weight:800; margin:0 0 3px}
+.sub{color:var(--tinta2); font-size:13.5px; margin:0 0 16px}
+.card{
+  background:var(--leite); border:1.5px solid var(--linha);
+  border-left:7px solid var(--u,var(--linha)); border-radius:14px;
+  padding:14px 16px; margin-bottom:12px;
+}
+.card h3{margin:0 0 8px; font-size:15px; font-weight:800}
+.kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:16px}
+.kpi{background:var(--leite); border:1.5px solid var(--linha); border-radius:14px; padding:12px 14px}
+.kpi .r{font-size:10.5px; text-transform:uppercase; letter-spacing:.11em; color:var(--tinta2); font-weight:700}
+.kpi .v{font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:21px; font-variant-numeric:tabular-nums; margin-top:3px}
+.kpi .n{font-size:12px; color:var(--tinta2); margin-top:2px}
+.kpi.ruim .v{color:var(--mor)}
+.kpi.bom .v{color:var(--pist)}
+
+/* ---------- conta aberta ---------- */
+.conta{
+  font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums;
+  background:#F6F1E9; border:1px solid var(--linha); border-radius:11px;
+  padding:10px 12px; font-size:13px; margin:8px 0; overflow-x:auto; white-space:nowrap;
+}
+.conta .m{color:var(--mor); font-weight:600}
+.conta .p{color:var(--pist); font-weight:600}
+
+/* ---------- tabela ---------- */
+.tw{overflow-x:auto; -webkit-overflow-scrolling:touch; border:1.5px solid var(--linha); border-radius:14px; background:var(--leite)}
+table{width:100%; border-collapse:collapse; font-size:13.5px}
+th{background:#E7DDD0; text-align:left; padding:9px 11px; font-size:10.5px;
+   text-transform:uppercase; letter-spacing:.08em; white-space:nowrap; font-weight:700}
+td{padding:9px 11px; border-top:1px solid var(--linha); vertical-align:top}
+td.n{font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap}
+tbody tr:hover{background:#FBF7F1}
+
+/* ---------- controles ---------- */
+label{display:block; font-size:12px; font-weight:700; text-transform:uppercase;
+      letter-spacing:.08em; color:var(--tinta2); margin:12px 0 5px}
+input,select{
+  width:100%; padding:11px 12px; border:1.5px solid var(--linha); border-radius:11px;
+  background:var(--leite); color:var(--cacau); font:inherit; font-size:15px;
+}
+input:focus,select:focus{outline:2px solid var(--ard); outline-offset:1px; border-color:transparent}
+button.b{
+  background:var(--pist); color:#fff; border:none; border-radius:12px;
+  padding:13px 18px; font:inherit; font-weight:700; font-size:15px; cursor:pointer;
+}
+button.b:disabled{opacity:.5; cursor:default}
+button.s{background:transparent; color:var(--cacau); border:1.5px solid var(--linha);
+         border-radius:11px; padding:8px 13px; font:inherit; font-size:13px; font-weight:600; cursor:pointer}
+button.s:hover{background:#F3ECE2}
+button:focus-visible{outline:2px solid var(--ard); outline-offset:2px}
+.drop{
+  border:2px dashed var(--linha); border-radius:14px; padding:26px 16px; text-align:center;
+  background:var(--leite); cursor:pointer;
+}
+.drop:hover,.drop.over{border-color:var(--pist); background:#F4F8F4}
+.drop b{display:block; font-size:15px; margin-bottom:4px}
+.drop span{color:var(--tinta2); font-size:13px}
+
+/* ---------- avisos ---------- */
+.msg{position:fixed; left:50%; transform:translateX(-50%); bottom:20px; z-index:99;
+     background:var(--ard); color:#fff; padding:12px 18px; border-radius:12px;
+     font-size:14px; font-weight:600; max-width:88vw; box-shadow:0 6px 24px rgba(0,0,0,.22)}
+.msg.erro{background:var(--mor)}
+.vazio{text-align:center; color:var(--tinta2); padding:34px 16px; font-size:14px}
+.tag{display:inline-block; color:#fff; font-size:10px; font-weight:800; letter-spacing:.09em;
+     text-transform:uppercase; padding:3px 8px; border-radius:99px}
+.bar{height:7px; background:#E7DDD0; border-radius:99px; overflow:hidden; margin-top:5px}
+.bar i{display:block; height:100%; background:var(--pist)}
+
+/* ---------- login ---------- */
+.login{max-width:380px; margin:9vh auto; padding:0 16px}
+.login .cx{background:var(--leite); border:1.5px solid var(--linha); border-radius:16px; padding:22px}
+.login h1{font-size:21px; margin:0 0 4px; font-weight:800}
+.login p{color:var(--tinta2); font-size:13.5px; margin:0 0 6px}
+
+@media(max-width:620px){
+  .kpis{grid-template-columns:repeat(2,1fr)}
+  h2{font-size:17px}
+  .hd .marca{font-size:15px}
+}
+@media(prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app"><div class="vazio">Carregando…</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+"use strict";
+
+var URL_SB = "https://nfzospymzvlwzlcpgolm.supabase.co";
+var KEY_SB = "sb_publishable_tNe4G9C0re2YDN9lsnRQXg_zQgFLmzn";
+var sb = null;
+var ST = { email:"", periodo:"todos", cache:{} };
+
+/* ================= utilitários ================= */
+function $(id){ return document.getElementById(id); }
+function esc(s){
+  return String(s==null?"":s).replace(/[&<>"']/g, function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
+  });
+}
+function brl(v){
+  var n = Number(v)||0;
+  return n.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function inte(v){ return (Number(v)||0).toLocaleString("pt-BR"); }
+function dataBR(d){
+  if(!d) return "—";
+  var p = String(d).slice(0,10).split("-");
+  return p[2]+"/"+p[1]+"/"+p[0];
+}
+function digitos(s){ return String(s==null?"":s).replace(/\D/g,""); }
+function msg(txt, erro){
+  var d = document.createElement("div");
+  d.className = "msg" + (erro ? " erro" : "");
+  d.textContent = txt;
+  document.body.appendChild(d);
+  setTimeout(function(){ d.remove(); }, erro ? 5200 : 3400);
+}
+
+/* ================= leitura da NF-e ================= */
+function tag(el, nome){
+  if(!el) return null;
+  var n = el.getElementsByTagNameNS("*", nome)[0];
+  return n ? n.textContent.trim() : null;
+}
+function bloco(el, nome){
+  if(!el) return null;
+  return el.getElementsByTagNameNS("*", nome)[0] || null;
+}
+var CFOP_BONIF = ["5910","6910","5911","6911","5912","6912","5913","6913"];
+
+function lerNFe(texto, nomeArquivo){
+  var doc = new DOMParser().parseFromString(texto, "application/xml");
+  if(doc.getElementsByTagName("parsererror").length){
+    return { erro:"arquivo não é um XML válido" };
+  }
+  var inf = doc.getElementsByTagNameNS("*","infNFe")[0];
+  if(!inf) return { erro:"não encontrei a nota dentro do arquivo" };
+
+  var chave = String(inf.getAttribute("Id")||"").replace(/^NFe/,"");
+  if(chave.length !== 44) return { erro:"chave da nota com formato inesperado" };
+
+  var ide = bloco(inf,"ide"), emit = bloco(inf,"emit"), dest = bloco(inf,"dest");
+  var ender = bloco(dest,"enderDest"), tot = bloco(inf,"ICMSTot"), adic = bloco(inf,"infAdic");
+  if(!ide || !emit || !dest) return { erro:"nota sem emitente ou destinatário" };
+
+  var cpl = tag(adic,"infCpl") || "";
+  var achouPedido = cpl.match(/Pedido\s*:?\s*(\d+)/i);
+
+  var itens = [], dets = inf.getElementsByTagNameNS("*","det");
+  for(var i=0; i<dets.length; i++){
+    var d = dets[i], p = bloco(d,"prod");
+    if(!p) continue;
+    var cfop = tag(p,"CFOP");
+    itens.push({
+      n_item: Number(d.getAttribute("nItem")) || (i+1),
+      codigo: tag(p,"cProd"),
+      descricao: tag(p,"xProd"),
+      cfop: cfop,
+      ncm: tag(p,"NCM"),
+      unidade: tag(p,"uCom"),
+      qtd: Number(tag(p,"qCom")) || 0,
+      v_un: Number(tag(p,"vUnCom")) || 0,
+      v_prod: Number(tag(p,"vProd")) || 0,
+      v_desc: Number(tag(p,"vDesc")) || 0,
+      bonificacao: CFOP_BONIF.indexOf(cfop) >= 0
+    });
+  }
+  if(!itens.length) return { erro:"nota sem itens" };
+
+  return {
+    chave: chave,
+    arquivo: nomeArquivo,
+    emitente_cnpj: digitos(tag(emit,"CNPJ")),
+    emitente_nome: tag(emit,"xNome"),
+    numero: tag(ide,"nNF"),
+    serie: tag(ide,"serie"),
+    emissao: String(tag(ide,"dhEmi")||"").slice(0,10),
+    dh_emissao: tag(ide,"dhEmi"),
+    nat_op: tag(ide,"natOp"),
+    tp_nf: tag(ide,"tpNF"),
+    fin_nfe: tag(ide,"finNFe"),
+    dest_documento: digitos(tag(dest,"CNPJ") || tag(dest,"CPF")),
+    dest_tipo: tag(dest,"CNPJ") ? "CNPJ" : "CPF",
+    dest_nome: tag(dest,"xNome"),
+    dest_ie: tag(dest,"IE"),
+    dest_logradouro: tag(ender,"xLgr"),
+    dest_numero: tag(ender,"nro"),
+    dest_bairro: tag(ender,"xBairro"),
+    dest_municipio: tag(ender,"xMun"),
+    dest_uf: tag(ender,"UF"),
+    dest_cep: digitos(tag(ender,"CEP")),
+    v_prod: Number(tag(tot,"vProd")) || 0,
+    v_desc: Number(tag(tot,"vDesc")) || 0,
+    v_frete: Number(tag(tot,"vFrete")) || 0,
+    v_outro: Number(tag(tot,"vOutro")) || 0,
+    v_ipi: Number(tag(tot,"vIPI")) || 0,
+    v_st: Number(tag(tot,"vST")) || 0,
+    v_nf: Number(tag(tot,"vNF")) || 0,
+    pedido_numero: achouPedido ? achouPedido[1] : null,
+    itens: itens
+  };
+}
+
+/* ================= navegação ================= */
+var TELAS = {
+  inicio:      { rotulo:"Início",         fn:telaInicio },
+  faturamento: { rotulo:"Faturamento",    fn:telaFaturamento },
+  clientes:    { rotulo:"Clientes",       fn:telaClientes },
+  representantes:{ rotulo:"Representantes", fn:telaRepres },
+  importar:    { rotulo:"Importar NF-e",  fn:telaImportar },
+  pendencias:  { rotulo:"Pendências",     fn:telaPendencias }
+};
+var telaAtual = "inicio";
+
+function moldura(conteudo){
+  var abas = Object.keys(TELAS).map(function(k){
+    return '<button onclick="ir(\''+k+'\')" class="'+(k===telaAtual?"on":"")+'">'+
+           esc(TELAS[k].rotulo)+'</button>';
+  }).join("");
+  return '<header><div class="wrap">'+
+      '<div class="hd">'+
+        '<div class="marca">Nutríssima <span>· Comercial</span></div>'+
+        '<div class="quem"><b>'+esc(ST.email)+'</b>'+
+          '<button class="s" style="margin-top:4px;background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.2)" onclick="sair()">Sair</button>'+
+        '</div>'+
+      '</div>'+
+      '<nav>'+abas+'</nav>'+
+    '</div></header>'+
+    '<main id="corpo">'+conteudo+'</main>';
+}
+function ir(k){
+  telaAtual = k;
+  $("app").innerHTML = moldura('<div class="vazio">Carregando…</div>');
+  TELAS[k].fn();
+}
+function pinta(html){
+  var c = $("corpo");
+  if(c) c.innerHTML = html;
+}
+
+/* ================= login ================= */
+function telaLogin(aviso){
+  $("app").innerHTML =
+    '<div class="login"><div class="cx">'+
+    '<h1>Comercial</h1>'+
+    '<p>Faturamento, clientes e carteira da Nutríssima.</p>'+
+    (aviso ? '<p style="color:#C63A3A;font-weight:600">'+esc(aviso)+'</p>' : "")+
+    '<label for="em">E-mail</label><input id="em" type="email" autocomplete="username">'+
+    '<label for="se">Senha</label><input id="se" type="password" autocomplete="current-password">'+
+    '<button class="b" style="width:100%;margin-top:16px" onclick="entrar()">Entrar</button>'+
+    '</div></div>';
+  var s = $("se");
+  if(s) s.addEventListener("keydown", function(e){ if(e.key==="Enter") entrar(); });
+}
+async function entrar(){
+  var em = $("em").value.trim(), se = $("se").value;
+  if(!em || !se) return msg("Preencha e-mail e senha", true);
+  var r = await sb.auth.signInWithPassword({ email:em, password:se });
+  if(r.error) return telaLogin("E-mail ou senha não conferem.");
+  ST.email = em;
+  ir("inicio");
+}
+async function sair(){
+  await sb.auth.signOut();
+  ST.email = "";
+  telaLogin();
+}
+
+/* ================= início ================= */
+async function telaInicio(){
+  var r = await sb.from("v_faturamento").select("*");
+  if(r.error) return pinta('<div class="card" style="--u:#C63A3A">Não consegui ler o faturamento: '+esc(r.error.message)+'</div>');
+  var L = r.data || [];
+
+  var pend = await sb.from("nf_venda_item").select("v_liquido,qtd").is("produto_acabado_id", null);
+  var semSku = (pend.data||[]).reduce(function(a,x){ return a + (Number(x.v_liquido)||0); }, 0);
+  var semSkuN = (pend.data||[]).length;
+
+  if(!L.length){
+    return pinta('<h2>Início</h2><p class="sub">Nenhuma nota importada ainda.</p>'+
+      '<div class="card" style="--u:#3E7C45"><h3>Comece pela importação</h3>'+
+      '<p>Envie os XMLs das notas fiscais e o faturamento aparece aqui, por produto, cliente e marca.</p>'+
+      '<button class="b" style="margin-top:8px" onclick="ir(\'importar\')">Importar NF-e</button></div>');
+  }
+
+  var liq=0, un=0, cli={}, notas={}, porEmit={}, porMarca={}, porCliente={}, porSku={};
+  L.forEach(function(x){
+    var v = Number(x.v_liquido)||0, q = Number(x.qtd)||0;
+    liq += v; un += q;
+    if(x.cliente_id) cli[x.cliente_id]=1;
+    notas[x.nf_id]=1;
+    porEmit[x.emitente||"—"] = (porEmit[x.emitente||"—"]||0) + v;
+    porMarca[x.marca||"— sem cadastro"] = (porMarca[x.marca||"— sem cadastro"]||0) + v;
+    var nc = x.cliente||"—";
+    porCliente[nc] = (porCliente[nc]||0) + v;
+    var ns = x.sku || ("["+(x.codigo||"?")+"] "+(x.descricao||""));
+    if(!porSku[ns]) porSku[ns] = {v:0,q:0};
+    porSku[ns].v += v; porSku[ns].q += q;
+  });
+  var nNotas = Object.keys(notas).length;
+  var nCli = Object.keys(cli).length;
+  var ticket = nNotas ? liq/nNotas : 0;
+
+  function ranking(obj, valorDe, n){
+    return Object.keys(obj).map(function(k){ return {k:k, v:valorDe(obj[k])}; })
+      .sort(function(a,b){ return b.v-a.v; }).slice(0, n||8);
+  }
+  var topCli = ranking(porCliente, function(v){return v;}, 6);
+  var topSku = ranking(porSku, function(o){return o.v;}, 8);
+  var maior = topCli.length ? topCli[0].v : 0;
+
+  var datas = L.map(function(x){ return x.emissao; }).filter(Boolean).sort();
+  var periodo = datas.length ? dataBR(datas[0])+" a "+dataBR(datas[datas.length-1]) : "—";
+
+  var h = '<h2>Resultado comercial</h2><p class="sub">'+esc(periodo)+
+    ' · valores líquidos, já sem bonificação e sem venda para distribuidor</p>';
+
+  h += '<div class="kpis">'+
+    '<div class="kpi bom"><div class="r">Faturamento líquido</div><div class="v">R$ '+brl(liq)+'</div>'+
+      '<div class="n">'+inte(nNotas)+' notas</div></div>'+
+    '<div class="kpi"><div class="r">Unidades</div><div class="v">'+inte(un)+'</div>'+
+      '<div class="n">potes faturados</div></div>'+
+    '<div class="kpi"><div class="r">Clientes</div><div class="v">'+inte(nCli)+'</div>'+
+      '<div class="n">com compra no período</div></div>'+
+    '<div class="kpi"><div class="r">Ticket por nota</div><div class="v">R$ '+brl(ticket)+'</div>'+
+      '<div class="n">média do período</div></div>'+
+    (semSkuN ? '<div class="kpi ruim"><div class="r">Sem cadastro</div><div class="v">R$ '+brl(semSku)+'</div>'+
+      '<div class="n">'+inte(semSkuN)+' itens fora das análises</div></div>' : "")+
+  '</div>';
+
+  var emits = Object.keys(porEmit);
+  if(emits.length > 1){
+    h += '<div class="card" style="--u:#22303A"><h3>Por emitente</h3>'+
+      emits.map(function(e){
+        return '<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0">'+
+          '<span>'+esc(e)+'</span><b class="mono">R$ '+brl(porEmit[e])+'</b></div>';
+      }).join("")+'</div>';
+  }
+
+  h += '<div class="card" style="--u:#3E7C45"><h3>Concentração por cliente</h3>'+
+    topCli.map(function(c){
+      var pct = liq ? (c.v/liq*100) : 0;
+      return '<div style="margin-bottom:9px">'+
+        '<div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px">'+
+          '<span>'+esc(c.k)+'</span>'+
+          '<b class="mono">R$ '+brl(c.v)+' · '+pct.toFixed(1)+'%</b></div>'+
+        '<div class="bar"><i style="width:'+(maior? (c.v/maior*100):0)+'%"></i></div></div>';
+    }).join("")+'</div>';
+
+  h += '<h3 style="margin:18px 0 8px;font-size:15px">Mais vendidos</h3><div class="tw"><table>'+
+    '<thead><tr><th>Produto</th><th style="text-align:right">Un</th>'+
+    '<th style="text-align:right">Líquido</th><th style="text-align:right">Preço médio</th></tr></thead><tbody>'+
+    topSku.map(function(s){
+      var o = porSku[s.k];
+      return '<tr><td>'+esc(s.k)+'</td><td class="n">'+inte(o.q)+'</td>'+
+        '<td class="n">'+brl(o.v)+'</td><td class="n">'+(o.q? brl(o.v/o.q) : "—")+'</td></tr>';
+    }).join("")+'</tbody></table></div>';
+
+  if(semSkuN){
+    h += '<div class="card" style="--u:#D9772B;margin-top:16px"><h3>'+inte(semSkuN)+
+      ' itens ainda sem cadastro</h3>'+
+      '<p>Esse valor está no banco, mas fica fora das análises por produto e por marca.</p>'+
+      '<div class="conta"><span class="p">R$ '+brl(liq)+'</span> em análise '+
+      '&nbsp;+&nbsp; <span class="m">R$ '+brl(semSku)+'</span> sem cadastro '+
+      '&nbsp;=&nbsp; R$ '+brl(liq+semSku)+' faturado</div>'+
+      '<button class="s" onclick="ir(\'pendencias\')">Ver o que falta cadastrar</button></div>';
+  }
+  pinta(h);
+}
+
+/* ================= faturamento ================= */
+async function telaFaturamento(){
+  var r = await sb.from("v_faturamento").select("*").order("emissao",{ascending:false});
+  if(r.error) return pinta('<div class="card" style="--u:#C63A3A">'+esc(r.error.message)+'</div>');
+  var L = r.data || [];
+  if(!L.length) return pinta('<h2>Faturamento</h2><div class="vazio">Nada importado ainda.</div>');
+
+  var porNota = {};
+  L.forEach(function(x){
+    if(!porNota[x.nf_id]){
+      porNota[x.nf_id] = { chave:x.chave, emissao:x.emissao, emitente:x.emitente,
+        cliente:x.cliente, uf:x.uf, pedido:x.pedido_numero, v:0, q:0, itens:0 };
+    }
+    var n = porNota[x.nf_id];
+    n.v += Number(x.v_liquido)||0; n.q += Number(x.qtd)||0; n.itens++;
+  });
+  var notas = Object.keys(porNota).map(function(k){ return porNota[k]; })
+    .sort(function(a,b){ return (a.emissao<b.emissao)?1:-1; });
+
+  var h = '<h2>Faturamento</h2><p class="sub">'+inte(notas.length)+
+    ' notas · toque na linha para ver o pedido de origem</p>'+
+    '<div class="tw"><table><thead><tr>'+
+    '<th>Emissão</th><th>Cliente</th><th>UF</th><th>Emitente</th>'+
+    '<th style="text-align:right">Itens</th><th style="text-align:right">Un</th>'+
+    '<th style="text-align:right">Líquido</th><th>Pedido</th>'+
+    '</tr></thead><tbody>'+
+    notas.map(function(n){
+      return '<tr><td class="mono">'+dataBR(n.emissao)+'</td>'+
+        '<td>'+esc(n.cliente||"—")+'</td><td>'+esc(n.uf||"—")+'</td>'+
+        '<td>'+esc(n.emitente||"—")+'</td>'+
+        '<td class="n">'+n.itens+'</td><td class="n">'+inte(n.q)+'</td>'+
+        '<td class="n">'+brl(n.v)+'</td>'+
+        '<td class="mono">'+esc(n.pedido||"—")+'</td></tr>';
+    }).join("")+'</tbody></table></div>';
+  pinta(h);
+}
+
+/* ================= clientes ================= */
+async function telaClientes(){
+  var rc = await sb.from("clientes").select("*").order("razao_social");
+  if(rc.error) return pinta('<div class="card" style="--u:#C63A3A">'+esc(rc.error.message)+'</div>');
+  var C = rc.data || [];
+  var rf = await sb.from("v_faturamento").select("cliente_id,v_liquido,emissao");
+  var acum = {};
+  (rf.data||[]).forEach(function(x){
+    if(!x.cliente_id) return;
+    if(!acum[x.cliente_id]) acum[x.cliente_id] = { v:0, ultima:null };
+    acum[x.cliente_id].v += Number(x.v_liquido)||0;
+    if(!acum[x.cliente_id].ultima || x.emissao > acum[x.cliente_id].ultima){
+      acum[x.cliente_id].ultima = x.emissao;
+    }
+  });
+  ST.cache.clientes = C.map(function(c){
+    var a = acum[c.id] || { v:0, ultima:null };
+    c._v = a.v; c._ultima = a.ultima; return c;
+  }).sort(function(a,b){ return b._v - a._v; });
+
+  pinta('<h2>Clientes</h2><p class="sub">'+inte(C.length)+
+    ' cadastrados a partir das notas fiscais</p>'+
+    '<input id="busca" placeholder="Buscar por nome, cidade ou CNPJ" oninput="filtraClientes()">'+
+    '<div id="lista" style="margin-top:12px"></div>');
+  filtraClientes();
+}
+function filtraClientes(){
+  var q = ($("busca") ? $("busca").value : "").toLowerCase().trim();
+  var L = (ST.cache.clientes||[]).filter(function(c){
+    if(!q) return true;
+    return (c.razao_social||"").toLowerCase().indexOf(q) >= 0
+        || (c.municipio||"").toLowerCase().indexOf(q) >= 0
+        || (c.documento||"").indexOf(q.replace(/\D/g,"")) >= 0;
+  });
+  if(!L.length) return $("lista").innerHTML = '<div class="vazio">Nenhum cliente com esse termo.</div>';
+  $("lista").innerHTML = '<div class="tw"><table><thead><tr>'+
+    '<th>Cliente</th><th>Cidade</th><th>UF</th><th>Documento</th>'+
+    '<th style="text-align:right">Comprado</th><th>Última</th>'+
+    '</tr></thead><tbody>'+
+    L.map(function(c){
+      return '<tr><td>'+esc(c.razao_social)+'</td>'+
+        '<td>'+esc(c.municipio||"—")+'</td><td>'+esc(c.uf||"—")+'</td>'+
+        '<td class="mono">'+esc(c.documento)+'</td>'+
+        '<td class="n">'+brl(c._v)+'</td>'+
+        '<td class="mono">'+dataBR(c._ultima)+'</td></tr>';
+    }).join("")+'</tbody></table></div>';
+}
+
+/* ================= representantes ================= */
+async function telaRepres(){
+  var r = await sb.from("representantes").select("*").order("nome");
+  var L = (r.data||[]);
+  var h = '<h2>Representantes</h2><p class="sub">Cadastro básico — carteira e metas entram depois</p>'+
+    '<div class="card" style="--u:#3E7C45"><h3>Cadastrar representante</h3>'+
+    '<label for="rn">Nome</label><input id="rn" placeholder="Como ele é chamado">'+
+    '<label for="rr">Região</label><input id="rr" placeholder="Ex.: Sul de Minas">'+
+    '<label for="re">E-mail (opcional)</label><input id="re" type="email" placeholder="para o portal, mais adiante">'+
+    '<button class="b" style="margin-top:14px" onclick="salvarRepres()">Cadastrar</button></div>';
+  if(L.length){
+    h += '<div class="tw"><table><thead><tr><th>Nome</th><th>Região</th><th>E-mail</th><th>Situação</th></tr></thead><tbody>'+
+      L.map(function(x){
+        return '<tr><td>'+esc(x.nome)+'</td><td>'+esc(x.regiao||"—")+'</td>'+
+          '<td>'+esc(x.email||"—")+'</td><td>'+
+          (x.ativo ? '<span class="tag" style="background:#3E7C45">ativo</span>'
+                   : '<span class="tag" style="background:#7A6A57">inativo</span>')+'</td></tr>';
+      }).join("")+'</tbody></table></div>';
+  } else {
+    h += '<div class="vazio">Nenhum representante cadastrado.</div>';
+  }
+  pinta(h);
+}
+async function salvarRepres(){
+  var nome = $("rn").value.trim();
+  if(!nome) return msg("O nome é obrigatório", true);
+  var r = await sb.from("representantes").insert({
+    nome: nome,
+    regiao: $("rr").value.trim() || null,
+    email: $("re").value.trim() || null,
+    criado_por: ST.email
+  });
+  if(r.error){
+    if(String(r.error.message).indexOf("duplicate") >= 0) return msg("Já existe um representante com esse nome", true);
+    return msg("Não deu para cadastrar: "+r.error.message, true);
+  }
+  msg("Representante cadastrado");
+  telaRepres();
+}
+
+/* ================= importar ================= */
+function telaImportar(){
+  pinta('<h2>Importar NF-e</h2>'+
+    '<p class="sub">Envie os XMLs das notas. Arquivo repetido é reconhecido pela chave e não duplica.</p>'+
+    '<div class="drop" id="drop" onclick="document.getElementById(\'arq\').click()">'+
+      '<b>Escolher arquivos XML</b><span>ou arraste os arquivos para cá — pode mandar vários de uma vez</span>'+
+    '</div>'+
+    '<input id="arq" type="file" accept=".xml,text/xml,application/xml" multiple '+
+      'style="position:absolute;left:-9999px" onchange="importar(this.files)">'+
+    '<div id="res" style="margin-top:16px"></div>');
+  var d = $("drop");
+  ["dragenter","dragover"].forEach(function(e){
+    d.addEventListener(e, function(ev){ ev.preventDefault(); d.classList.add("over"); });
+  });
+  ["dragleave","drop"].forEach(function(e){
+    d.addEventListener(e, function(ev){ ev.preventDefault(); d.classList.remove("over"); });
+  });
+  d.addEventListener("drop", function(ev){
+    if(ev.dataTransfer && ev.dataTransfer.files) importar(ev.dataTransfer.files);
+  });
+}
+
+async function importar(files){
+  var arr = Array.prototype.slice.call(files || []);
+  if(!arr.length) return;
+  $("res").innerHTML = '<div class="card"><h3>Lendo '+arr.length+' arquivo(s)…</h3></div>';
+
+  /* 1. ler os XMLs */
+  var lidas = [], falhas = [], vistas = {};
+  for(var i=0; i<arr.length; i++){
+    var texto;
+    try { texto = await arr[i].text(); }
+    catch(e){ falhas.push({ arq:arr[i].name, motivo:"não consegui abrir o arquivo" }); continue; }
+    var nf = lerNFe(texto, arr[i].name);
+    if(nf.erro){ falhas.push({ arq:arr[i].name, motivo:nf.erro }); continue; }
+    if(vistas[nf.chave]){ continue; }
+    vistas[nf.chave] = 1;
+    lidas.push(nf);
+  }
+  if(!lidas.length){
+    return $("res").innerHTML = cartaoFalhas(falhas, 0, 0);
+  }
+
+  /* 2. emitentes conhecidos */
+  var re = await sb.from("emitentes").select("*");
+  if(re.error) return $("res").innerHTML = erroCartao(re.error.message);
+  var emitMap = {}, distribuidores = [];
+  (re.data||[]).forEach(function(e){
+    emitMap[e.cnpj] = e;
+    if(e.distribuidor) distribuidores.push(e.cnpj);
+  });
+  var semEmitente = {};
+  lidas = lidas.filter(function(nf){
+    if(!emitMap[nf.emitente_cnpj]){
+      semEmitente[nf.emitente_cnpj] = nf.emitente_nome;
+      return false;
+    }
+    return true;
+  });
+  if(!lidas.length){
+    return $("res").innerHTML = cartaoEmitente(semEmitente);
+  }
+
+  /* 3. notas que já existem */
+  var chaves = lidas.map(function(n){ return n.chave; });
+  var rx = await sb.from("nf_venda").select("chave").in("chave", chaves);
+  if(rx.error) return $("res").innerHTML = erroCartao(rx.error.message);
+  var jaTem = {};
+  (rx.data||[]).forEach(function(x){ jaTem[x.chave] = 1; });
+  var novas = lidas.filter(function(n){ return !jaTem[n.chave]; });
+  var repetidas = lidas.length - novas.length;
+
+  if(!novas.length){
+    return $("res").innerHTML =
+      '<div class="card" style="--u:#B8862B"><h3>Nada novo para gravar</h3>'+
+      '<p>As '+repetidas+' nota(s) enviada(s) já estavam importadas. Nenhum valor foi duplicado.</p></div>'+
+      cartaoFalhas(falhas, 0, repetidas);
+  }
+
+  /* 4. clientes */
+  var porDoc = {};
+  novas.forEach(function(n){
+    if(!n.dest_documento) return;
+    porDoc[n.dest_documento] = {
+      documento: n.dest_documento, tipo_doc: n.dest_tipo,
+      razao_social: n.dest_nome, ie: n.dest_ie,
+      logradouro: n.dest_logradouro, numero: n.dest_numero, bairro: n.dest_bairro,
+      municipio: n.dest_municipio, uf: n.dest_uf, cep: n.dest_cep,
+      criado_por: ST.email
+    };
+  });
+  var listaCli = Object.keys(porDoc).map(function(k){ return porDoc[k]; });
+  if(listaCli.length){
+    var rc = await sb.from("clientes").upsert(listaCli, { onConflict:"documento", ignoreDuplicates:true });
+    if(rc.error) return $("res").innerHTML = erroCartao(rc.error.message);
+  }
+  var rcl = await sb.from("clientes").select("id,documento").in("documento", Object.keys(porDoc));
+  if(rcl.error) return $("res").innerHTML = erroCartao(rcl.error.message);
+  var cliId = {};
+  (rcl.data||[]).forEach(function(c){ cliId[c.documento] = c.id; });
+
+  /* 5. de-para de produtos */
+  var rd = await sb.from("depara_sku").select("codigo,produto_acabado_id");
+  var skuDe = {};
+  (rd.data||[]).forEach(function(d){ if(d.produto_acabado_id) skuDe[String(d.codigo)] = d.produto_acabado_id; });
+
+  /* 6. gravar notas */
+  var linhasNota = novas.map(function(n){
+    var em = emitMap[n.emitente_cnpj];
+    var todosBonif = n.itens.every(function(i){ return i.bonificacao; });
+    var classif = "venda";
+    if(todosBonif) classif = "bonificacao";
+    else if(em.proprio && distribuidores.indexOf(n.dest_documento) >= 0) classif = "sell_in";
+    return {
+      chave:n.chave, emitente_cnpj:n.emitente_cnpj, numero:n.numero, serie:n.serie,
+      emissao:n.emissao, dh_emissao:n.dh_emissao, nat_op:n.nat_op,
+      tp_nf:n.tp_nf, fin_nfe:n.fin_nfe,
+      cliente_id: cliId[n.dest_documento] || null,
+      dest_documento:n.dest_documento, dest_nome:n.dest_nome,
+      dest_municipio:n.dest_municipio, dest_uf:n.dest_uf,
+      v_prod:n.v_prod, v_desc:n.v_desc, v_frete:n.v_frete, v_outro:n.v_outro,
+      v_ipi:n.v_ipi, v_st:n.v_st, v_nf:n.v_nf,
+      pedido_numero:n.pedido_numero, classificacao:classif,
+      arquivo:n.arquivo, criado_por:ST.email
+    };
+  });
+  var rn = await sb.from("nf_venda").insert(linhasNota).select("id,chave");
+  if(rn.error) return $("res").innerHTML = erroCartao(rn.error.message);
+  var idPorChave = {};
+  (rn.data||[]).forEach(function(x){ idPorChave[x.chave] = x.id; });
+
+  /* 7. gravar itens */
+  var linhasItem = [], naoMapeados = {};
+  novas.forEach(function(n){
+    var nfId = idPorChave[n.chave];
+    if(!nfId) return;
+    n.itens.forEach(function(i){
+      var pa = skuDe[String(i.codigo)] || null;
+      if(!pa){
+        if(!naoMapeados[i.codigo]) naoMapeados[i.codigo] = { codigo:i.codigo, descricao:i.descricao, qtd:0, valor:0 };
+        naoMapeados[i.codigo].qtd += i.qtd;
+        naoMapeados[i.codigo].valor += (i.v_prod - i.v_desc);
+      }
+      linhasItem.push({
+        nf_id:nfId, n_item:i.n_item, codigo:i.codigo, descricao:i.descricao,
+        produto_acabado_id:pa, cfop:i.cfop, ncm:i.ncm, unidade:i.unidade,
+        qtd:i.qtd, v_un:i.v_un, v_prod:i.v_prod, v_desc:i.v_desc,
+        bonificacao:i.bonificacao
+      });
+    });
+  });
+  for(var k=0; k<linhasItem.length; k+=400){
+    var ri = await sb.from("nf_venda_item").insert(linhasItem.slice(k, k+400));
+    if(ri.error) return $("res").innerHTML = erroCartao(ri.error.message);
+  }
+
+  /* 8. registrar a importação */
+  var somaProd = novas.reduce(function(a,n){ return a + n.v_prod; }, 0);
+  var somaDesc = novas.reduce(function(a,n){ return a + n.v_desc; }, 0);
+  var listaNM = Object.keys(naoMapeados).map(function(k){ return naoMapeados[k]; });
+  await sb.from("importacoes").insert({
+    tipo:"nfe", arquivos:arr.length, lidos:lidas.length,
+    gravados:novas.length, ignorados:repetidas,
+    nao_mapeados: listaNM,
+    resultado: { itens:linhasItem.length, v_prod:somaProd, v_desc:somaDesc, falhas:falhas },
+    criado_por: ST.email
+  });
+
+  /* 9. resultado na tela */
+  var h = '<div class="card" style="--u:#3E7C45"><h3>'+novas.length+' nota(s) importada(s)</h3>'+
+    '<div class="conta"><span class="p">R$ '+brl(somaProd)+'</span> mercadoria '+
+    '&nbsp;−&nbsp; <span class="m">R$ '+brl(somaDesc)+'</span> desconto '+
+    '&nbsp;=&nbsp; <b>R$ '+brl(somaProd-somaDesc)+'</b> líquido</div>'+
+    '<p style="font-size:13.5px;color:#7A6A57">'+linhasItem.length+' itens · '+
+    Object.keys(porDoc).length+' cliente(s) no arquivo'+
+    (repetidas ? ' · '+repetidas+' nota(s) já existiam e foram ignoradas' : '')+'</p>'+
+    '<button class="b" style="margin-top:6px" onclick="ir(\'inicio\')">Ver o resultado</button></div>';
+
+  if(listaNM.length){
+    var somaNM = listaNM.reduce(function(a,x){ return a + x.valor; }, 0);
+    h += '<div class="card" style="--u:#D9772B"><h3>'+listaNM.length+
+      ' código(s) sem cadastro — R$ '+brl(somaNM)+'</h3>'+
+      '<p>As notas foram gravadas por inteiro. Estes itens só não entram nas análises por produto até serem ligados a um SKU.</p>'+
+      '<div class="tw" style="margin-top:8px"><table><thead><tr><th>Código</th><th>Produto</th>'+
+      '<th style="text-align:right">Un</th><th style="text-align:right">Líquido</th></tr></thead><tbody>'+
+      listaNM.sort(function(a,b){ return b.valor-a.valor; }).map(function(x){
+        return '<tr><td class="mono">'+esc(x.codigo)+'</td><td>'+esc(x.descricao)+'</td>'+
+          '<td class="n">'+inte(x.qtd)+'</td><td class="n">'+brl(x.valor)+'</td></tr>';
+      }).join("")+'</tbody></table></div>'+
+      '<button class="s" style="margin-top:10px" onclick="ir(\'pendencias\')">Cadastrar agora</button></div>';
+  }
+  if(Object.keys(semEmitente).length) h += cartaoEmitente(semEmitente);
+  h += cartaoFalhas(falhas, novas.length, repetidas);
+  $("res").innerHTML = h;
+  msg(novas.length+" nota(s) importada(s)");
+}
+
+function erroCartao(m){
+  return '<div class="card" style="--u:#C63A3A"><h3>O banco recusou a gravação</h3>'+
+    '<p class="mono" style="font-size:12.5px">'+esc(m)+'</p>'+
+    '<p>Nada foi gravado pela metade — pode tentar de novo com os mesmos arquivos.</p></div>';
+}
+function cartaoFalhas(falhas){
+  if(!falhas || !falhas.length) return "";
+  return '<div class="card" style="--u:#C63A3A"><h3>'+falhas.length+' arquivo(s) não foram lidos</h3>'+
+    falhas.map(function(f){
+      return '<div style="font-size:13.5px;padding:3px 0"><b>'+esc(f.arq)+'</b> — '+esc(f.motivo)+'</div>';
+    }).join("")+'</div>';
+}
+function cartaoEmitente(mapa){
+  var cnpjs = Object.keys(mapa);
+  if(!cnpjs.length) return "";
+  return '<div class="card" style="--u:#C63A3A"><h3>Emitente não cadastrado</h3>'+
+    '<p>Estas notas foram deixadas de fora porque o sistema ainda não sabe se o emitente é a fábrica ou um distribuidor — e essa diferença decide se o valor entra no faturamento ou não.</p>'+
+    cnpjs.map(function(c){
+      return '<div class="mono" style="font-size:13px;padding:3px 0">'+esc(c)+' · '+esc(mapa[c]||"")+'</div>';
+    }).join("")+
+    '<p style="margin-top:8px">Peça o cadastro desse emitente antes de importar de novo.</p></div>';
+}
+
+/* ================= pendências ================= */
+async function telaPendencias(){
+  var r = await sb.from("nf_venda_item")
+    .select("codigo,descricao,qtd,v_liquido").is("produto_acabado_id", null);
+  if(r.error) return pinta('<div class="card" style="--u:#C63A3A">'+esc(r.error.message)+'</div>');
+  var agg = {};
+  (r.data||[]).forEach(function(x){
+    var k = String(x.codigo);
+    if(!agg[k]) agg[k] = { codigo:k, descricao:x.descricao, qtd:0, valor:0, linhas:0 };
+    agg[k].qtd += Number(x.qtd)||0;
+    agg[k].valor += Number(x.v_liquido)||0;
+    agg[k].linhas++;
+  });
+  var L = Object.keys(agg).map(function(k){ return agg[k]; })
+    .sort(function(a,b){ return b.valor - a.valor; });
+
+  if(!L.length){
+    return pinta('<h2>Pendências</h2>'+
+      '<div class="card" style="--u:#3E7C45"><h3>Nada pendente</h3>'+
+      '<p>Todo item faturado está ligado a um produto do cadastro.</p></div>');
+  }
+
+  var rs = await sb.from("produto_acabado").select("id,nome,linha")
+    .eq("ativo", true).order("linha").order("nome");
+  ST.cache.skus = rs.data || [];
+  var total = L.reduce(function(a,x){ return a + x.valor; }, 0);
+
+  var opts = '<option value="">— escolher produto —</option>' +
+    ST.cache.skus.map(function(s){
+      return '<option value="'+s.id+'">'+esc(s.linha+" · "+s.nome)+'</option>';
+    }).join("");
+
+  pinta('<h2>Pendências de cadastro</h2>'+
+    '<p class="sub">'+L.length+' código(s) faturado(s) que ainda não apontam para um produto</p>'+
+    '<div class="kpis"><div class="kpi ruim"><div class="r">Fora das análises</div>'+
+      '<div class="v">R$ '+brl(total)+'</div><div class="n">em '+L.length+' códigos</div></div></div>'+
+    L.map(function(x, idx){
+      return '<div class="card" style="--u:#D9772B">'+
+        '<h3><span class="mono">'+esc(x.codigo)+'</span> · '+esc(x.descricao||"sem descrição")+'</h3>'+
+        '<div class="conta">'+inte(x.qtd)+' un &nbsp;·&nbsp; <span class="m">R$ '+brl(x.valor)+
+        '</span> fora das análises &nbsp;·&nbsp; '+x.linhas+' linha(s) de nota</div>'+
+        '<label for="s'+idx+'">Ligar a um produto já cadastrado</label>'+
+        '<select id="s'+idx+'">'+opts+'</select>'+
+        '<button class="b" style="margin-top:10px" onclick="ligarCodigo(\''+
+          esc(x.codigo)+'\', \'s'+idx+'\', \''+esc(x.descricao||"")+'\')">Ligar código</button>'+
+      '</div>';
+    }).join("")+
+    '<div class="card" style="--u:#7A6A57"><h3>E se o produto não existir na lista?</h3>'+
+    '<p>Alguns desses códigos são produtos que nunca foram cadastrados — Pistache 100%, ganaches La Ben, balde de 3 kg. '+
+    'Criar SKU novo é decisão de cadastro e afeta receita e MRP, então isso é feito junto com a fábrica, não por aqui.</p></div>');
+}
+
+async function ligarCodigo(codigo, selectId, descricao){
+  var sel = $(selectId);
+  var pa = sel ? sel.value : "";
+  if(!pa) return msg("Escolha o produto antes de ligar", true);
+
+  var rex = await sb.from("depara_sku").select("id").eq("codigo", codigo);
+  if(rex.error) return msg("Não consegui conferir o de-para: "+rex.error.message, true);
+
+  if(rex.data && rex.data.length){
+    var ru = await sb.from("depara_sku").update({ produto_acabado_id: pa }).eq("codigo", codigo);
+    if(ru.error) return msg("Não deu para atualizar: "+ru.error.message, true);
+  } else {
+    var ri = await sb.from("depara_sku").insert({
+      codigo: codigo, plataforma: "Varejo", nome_anuncio: descricao || null,
+      produto_acabado_id: pa, criado_por: ST.email
+    });
+    if(ri.error) return msg("Não deu para gravar: "+ri.error.message, true);
+  }
+
+  var rr = await sb.from("nf_venda_item").update({ produto_acabado_id: pa })
+    .eq("codigo", codigo).is("produto_acabado_id", null);
+  if(rr.error) return msg("Código ligado, mas as notas antigas não foram atualizadas: "+rr.error.message, true);
+
+  msg("Código "+codigo+" ligado ao produto");
+  telaPendencias();
+}
+
+/* ================= partida ================= */
+(async function(){
+  if(typeof supabase === "undefined" || !supabase.createClient){
+    $("app").innerHTML = '<div class="login"><div class="cx">'+
+      '<h1>Sem conexão</h1><p>Não consegui carregar a biblioteca do banco. '+
+      'Confira a internet e recarregue a página.</p></div></div>';
+    return;
+  }
+  sb = supabase.createClient(URL_SB, KEY_SB);
+  var s = await sb.auth.getSession();
+  if(s.data && s.data.session){
+    ST.email = s.data.session.user.email || "";
+    ir("inicio");
+  } else {
+    telaLogin();
+  }
+})();
+</script>
+</body>
+</html>
