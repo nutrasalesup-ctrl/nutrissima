@@ -359,7 +359,7 @@ async function tPainel(){
     sb.from('itens').select('nome,categoria,saldo_atual,estoque_minimo'),
     sb.from('compras').select('id,status,data_prevista_entrega').in('status',['pendente','aguardando_pagamento','liberado']),
     sb.from('estoque_balde').select('quantidade_kg,produtos(nome)').gt('quantidade_kg',0),
-    sb.from('produto_acabado').select('nome,linha,saldo_potes,ativo'),
+    sb.from('produto_acabado').select('nome,linha,saldo_potes,estoque_minimo,ativo'),
     sb.from('atividades').select('*').order('criado_em',{ascending:false}).limit(15),
     sb.rpc('fn_alerta_entregas')
   ]);
@@ -780,6 +780,11 @@ async function tProg(){
   ${trilha('Programação')}${topo('Programação','Moinhos 1 e 2 em paralelo')}
   <main>
     ${(alertas.data||[]).length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7;margin-bottom:12px"><b style="color:var(--morango)">⚠️ Insumo chega depois da produção</b>${alertas.data.map(al=>`<p style="font-size:14px;margin-top:6px"><b>${al.item}</b> · produção de ${brData(al.data_producao)}: precisa <b class="mono">${fmt(al.necessario_ate)}</b> acumulado, terá <b class="mono">${fmt(al.disponivel_ate)}</b> — falta <b class="mono" style="color:var(--morango)">${fmt(al.falta)} ${al.unidade||''}</b>${al.proxima_entrega?` · próxima entrega ${brData(al.proxima_entrega)}`:' · sem pedido a caminho'}</p>`).join('')}<small style="color:#7A6A57">solução: remarcar a produção (🗓️ no cartão) ou a entrega do pedido (✏️ em Compras)</small></div>`:''}
+    ${(() => {
+      const criticosAbaixoMinimo = (pa.data || []).filter(p => p.estoque_minimo && Number(p.saldo_potes) < Number(p.estoque_minimo) && p.ativo);
+      if (!criticosAbaixoMinimo.length) return '';
+      return `<div class="card" style="border-color:#FFB9B9;background:#FFFBFB;margin-bottom:12px;border-left:7px solid var(--morango)"><b style="color:var(--morango)">🔴 PRODUTOS ABAIXO DO ESTOQUE MÍNIMO — PROGRAMAR PRODUÇÃO</b>${criticosAbaixoMinimo.map(p=>`<p style="font-size:13px;margin-top:6px;font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums"><b>${p.nome}</b> · saldo ${fmt(Number(p.saldo_potes))} potes · mínimo ${fmt(Number(p.estoque_minimo))} · <span style="color:var(--morango)">faltam ${fmt(Number(p.estoque_minimo) - Number(p.saldo_potes))} potes</span></p>`).join('')}<small style="color:#7A6A57">incluir no formulário "＋ Programar produto" abaixo</small></div>`;
+    })()}
     <p style="font-size:11px;font-weight:800;color:#8A7A64;letter-spacing:.04em;text-transform:uppercase;margin:0 0 6px 2px">pesar: hoje + próx. 2 dias · demais colunas: tudo em aberto</p>
     ${kanHTML}
     <div class="calweek">
