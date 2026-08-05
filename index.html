@@ -305,7 +305,7 @@ async function login(){
 }
 
 /* ================= NAVEGAÇÃO ================= */
-const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao};
+const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao,treinamento:tTreinamento};
 function tela(n,arg){TELAS[n](arg)}
 
 /* ================= INÍCIO ================= */
@@ -330,6 +330,7 @@ async function tInicio(){
       <button onclick="tela('estoque')"><span class="ico" style="background:#E4EDF2">📋</span><span><b>Conferir estoque</b><small>Matéria-prima, balde e potes</small></span></button>
       <button onclick="tela('metas')"><span class="ico" style="background:#F6ECD6">🎯</span><span><b>Metas do dia</b><small>Definir o quadro (PIN do gestor)</small></span></button>
       <button onclick="tela('tv')"><span class="ico" style="background:#33200F;color:#fff">📺</span><span><b>Modo TV</b><small>Quadro do dia em tela cheia</small></span></button>
+      <button onclick="tela('treinamento')"><span class="ico" style="background:#F3EAD8">📚</span><span><b>Treinamento</b><small>Procedimentos operacionais padrão (POP)</small></span></button>
     </div>
     <button class="btnSec" style="margin-top:20px" onclick="sb.auth.signOut().then(boot)">Sair da conta</button>
     <p style="text-align:center;margin-top:16px;font-size:12px;color:#7A6A57">versão <b class="mono">${APP_VERSAO}</b> · <a href="#" onclick="location.reload(true);return false" style="color:#7A6A57">forçar atualização</a></p>
@@ -429,6 +430,23 @@ async function tPainel(){
 }
 
 /* ================= ESTOQUE ================= */
+async function tTreinamento(){
+  document.getElementById('app').innerHTML=trilha('')+topo('Treinamento','carregando…')+'<main><div class="center">Carregando…</div></main>';
+  const {data,error}=await sb.from('pop_documentos').select('id,titulo,categoria,link,versao,atualizado_em').eq('ativo',true).order('categoria').order('titulo');
+  if(error){document.getElementById('app').innerHTML=trilha('')+topo('Treinamento','')+'<main><div class="center">'+error.message+'</div></main>';return}
+  const grupos={};
+  (data||[]).forEach(p=>{(grupos[p.categoria]=grupos[p.categoria]||[]).push(p)});
+  const cats=Object.keys(grupos).sort();
+  document.getElementById('app').innerHTML=`
+  ${trilha('')}${topo('Treinamento','procedimentos operacionais padrão (POP)')}
+  <main>
+    ${cats.length===0?'<div class="card"><p>Nenhum POP cadastrado ainda.</p></div>':cats.map(c=>`
+      <p class="pergunta">${c}</p>
+      <div class="acoes">
+        ${grupos[c].map(p=>`<button onclick="window.open('${p.link}','_blank')"><span class="ico" style="background:#F3EAD8">📄</span><span><b>${p.titulo}</b><small>${p.versao?('v'+p.versao+' · '):''}atualizado em ${new Date(p.atualizado_em).toLocaleDateString('pt-BR')}</small></span></button>`).join('')}
+      </div>`).join('')}
+  </main>`;
+}
 async function tEstoque(){
   document.getElementById('app').innerHTML=trilha('Estoque')+topo('Estoque','carregando…')+'<main><div class="center">Carregando…</div></main>';
   const [itens,pa,balde]=await Promise.all([
