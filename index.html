@@ -305,7 +305,105 @@ async function login(){
 }
 
 /* ================= NAVEGAÇÃO ================= */
-const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao,treinamento:tTreinamento};
+// ===== Separação de pedidos (varejo) =====
+async function tSeparacao(arg){
+  if(!EST.sep)EST.sep={pedido:null,itens:{},semBaixa:{}};
+  if(arg)EST.sep.pedido=arg;
+  document.getElementById('app').innerHTML=trilha('Separar')+topo('Separar pedido','check no que já foi pra caixa')+'<main><div class="center">Carregando…</div></main>';
+  const {data:lin,error}=await sb.from('vendas_pedidos')
+    .select('id,pedido_numero,cliente,cidade,codigo,produto_nome,qtd,qtd_separada,entrega,produto_acabado_id,produto_acabado(nome,saldo_potes)')
+    .eq('canal','Varejo').eq('status','aberto').order('entrega');
+  if(error){document.getElementById('app').innerHTML=trilha('Separar')+topo('Separar pedido','')+'<main><div class="card">'+error.message+'</div></main>';return}
+  EST.cache.sepLinhas=lin||[];
+  const hoje=hojeLocal();
+  const peds={};
+  (lin||[]).forEach(l=>{
+    const k=l.pedido_numero||'(sem pedido)';
+    if(!peds[k])peds[k]={pedido:k,cliente:l.cliente,cidade:l.cidade,entrega:l.entrega,linhas:[],un:0,sep:0};
+    peds[k].linhas.push(l);peds[k].un+=Number(l.qtd||0);peds[k].sep+=Number(l.qtd_separada||0);
+    if(l.entrega&&(!peds[k].entrega||l.entrega<peds[k].entrega))peds[k].entrega=l.entrega;
+  });
+  const lista=Object.values(peds).sort((a,b)=>String(a.entrega||'9999').localeCompare(String(b.entrega||'9999')));
+  const diasAte=d=>d?Math.round((new Date(d+'T00:00:00')-new Date(hoje+'T00:00:00'))/86400000):null;
+  const corDe=d=>{const n=diasAte(d);if(n===null)return'#7A6A57';if(n<0)return'var(--morango)';if(n<=2)return'var(--laranja)';if(n<=5)return'var(--mel)';return'var(--pistache)'};
+  const rotulo=d=>{const n=diasAte(d);if(n===null)return'sem prazo';if(n<0)return'vencido há '+(-n)+'d';if(n===0)return'entrega hoje';if(n===1)return'entrega amanhã';return'em '+n+' dias'};
+
+  const p=lista.find(x=>x.pedido===EST.sep.pedido);
+  let corpo;
+  if(!p){
+    corpo='<div class="card" style="margin-top:0"><span class="step-label">① toque no pedido que você vai separar</span><small style="color:#7A6A57">ordenados pela entrega mais apertada</small></div>'+
+      (lista.length?lista.map(x=>{
+        const falta=x.un-x.sep;
+        const estado=x.sep===0?'não começou':(falta<=0?'✅ tudo separado':'⏳ falta '+fmt(falta,0)+' un');
+        return '<div class="card" style="border-left:7px solid '+corDe(x.entrega)+';cursor:pointer" onclick="tela(\'separacao\',\''+x.pedido+'\')">'+
+          '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'+
+          '<b style="font-size:17px">'+(x.cliente||'—')+'</b>'+
+          '<span class="mono" style="color:'+corDe(x.entrega)+';font-weight:700;font-size:13px">'+rotulo(x.entrega)+'</span></div>'+
+          '<small style="color:#7A6A57">pedido <span class="mono">'+x.pedido+'</span>'+(x.cidade?' · '+x.cidade:'')+'</small>'+
+          '<p style="margin:8px 0 0;font-size:13.5px">'+x.linhas.length+' itens · <span class="mono">'+fmt(x.un,0)+'</span> un · '+estado+'</p></div>';
+      }).join(''):'<div class="card"><div class="center">Nenhum pedido em aberto.</div></div>');
+  }else{
+    const cards=p.linhas.map(l=>{
+      const saldo=Number(l.produto_acabado?.saldo_potes||0);
+      const pedida=Number(l.qtd||0), ja=Number(l.qtd_separada||0);
+      const atual=(EST.sep.itens[l.id]!==undefined)?EST.sep.itens[l.id]:ja;
+      const sb2=!!EST.sep.semBaixa[l.id];
+      const teto=sb2?pedida:Math.min(pedida,ja+saldo);
+      const cheio=atual>=pedida, nada=atual<=0;
+      const cor=cheio?'var(--pistache)':(nada?'var(--linha)':'var(--mel)');
+      const nome=l.produto_acabado?.nome||l.produto_nome||l.codigo;
+      return '<div class="card" style="border-left:7px solid '+cor+'">'+
+        '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'+
+        '<b style="font-size:16px">'+nome+'</b>'+
+        '<button class="'+(cheio?'btnP':'btnSec')+'" style="min-height:44px;min-width:56px;font-size:20px'+(cheio?';background:var(--pistache);border-color:var(--pistache)':'')+'" onclick="sepCheck(\''+l.id+'\','+pedida+','+teto+')">'+(cheio?'✓':'○')+'</button></div>'+
+        '<p style="margin:6px 0 0;font-size:13px;color:#7A6A57">pedidas <span class="mono">'+fmt(pedida,0)+'</span> · em estoque <span class="mono">'+fmt(saldo,0)+'</span>'+(ja>0?' · já separadas <span class="mono">'+fmt(ja,0)+'</span>':'')+'</p>'+
+        '<div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:10px">'+
+        '<button class="btnSec" style="min-width:52px;min-height:48px" onclick="sepAdd(\''+l.id+'\',-1,'+pedida+','+teto+')">−1</button>'+
+        '<input class="campoG" style="max-width:110px;text-align:center;font-size:26px;font-weight:900" inputmode="numeric" value="'+atual+'" onchange="sepSet(\''+l.id+'\',this.value,'+pedida+','+teto+')">'+
+        '<button class="btnSec" style="min-width:52px;min-height:48px" onclick="sepAdd(\''+l.id+'\',1,'+pedida+','+teto+')">+1</button></div>'+
+        '<p style="text-align:center;margin:8px 0 0;font-size:12.5px;color:#7A6A57">'+
+        '<span class="mono">'+fmt(pedida,0)+'</span> pedidas − <span class="mono">'+fmt(atual,0)+'</span> separadas = <span class="mono" style="color:'+(pedida-atual>0?'var(--morango)':'var(--pistache)')+'">'+fmt(pedida-atual,0)+'</span> a separar</p>'+
+        (!sb2&&teto<pedida?'<p style="text-align:center;color:var(--morango);font-size:12.5px;margin:6px 0 0">só há '+fmt(saldo,0)+' em estoque</p>':'')+
+        '<p style="text-align:center;margin:8px 0 0"><a href="#" onclick="sepSemBaixa(\''+l.id+'\');return false" style="color:#7A6A57;font-size:12px">'+(sb2?'☑':'☐')+' já separei antes (só marcar, sem tirar do estoque)</a></p>'+
+      '</div>';
+    }).join('');
+    const totalSep=p.linhas.reduce((s,l)=>s+((EST.sep.itens[l.id]!==undefined)?EST.sep.itens[l.id]:Number(l.qtd_separada||0)),0);
+    corpo='<div class="card" style="margin-top:0;border-left:7px solid '+corDe(p.entrega)+'">'+
+      '<b style="font-size:18px">'+(p.cliente||'—')+'</b><br><small style="color:#7A6A57">pedido <span class="mono">'+p.pedido+'</span>'+(p.cidade?' · '+p.cidade:'')+' · <span style="color:'+corDe(p.entrega)+';font-weight:700">'+rotulo(p.entrega)+'</span></small>'+
+      '<p style="margin:10px 0 0;font-size:13px"><span class="step-label" style="margin:0">② confira cada item e toque no ✓</span></p></div>'+
+      cards+
+      '<div class="card" style="text-align:center"><p style="margin:0 0 10px;font-size:13.5px">total do pedido: <span class="mono">'+fmt(p.un,0)+'</span> un · marcadas agora: <span class="mono" style="font-size:20px;font-weight:900">'+fmt(totalSep,0)+'</span></p>'+
+      '<button class="btnP" style="min-height:56px;font-size:18px;width:100%;background:var(--morango);border-color:var(--morango)" onclick="sepConfirmar()">📤 Confirmar separação</button></div>';
+  }
+  document.getElementById('app').innerHTML=trilha('Separar')+topo('Separar pedido','check no que já foi pra caixa')+
+    '<main>'+(p?'<button class="btnSec" onclick="sepVoltar()">← trocar pedido</button>':'')+corpo+'</main>';
+}
+function sepLim(v,pedida,teto){return Math.max(0,Math.min(Math.round(v)||0,Math.min(pedida,teto)))}
+function sepCheck(id,pedida,teto){const a=EST.sep.itens[id];const cur=(a!==undefined)?a:0;EST.sep.itens[id]=(cur>=Math.min(pedida,teto))?0:Math.min(pedida,teto);tela('separacao')}
+function sepAdd(id,n,pedida,teto){const l=EST.cache.sepLinhas.find(x=>x.id===id);const base=(EST.sep.itens[id]!==undefined)?EST.sep.itens[id]:Number(l?.qtd_separada||0);EST.sep.itens[id]=sepLim(base+n,pedida,teto);tela('separacao')}
+function sepSet(id,v,pedida,teto){EST.sep.itens[id]=sepLim(parseNumBR(v),pedida,teto);tela('separacao')}
+function sepSemBaixa(id){EST.sep.semBaixa[id]=!EST.sep.semBaixa[id];tela('separacao')}
+function sepVoltar(){EST.sep={pedido:null,itens:{},semBaixa:{}};tela('separacao')}
+async function sepConfirmar(){
+  if(precisaOperador())return;
+  const ped=EST.sep.pedido;if(!ped)return;
+  const linhas=EST.cache.sepLinhas.filter(l=>(l.pedido_numero||'(sem pedido)')===ped);
+  const itens=[];
+  linhas.forEach(l=>{
+    const ja=Number(l.qtd_separada||0);
+    const novo=(EST.sep.itens[l.id]!==undefined)?EST.sep.itens[l.id]:ja;
+    if(novo!==ja)itens.push({linha_id:l.id,qtd:novo,sem_baixa:!!EST.sep.semBaixa[l.id]});
+  });
+  if(!itens.length)return msg('Nada mudou neste pedido',true);
+  const {data,error}=await sb.rpc('separar_pedido',{p_pedido:ped,p_canal:'Varejo',p_itens:itens,p_responsavel:EST.operador});
+  if(error)return msg(error.message,true);
+  const r=data||{};
+  msg('✅ Pedido '+ped+' — '+(r.linhas||0)+' itens · '+fmt(r.potes||0,0)+' potes fora do estoque'+(r.marcadas?' · '+r.marcadas+' só marcadas':''));
+  EST.sep={pedido:null,itens:{},semBaixa:{}};
+  tela('separacao');
+}
+
+const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao,treinamento:tTreinamento,separacao:tSeparacao};
 function tela(n,arg){TELAS[n](arg)}
 
 /* ================= INÍCIO ================= */
@@ -1910,7 +2008,7 @@ async function tBaixa(){
   document.getElementById('app').innerHTML=`
   ${trilha('Baixa')}${topo('Produtos separados','tirou do estoque pra separar/despachar? anote aqui')}
   <main>
-    ${p?`<button class="btnSec" onclick="bxVoltar()">← trocar produto</button>`:''}
+    ${p?`<button class="btnSec" onclick="bxVoltar()">← trocar produto</button>`:`<div class="card" style="margin-top:0;border-left:7px solid var(--pistache)"><b>Separando um pedido do varejo?</b><p style="margin:6px 0 10px;font-size:13px;color:#7A6A57">Use a tela de pedido: ela mostra o que cada cliente pediu, marca o que já foi pra caixa e deixa o resto pendente.</p><button class="btnP" style="min-height:52px;width:100%" onclick="tela('separacao')">📦 Separar por pedido</button></div>`}
     ${corpo}
   </main>`;
 }
