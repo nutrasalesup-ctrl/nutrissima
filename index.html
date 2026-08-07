@@ -250,7 +250,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-08-06-separacao';
+const APP_VERSAO='2026-08-06b-reservado';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -548,12 +548,14 @@ async function tTreinamento(){
 }
 async function tEstoque(){
   document.getElementById('app').innerHTML=trilha('Estoque')+topo('Estoque','carregando…')+'<main><div class="center">Carregando…</div></main>';
-  const [itens,pa,balde]=await Promise.all([
+  const [itens,pa,balde,sepp]=await Promise.all([
     sb.from('itens').select('id,nome,categoria,unidade,saldo_atual,estoque_minimo,variacao').order('ordem'),
     sb.from('produto_acabado').select('id,nome,linha,saldo_potes').eq('ativo',true).order('linha').order('nome'),
-    sb.from('estoque_balde').select('produto_id,quantidade_kg,produtos(nome)').order('quantidade_kg',{ascending:false})
+    sb.from('estoque_balde').select('produto_id,quantidade_kg,produtos(nome)').order('quantidade_kg',{ascending:false}),
+    sb.from('vendas_pedidos').select('produto_acabado_id,qtd_separada').eq('status','aberto').gt('qtd_separada',0)
   ]);
   EST.cache.itens=itens.data||[];EST.cache.paEst=pa.data||[];EST.cache.baldeEst=balde.data||[];
+  EST.cache.sepPa={};(sepp.data||[]).forEach(r=>{if(r.produto_acabado_id)EST.cache.sepPa[r.produto_acabado_id]=(EST.cache.sepPa[r.produto_acabado_id]||0)+Number(r.qtd_separada||0)});
   document.getElementById('app').innerHTML=`
   ${trilha('Estoque')}${topo('Estoque','matéria-prima · baldes · potes')}
   <main>
@@ -596,9 +598,10 @@ function classificaEmbalagem(nome){
   if(n.startsWith('rótulo')||n.startsWith('rotulo'))return 'rotulo';
   return 'outro';
 }
-function linhaEst(tipo,id,nome,saldo,un,baixo,variacao){
+function linhaEst(tipo,id,nome,saldo,un,baixo,variacao,sep){
   const varTxt=variacao?` <span style="font-size:12px;color:#7A6A57;font-weight:normal">(${variacao})</span>`:'';
-  return `<div class="item-row ${baixo?'baixo':''}"><span>${baixo?'⬇ ':''}${nome}${varTxt}</span>`+
+  const sepTxt=sep>0?`<br><small style="color:#7A6A57;font-size:11.5px">↳ ${fmt(sep,0)} já separadas, em caixa, aguardando faturamento (fora deste saldo)</small>`:'';
+  return `<div class="item-row ${baixo?'baixo':''}"><span>${baixo?'⬇ ':''}${nome}${varTxt}${sepTxt}</span>`+
     `<span style="display:flex;align-items:center;gap:10px"><span class="saldo mono">${fmt(saldo)} ${un}</span>`+
     `<button data-t="${tipo}" data-i="${id}" data-s="${saldo}" data-u="${un}" data-v="${variacao||''}" onclick="ajuste(this)" style="border:1.5px solid var(--linha);background:#fff;border-radius:10px;min-width:40px;min-height:38px;cursor:pointer;font-size:15px" title="Ajustar saldo e variação">✏️</button></span></div>`;
 }
@@ -676,7 +679,7 @@ function fEstoque(){
     html=L.map(p=>{
       const cab=p.linha!==linhaAtual?`<p class="pergunta" style="margin-top:14px">${p.linha||'Sem linha'}</p>`:'';
       linhaAtual=p.linha;
-      return cab+linhaEst('pa',p.id,p.nome,p.saldo_potes,'potes',false);
+      return cab+linhaEst('pa',p.id,p.nome,p.saldo_potes,'potes',false,'',(EST.cache.sepPa||{})[p.id]||0);
     }).join('');
   }else if(EST.fcat==='balde'){
     let L=EST.cache.baldeEst; if(q)L=L.filter(b=>b.produtos.nome.toLowerCase().includes(q));
@@ -1715,13 +1718,20 @@ async function importarVarejo(files){
 }
 async function tCarteira(){
   document.getElementById('app').innerHTML=topo('Carteira de pedidos','pedidos em aberto por prazo de entrega')+'<main><div class="center">Carregando…</div></main>';
-  const {data:dem,error:errD}=await sb.from('demanda_vendas')
-    .select('produto_acabado_id,qtd_potes,data_despacho,plataforma,pedido_numero,produto_acabado(nome,saldo_potes)')
-    .eq('status','aberto');
+  const [{data:dem,error:errD},{data:vp}]=await Promise.all([
+    sb.from('demanda_vendas')
+      .select('produto_acabado_id,qtd_potes,data_despacho,plataforma,pedido_numero,produto_acabado(nome,saldo_potes)')
+      .eq('status','aberto'),
+    sb.from('vendas_pedidos').select('pedido_numero,produto_acabado_id,qtd_separada')
+      .eq('status','aberto').gt('qtd_separada',0)
+  ]);
+  const mapSep={};(vp||[]).forEach(r=>{const k=(r.pedido_numero||'')+'|'+(r.produto_acabado_id||'');
+    mapSep[k]=(mapSep[k]||0)+Number(r.qtd_separada||0)});
   if(errD){document.getElementById('app').innerHTML=topo('Carteira de pedidos','erro')+'<main><div class="card"><p>'+errD.message+'</p></div></main>';return;}
   const linhas=(dem||[]).map(d=>({pid:d.produto_acabado_id,qtd:Number(d.qtd_potes)||0,
     dt:d.data_despacho||'9999-12-31',ped:d.pedido_numero||null,plat:d.plataforma||'',
-    nome:(d.produto_acabado||{}).nome||'—',saldo:Number((d.produto_acabado||{}).saldo_potes)||0}));
+    nome:(d.produto_acabado||{}).nome||'—',saldo:Number((d.produto_acabado||{}).saldo_potes)||0,
+    sep:Math.min(Number(d.qtd_potes)||0, mapSep[(d.pedido_numero||'')+'|'+(d.produto_acabado_id||'')]||0)}));
   const hj=hojeLocal();
   const dbr=s=>s&&s!=='9999-12-31'?new Date(s+'T12:00').toLocaleDateString('pt-BR'):'sem prazo';
   if(!linhas.length){
@@ -1730,15 +1740,18 @@ async function tCarteira(){
     '<button class="btnSec" style="margin-top:10px" onclick="tela(\'vendas\')">Ir para Vendas / Despacho</button></div></main>';return;}
   const disp={};linhas.forEach(l=>{if(!(l.pid in disp))disp[l.pid]=l.saldo;});
   linhas.slice().sort((a,b)=>a.dt<b.dt?-1:(a.dt>b.dt?1:String(a.ped||'').localeCompare(String(b.ped||''))))
-    .forEach(l=>{const a=Math.min(l.qtd,Math.max(0,disp[l.pid]||0));disp[l.pid]=(disp[l.pid]||0)-a;l.atend=a;l.falta=l.qtd-a;});
+    .forEach(l=>{const precisa=Math.max(0,l.qtd-l.sep);
+      const a=Math.min(precisa,Math.max(0,disp[l.pid]||0));disp[l.pid]=(disp[l.pid]||0)-a;
+      l.atend=l.sep+a;l.falta=l.qtd-l.atend;});
   const gr={};
   linhas.forEach(l=>{const k=l.ped?('p|'+l.ped):('s|'+l.plat);
-    if(!gr[k])gr[k]={ped:l.ped,plat:l.plat,dt:l.dt,itens:[],qtd:0,atend:0,falta:0};
-    const g=gr[k];g.itens.push(l);g.qtd+=l.qtd;g.atend+=l.atend;g.falta+=l.falta;if(l.dt<g.dt)g.dt=l.dt;});
+    if(!gr[k])gr[k]={ped:l.ped,plat:l.plat,dt:l.dt,itens:[],qtd:0,atend:0,falta:0,sep:0};
+    const g=gr[k];g.itens.push(l);g.qtd+=l.qtd;g.atend+=l.atend;g.falta+=l.falta;g.sep=(g.sep||0)+l.sep;if(l.dt<g.dt)g.dt=l.dt;});
   const lista=Object.values(gr).map(g=>{
     const dias=g.dt==='9999-12-31'?null:Math.round((new Date(g.dt+'T12:00')-new Date(hj+'T12:00'))/86400000);
     let rank,cor;
-    if(dias===null){rank=5;cor='#7A6A57';}
+    if((g.sep||0)>=g.qtd&&g.qtd>0){rank=0;cor='#7A6A57';}
+    else if(dias===null){rank=5;cor='#7A6A57';}
     else if(dias<0){rank=1;cor='#C63A3A';}
     else if(g.falta===0){rank=4;cor='#3E7C45';}
     else if(dias<=4){rank=2;cor='#D9772B';}
@@ -1771,8 +1784,10 @@ async function tCarteira(){
       '</div>'+
       '<div style="margin:10px 0;padding:8px 10px;background:#F7F2EA;border-radius:8px;font-size:12.5px" class="mono">'+
         '<b style="font-size:15px">'+fmt(g.qtd,0)+'</b> pedidas <span style="color:#7A6A57">−</span> '+
-        '<b style="font-size:15px;color:var(--pistache)">'+fmt(g.atend,0)+'</b> em estoque <span style="color:#7A6A57">=</span> '+
+        ((g.sep||0)>0?'<b style="font-size:15px;color:#7A6A57">'+fmt(g.sep,0)+'</b> já separadas <span style="color:#7A6A57">−</span> ':'')+
+        '<b style="font-size:15px;color:var(--pistache)">'+fmt(g.atend-(g.sep||0),0)+'</b> em estoque <span style="color:#7A6A57">=</span> '+
         '<b style="font-size:15px;color:'+(g.falta>0?'var(--morango)':'var(--pistache)')+'">'+fmt(g.falta,0)+'</b> faltam</div>'+
+      ((g.sep||0)>0?'<p style="margin:-4px 0 8px;font-size:11.5px;color:#7A6A57">↳ as '+fmt(g.sep,0)+' separadas já saíram do estoque e estão em caixa, aguardando faturamento</p>':'')+
       '<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr>'+
         '<th style="text-align:left;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 4px">PRODUTO</th>'+
         '<th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 4px">PEDIDO</th>'+
@@ -1799,7 +1814,8 @@ async function tCarteira(){
     '<button class="btn-impr-carteira" onclick="imprimirCarteira()" style="background:#22303A;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px">🖨️ Imprimir carteira de pedidos</button>'+
     '<button class="btn-impr-envase" onclick="imprimirEnvase()" style="background:#3E7C45;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px">🖨️ Imprimir fila de envase</button>'+
     '</div>'+
-    bloco(1,'Vencidos','A data de entrega prometida já passou. Se o estoque cobre, o pedido só depende de separar e dar baixa em Produtos separados.')+
+    bloco(0,'Separado, aguardando faturamento','Os potes já saíram do estoque e estão em caixa. Nada a fazer na fábrica — o pedido sai da carteira quando a LBR faturar.')+
+    bloco(1,'Vencidos','A data de entrega prometida já passou. Se o estoque cobre, o pedido só depende de passar pela tela Separar pedidos.')+
     bloco(2,'Travado, prazo curto','Falta pote e a entrega é em até 4 dias. É o que precisa entrar na programação primeiro.')+
     bloco(3,'Travado, com folga','Falta pote, mas ainda há tempo de envasar antes do prazo.')+
     bloco(4,'Pronto pra separar','O estoque cobre o pedido inteiro.')+
