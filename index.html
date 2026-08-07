@@ -250,7 +250,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-08-06b-reservado';
+const APP_VERSAO='2026-08-06c-etiquetas';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -335,12 +335,14 @@ async function tSeparacao(arg){
       (lista.length?lista.map(x=>{
         const falta=x.un-x.sep;
         const estado=x.sep===0?'não começou':(falta<=0?'✅ tudo separado':'⏳ falta '+fmt(falta,0)+' un');
-        return '<div class="card" style="border-left:7px solid '+corDe(x.entrega)+';cursor:pointer" onclick="tela(\'separacao\',\''+x.pedido+'\')">'+
+        return '<div class="card" style="border-left:7px solid '+corDe(x.entrega)+'">'+
+          '<div style="cursor:pointer" onclick="tela(\'separacao\',\''+x.pedido+'\')">'+
           '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'+
           '<b style="font-size:17px">'+(x.cliente||'—')+'</b>'+
           '<span class="mono" style="color:'+corDe(x.entrega)+';font-weight:700;font-size:13px">'+rotulo(x.entrega)+'</span></div>'+
           '<small style="color:#7A6A57">pedido <span class="mono">'+x.pedido+'</span>'+(x.cidade?' · '+x.cidade:'')+'</small>'+
-          '<p style="margin:8px 0 0;font-size:13.5px">'+x.linhas.length+' itens · <span class="mono">'+fmt(x.un,0)+'</span> un · '+estado+'</p></div>';
+          '<p style="margin:8px 0 0;font-size:13.5px">'+x.linhas.length+' itens · <span class="mono">'+fmt(x.un,0)+'</span> un · '+estado+'</p></div>'+
+          '<button class="btnSec" style="margin-top:10px;min-height:44px;width:100%" onclick="sepEtiquetas(\''+x.pedido+'\')">🏷️ Etiquetas · '+sepCaixasEstimadas(x.un)+' cx</button></div>';
       }).join(''):'<div class="card"><div class="center">Nenhum pedido em aberto.</div></div>');
   }else{
     const cards=p.linhas.map(l=>{
@@ -373,7 +375,8 @@ async function tSeparacao(arg){
       '<p style="margin:10px 0 0;font-size:13px"><span class="step-label" style="margin:0">② confira cada item e toque no ✓</span></p></div>'+
       cards+
       '<div class="card" style="text-align:center"><p style="margin:0 0 10px;font-size:13.5px">total do pedido: <span class="mono">'+fmt(p.un,0)+'</span> un · marcadas agora: <span class="mono" style="font-size:20px;font-weight:900">'+fmt(totalSep,0)+'</span></p>'+
-      '<button class="btnP" style="min-height:56px;font-size:18px;width:100%;background:var(--morango);border-color:var(--morango)" onclick="sepConfirmar()">📤 Confirmar separação</button></div>';
+      '<button class="btnP" style="min-height:56px;font-size:18px;width:100%;background:var(--morango);border-color:var(--morango)" onclick="sepConfirmar()">📤 Confirmar separação</button>'+
+      '<button class="btnSec" style="min-height:50px;font-size:15px;width:100%;margin-top:8px" onclick="sepEtiquetas(\''+p.pedido+'\')">🏷️ Imprimir etiquetas das caixas</button></div>';
   }
   document.getElementById('app').innerHTML=trilha('Separar')+topo('Separar pedido','check no que já foi pra caixa')+
     '<main>'+(p?'<button class="btnSec" onclick="sepVoltar()">← trocar pedido</button>':'')+corpo+'</main>';
@@ -401,6 +404,80 @@ async function sepConfirmar(){
   msg('✅ Pedido '+ped+' — '+(r.linhas||0)+' itens · '+fmt(r.potes||0,0)+' potes fora do estoque'+(r.marcadas?' · '+r.marcadas+' só marcadas':''));
   EST.sep={pedido:null,itens:{},semBaixa:{}};
   tela('separacao');
+}
+
+// ===== Etiquetas de caixa dos pedidos do varejo =====
+const POTES_POR_CAIXA=6;
+function sepCaixasEstimadas(un){return Math.max(1,Math.ceil((Number(un)||0)/POTES_POR_CAIXA))}
+function sepEtiquetas(pedido){
+  const linhas=(EST.cache.sepLinhas||[]).filter(l=>(l.pedido_numero||'(sem pedido)')===pedido);
+  if(!linhas.length)return msg('Pedido não encontrado',true);
+  const usarSep=linhas.some(l=>Number(l.qtd_separada||0)>0);
+  const un=linhas.reduce((s,l)=>s+Number(usarSep?l.qtd_separada:l.qtd||0),0);
+  const sug=sepCaixasEstimadas(un);
+  const r=prompt('Quantas caixas para o pedido '+pedido+'?\n\n'+fmt(un,0)+' potes ÷ '+POTES_POR_CAIXA+' por caixa = '+sug+' caixa(s).\nAjuste se a montagem fechou diferente.',String(sug));
+  if(r===null)return;
+  const n=Math.max(1,Math.min(99,Math.round(Number(String(r).replace(',','.'))||0)));
+  if(!n)return msg('Número de caixas inválido',true);
+  imprimirEtiquetas(linhas,n,un,usarSep);
+}
+function imprimirEtiquetas(linhas,nCaixas,un,usarSep){
+  const l0=linhas[0];
+  const ped=l0.pedido_numero||'—', cli=l0.cliente||'—', cid=l0.cidade||'';
+  const ent=l0.entrega?new Date(l0.entrega+'T12:00').toLocaleDateString('pt-BR'):'sem prazo';
+  const hj=new Date().toLocaleString('pt-BR');
+  const itens=linhas.map(l=>{const q=Number(usarSep?l.qtd_separada:l.qtd||0);
+    return {nome:(l.produto_acabado&&l.produto_acabado.nome)||l.produto_nome||l.codigo||'—',q:q}})
+    .filter(i=>i.q>0).sort((a,b)=>b.q-a.q);
+  const listaItens=itens.map(i=>'<tr><td>'+i.nome+'</td><td class="mono">'+fmt(i.q,0)+'</td></tr>').join('');
+  let et='';
+  for(let i=1;i<=nCaixas;i++){
+    et+='<div class="etq">'+
+      '<div class="topo"><span class="marca">NUTRÍSSIMA</span><span class="cx mono">CAIXA '+i+'/'+nCaixas+'</span></div>'+
+      '<div class="cli">'+cli+'</div>'+
+      (cid?'<div class="cid">'+cid+'</div>':'')+
+      '<div class="meta"><span>PEDIDO <b class="mono">'+ped+'</b></span><span>ENTREGA <b class="mono">'+ent+'</b></span></div>'+
+      (i===1&&listaItens?'<table class="itens"><tbody>'+listaItens+'</tbody></table>'+
+        '<div class="tot mono">'+fmt(un,0)+' potes no pedido · '+nCaixas+' volume'+(nCaixas>1?'s':'')+'</div>':
+        '<div class="tot mono">'+fmt(un,0)+' potes no pedido · volume '+i+' de '+nCaixas+'</div>')+
+    '</div>';
+  }
+  const w=window.open('','_blank','width=900,height=700');
+  w.document.write('<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">'+
+  '<title>Etiquetas — pedido '+ped+'</title>'+
+  '<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">'+
+  '<style>'+
+  '*{box-sizing:border-box;margin:0;padding:0}'+
+  'body{font-family:Archivo,sans-serif;color:#33200F;background:#EFE7DC;padding:10mm}'+
+  '.mono{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums}'+
+  '.folha{display:grid;grid-template-columns:1fr 1fr;gap:6mm}'+
+  '.etq{background:#fff;border:1.5px solid #DCD2C4;border-left:7px solid #22303A;border-radius:10px;'+
+    'padding:6mm;height:62mm;break-inside:avoid;display:flex;flex-direction:column}'+
+  '.topo{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1.5px solid #DCD2C4;padding-bottom:2mm}'+
+  '.marca{font-size:11px;font-weight:800;letter-spacing:.16em;color:#7A6A57}'+
+  '.cx{font-size:17px;font-weight:800;color:#22303A}'+
+  '.cli{font-size:19px;font-weight:800;margin-top:3mm;line-height:1.15}'+
+  '.cid{font-size:13px;color:#7A6A57;margin-top:1mm}'+
+  '.meta{display:flex;gap:6mm;margin-top:3mm;font-size:9.5px;letter-spacing:.08em;color:#7A6A57}'+
+  '.meta b{display:block;font-size:14px;color:#33200F;letter-spacing:0}'+
+  '.itens{width:100%;border-collapse:collapse;margin-top:2.5mm;font-size:10.5px}'+
+  '.itens td{padding:0.8mm 0;border-bottom:1px solid #EFE7DC}'+
+  '.itens td:last-child{text-align:right;font-weight:700}'+
+  '.tot{margin-top:auto;padding-top:2mm;font-size:10px;color:#7A6A57;border-top:1.5px solid #DCD2C4}'+
+  '.rodape{margin-top:6mm;font-size:10px;color:#7A6A57}'+
+  '@media print{body{background:#fff;padding:0}.rodape,.barra{display:none}'+
+    '.folha{gap:0}.etq{border-radius:0;height:64mm;border-color:#999}@page{size:A4;margin:8mm}}'+
+  '.barra{margin-bottom:5mm}'+
+  '.barra button{background:#22303A;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer}'+
+  '</style></head><body>'+
+  '<div class="barra"><button onclick="window.print()">🖨️ Imprimir '+nCaixas+' etiqueta'+(nCaixas>1?'s':'')+'</button></div>'+
+  '<div class="folha">'+et+'</div>'+
+  '<p class="rodape"><b>Como ler:</b> CAIXA 2/5 = segundo volume de cinco do mesmo pedido. '+
+  'A lista de produtos aparece só na primeira etiqueta e é o conteúdo do <b>pedido inteiro</b>, não o da caixa. '+
+  '<b>Premissas:</b> número de caixas estimado por '+POTES_POR_CAIXA+' potes/caixa'+(usarSep?', sobre a quantidade já separada':', sobre a quantidade pedida (nada separado ainda)')+', e confirmado na hora da impressão. '+
+  '<b>Procedência:</b> vendas_pedidos (canal Varejo, status aberto) · gerado em '+hj+'.</p>'+
+  '</body></html>');
+  w.document.close();
 }
 
 const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao,treinamento:tTreinamento,separacao:tSeparacao};
