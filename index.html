@@ -250,7 +250,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-08-06c-etiquetas';
+const APP_VERSAO='2026-08-06d-codbarras';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -310,9 +310,13 @@ async function tSeparacao(arg){
   if(!EST.sep)EST.sep={pedido:null,itens:{},semBaixa:{}};
   if(arg)EST.sep.pedido=arg;
   document.getElementById('app').innerHTML=trilha('Separar')+topo('Separar pedido','check no que já foi pra caixa')+'<main><div class="center">Carregando…</div></main>';
-  const {data:lin,error}=await sb.from('vendas_pedidos')
-    .select('id,pedido_numero,cliente,cidade,codigo,produto_nome,qtd,qtd_separada,entrega,produto_acabado_id,produto_acabado(nome,saldo_potes)')
-    .eq('canal','Varejo').eq('status','aberto').order('entrega');
+  const [{data:lin,error},{data:todosPa}]=await Promise.all([
+    sb.from('vendas_pedidos')
+      .select('id,pedido_numero,cliente,cidade,codigo,produto_nome,qtd,qtd_separada,entrega,produto_acabado_id,produto_acabado(nome,saldo_potes,ean)')
+      .eq('canal','Varejo').eq('status','aberto').order('entrega'),
+    sb.from('produto_acabado').select('nome,ean').not('ean','is',null)
+  ]);
+  EST.cache.eans={};(todosPa||[]).forEach(p=>{if(p.ean)EST.cache.eans[String(p.ean)]=p.nome});
   if(error){document.getElementById('app').innerHTML=trilha('Separar')+topo('Separar pedido','')+'<main><div class="card">'+error.message+'</div></main>';return}
   EST.cache.sepLinhas=lin||[];
   const hoje=hojeLocal();
@@ -357,8 +361,11 @@ async function tSeparacao(arg){
       return '<div class="card" style="border-left:7px solid '+cor+'">'+
         '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'+
         '<b style="font-size:16px">'+nome+'</b>'+
-        '<button class="'+(cheio?'btnP':'btnSec')+'" style="min-height:44px;min-width:56px;font-size:20px'+(cheio?';background:var(--pistache);border-color:var(--pistache)':'')+'" onclick="sepCheck(\''+l.id+'\','+pedida+','+teto+')">'+(cheio?'✓':'○')+'</button></div>'+
-        '<p style="margin:6px 0 0;font-size:13px;color:#7A6A57">pedidas <span class="mono">'+fmt(pedida,0)+'</span> · em estoque <span class="mono">'+fmt(saldo,0)+'</span>'+(ja>0?' · já separadas <span class="mono">'+fmt(ja,0)+'</span>':'')+'</p>'+
+        '<span style="display:flex;gap:6px">'+
+        '<button class="btnSec" style="min-height:44px;min-width:52px;font-size:18px" title="Conferir pelo código de barras" onclick="sepScan(\''+l.id+'\')">📷</button>'+
+        '<button class="'+(cheio?'btnP':'btnSec')+'" style="min-height:44px;min-width:56px;font-size:20px'+(cheio?';background:var(--pistache);border-color:var(--pistache)':'')+'" onclick="sepCheck(\''+l.id+'\','+pedida+','+teto+')">'+(cheio?'✓':'○')+'</button></span></div>'+
+        '<p style="margin:6px 0 0;font-size:13px;color:#7A6A57">pedidas <span class="mono">'+fmt(pedida,0)+'</span> · em estoque <span class="mono">'+fmt(saldo,0)+'</span>'+(ja>0?' · já separadas <span class="mono">'+fmt(ja,0)+'</span>':'')+
+        ((l.produto_acabado&&l.produto_acabado.ean)?' · <span title="código de barras cadastrado">🏷️</span>':' · <span style="color:#B8862B">código de barras ainda não cadastrado</span>')+'</p>'+
         '<div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-top:10px">'+
         '<button class="btnSec" style="min-width:52px;min-height:48px" onclick="sepAdd(\''+l.id+'\',-1,'+pedida+','+teto+')">−1</button>'+
         '<input class="campoG" style="max-width:110px;text-align:center;font-size:26px;font-weight:900" inputmode="numeric" value="'+atual+'" onchange="sepSet(\''+l.id+'\',this.value,'+pedida+','+teto+')">'+
@@ -478,6 +485,91 @@ function imprimirEtiquetas(linhas,nCaixas,un,usarSep){
   '<b>Procedência:</b> vendas_pedidos (canal Varejo, status aberto) · gerado em '+hj+'.</p>'+
   '</body></html>');
   w.document.close();
+}
+
+// ===== Leitura de codigo de barras do pote =====
+function scanSuportado(){return typeof window!=='undefined' && 'BarcodeDetector' in window}
+async function sepScan(linhaId){
+  if(precisaOperador())return;
+  const l=(EST.cache.sepLinhas||[]).find(x=>x.id===linhaId);
+  if(!l)return msg('Linha não encontrada',true);
+  if(!scanSuportado())
+    return msg('Este aparelho não tem leitor de código de barras no navegador. Use o Chrome no Android, ou confira o pote pelo nome e marque no ✓.',true);
+  let stream;
+  try{ stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}}); }
+  catch(e){ return msg('Não consegui abrir a câmera: '+(e.message||e),true); }
+
+  const nomeEsperado=(l.produto_acabado&&l.produto_acabado.nome)||l.produto_nome||'—';
+  const box=document.createElement('div');
+  box.id='scanBox';
+  box.style.cssText='position:fixed;inset:0;background:#22303A;z-index:9999;display:flex;flex-direction:column';
+  box.innerHTML='<div style="padding:14px 16px;color:#fff">'+
+    '<div style="font-size:10px;letter-spacing:.16em;opacity:.7;font-weight:800">CONFERINDO</div>'+
+    '<div style="font-size:18px;font-weight:800;margin-top:2px">'+nomeEsperado+'</div></div>'+
+    '<div style="flex:1;position:relative;overflow:hidden">'+
+      '<video id="scanVid" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover"></video>'+
+      '<div style="position:absolute;left:8%;right:8%;top:38%;height:22%;border:3px solid #fff;border-radius:12px;opacity:.85"></div></div>'+
+    '<div id="scanMsg" style="padding:12px 16px;color:#fff;font-size:14px;min-height:46px">Aponte para o código de barras do pote…</div>'+
+    '<div style="padding:0 16px 18px"><button id="scanFechar" style="width:100%;min-height:52px;border:none;border-radius:12px;background:#fff;color:#22303A;font-size:16px;font-weight:800">Fechar</button></div>';
+  document.body.appendChild(box);
+  const vid=box.querySelector('#scanVid'); vid.srcObject=stream;
+  let vivo=true;
+  const fechar=()=>{vivo=false;try{stream.getTracks().forEach(t=>t.stop())}catch(e){};box.remove()};
+  box.querySelector('#scanFechar').onclick=fechar;
+  const diz=(t,cor)=>{const m=box.querySelector('#scanMsg');if(m){m.innerHTML=t;m.style.color=cor||'#fff'}};
+
+  const det=new window.BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128']});
+  let ultimo='', trava=false;
+  const loop=async()=>{
+    if(!vivo)return;
+    if(!trava && vid.readyState>=2){
+      try{
+        const cods=await det.detect(vid);
+        if(cods && cods.length){
+          const cru=String(cods[0].rawValue||'');
+          const cod=cru.replace(/\D/g,'');
+          if(cod && cod!==ultimo){
+            ultimo=cod; trava=true;
+            const r=await sepConferirEan(l,cod,diz);
+            if(r==='fecha'){fechar();return}
+            setTimeout(()=>{trava=false;ultimo=''},1500);
+          }
+        }
+      }catch(e){}
+    }
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+}
+async function sepConferirEan(l,cod,diz){
+  const pa=l.produto_acabado||{};
+  const nome=pa.nome||l.produto_nome||'—';
+  if(pa.ean && String(pa.ean)===cod){
+    const pedida=Number(l.qtd||0), ja=Number(l.qtd_separada||0);
+    const saldo=Number(pa.saldo_potes||0);
+    const teto=Math.min(pedida, ja+saldo);
+    EST.sep.itens[l.id]=teto;
+    diz('✅ <b>'+nome+'</b> confere. Marcado '+fmt(teto,0)+'.', '#8FD79B');
+    setTimeout(()=>tela('separacao'),600);
+    return 'fecha';
+  }
+  if(pa.ean && String(pa.ean)!==cod){
+    const dono=(EST.cache.eans||{})[cod];
+    diz('⛔ <b>Pote errado.</b> Esse código é '+(dono?'de <b>'+dono+'</b>':'desconhecido')+', e o pedido pede <b>'+nome+'</b>.', '#F2A0A0');
+    return 'segue';
+  }
+  const dono=(EST.cache.eans||{})[cod];
+  if(dono){
+    diz('⚠️ Esse código já está cadastrado em <b>'+dono+'</b>, não em '+nome+'.', '#F2A0A0');
+    return 'segue';
+  }
+  if(!confirm('Código '+cod+' ainda não está cadastrado.\n\nVincular a "'+nome+'"?\n\nConfirme só se o pote na sua mão for esse produto.'))
+    return 'segue';
+  const {data,error}=await sb.rpc('vincular_ean',{p_pa:l.produto_acabado_id,p_ean:cod,p_responsavel:EST.operador});
+  if(error){diz('⛔ '+error.message,'#F2A0A0');return 'segue'}
+  pa.ean=cod; if(!EST.cache.eans)EST.cache.eans={}; EST.cache.eans[cod]=nome;
+  diz('✅ Código vinculado a <b>'+nome+'</b>. Leia de novo para conferir.', '#8FD79B');
+  return 'segue';
 }
 
 const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao,treinamento:tTreinamento,separacao:tSeparacao};
