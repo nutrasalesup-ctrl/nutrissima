@@ -1886,6 +1886,7 @@ async function importarVarejo(files){
   tela('vendas');
 }
 async function tCarteira(){
+  if(EST.filtroCarteiraData===undefined)EST.filtroCarteiraData='';
   document.getElementById('app').innerHTML=topo('Carteira de pedidos','pedidos em aberto por prazo de entrega')+'<main><div class="center">Carregando…</div></main>';
   const [{data:dem,error:errD},{data:vp}]=await Promise.all([
     sb.from('demanda_vendas')
@@ -1963,13 +1964,30 @@ async function tCarteira(){
         '<th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 4px">ATENDE</th>'+
         '<th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 4px">FALTA</th>'+
       '</tr></thead><tbody>'+its+'</tbody></table></div>';};
-  const bloco=(rank,titulo,desc)=>{const ps=lista.filter(g=>g.rank===rank);if(!ps.length)return '';
+  const bloco=(rank,titulo,desc,lst)=>{const ps=(lst||lista).filter(g=>g.rank===rank);if(!ps.length)return '';
     const cor=ps[0].cor, q=ps.reduce((s,g)=>s+g.qtd,0), f=ps.reduce((s,g)=>s+g.falta,0);
     return '<div class="card"><div style="border-left:6px solid '+cor+';padding-left:12px;margin-bottom:12px">'+
       '<b style="font-size:16px">'+titulo+'</b>'+
       '<p style="margin:3px 0 0;font-size:13px;color:#7A6A57">'+desc+'</p>'+
       '<div class="mono" style="margin-top:6px;font-size:12.5px;font-weight:700;color:'+cor+'">'+ps.length+(ps.length===1?' pedido':' pedidos')+' · '+fmt(q,0)+' potes · '+fmt(f,0)+' faltando</div>'+
       '</div>'+ps.map(cartao).join('')+'</div>';};
+  const filtroData=EST.filtroCarteiraData;
+  const comData=lista.filter(g=>g.dt!=='9999-12-31');
+  const semData=lista.filter(g=>g.dt==='9999-12-31');
+  const rankBlocks=lst=>
+      bloco(0,'Separado, aguardando faturamento','Os potes já saíram do estoque e estão em caixa. Nada a fazer na fábrica — o pedido sai da carteira quando a LBR faturar.',lst)+
+      bloco(1,'Vencidos','A data de entrega prometida já passou. Se o estoque cobre, o pedido só depende de passar pela tela Separar pedidos.',lst)+
+      bloco(2,'Travado, prazo curto','Falta pote e a entrega é em até 4 dias. É o que precisa entrar na programação primeiro.',lst)+
+      bloco(3,'Travado, com folga','Falta pote, mas ainda há tempo de envasar antes do prazo.',lst)+
+      bloco(4,'Pronto pra separar','O estoque cobre o pedido inteiro.',lst)+
+      bloco(5,'Sem prazo','Linhas sem data de entrega — normalmente import antigo ou e-commerce.',lst);
+  const secaoData=(titulo,sub,lst)=>{if(!lst.length)return '';
+    const q=lst.reduce((s,g)=>s+g.qtd,0),f=lst.reduce((s,g)=>s+g.falta,0);
+    return '<div class="card" style="background:var(--ardosia,#22303A);color:#fff;margin-top:18px">'+
+      '<b style="font-size:15px;letter-spacing:.04em">'+titulo+'</b>'+
+      '<p style="margin:3px 0 0;font-size:12.5px;opacity:.75">'+sub+'</p>'+
+      '<div class="mono" style="margin-top:6px;font-size:12.5px;font-weight:700">'+lst.length+(lst.length===1?' pedido':' pedidos')+' · '+fmt(q,0)+' potes · '+fmt(f,0)+' faltando</div>'+
+      '</div>'+rankBlocks(lst);};
   document.getElementById('app').innerHTML=topo('Carteira de pedidos','pedidos em aberto por prazo de entrega')+'<main>'+
     '<div class="card"><div class="kpis">'+
       '<div class="kpi"><b>'+fmt(totQ,0)+'</b><p>potes em aberto</p></div>'+
@@ -1979,16 +1997,20 @@ async function tCarteira(){
     '</div>'+
     (semPed?'<small style="color:#7A6A57;display:block;margin-top:8px">⚠️ '+fmt(semPed,0)+' potes vêm de importações sem número de pedido e aparecem agrupados no fim.</small>':'')+
     '</div>'+
+    '<div class="card" style="margin-top:0"><label style="margin-top:0">Ver despacho até esta data (separa em "até" e "depois")</label>'+
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">'+
+      '<input type="date" id="carteiraData" value="'+filtroData+'" onchange="EST.filtroCarteiraData=this.value;tela(\'carteira\')" style="max-width:180px">'+
+      (filtroData?'<button class="btnSec" style="min-height:36px;padding:6px 14px;font-size:13px" onclick="EST.filtroCarteiraData=\'\';tela(\'carteira\')">✕ limpar filtro</button>':'')+
+      '</div></div>'+
     '<div style="display:flex;gap:10px;margin-bottom:8px">'+
     '<button class="btn-impr-carteira" onclick="imprimirCarteira()" style="background:#22303A;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px">🖨️ Imprimir carteira de pedidos</button>'+
     '<button class="btn-impr-envase" onclick="imprimirEnvase()" style="background:#3E7C45;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px">🖨️ Imprimir fila de envase</button>'+
     '</div>'+
-    bloco(0,'Separado, aguardando faturamento','Os potes já saíram do estoque e estão em caixa. Nada a fazer na fábrica — o pedido sai da carteira quando a LBR faturar.')+
-    bloco(1,'Vencidos','A data de entrega prometida já passou. Se o estoque cobre, o pedido só depende de passar pela tela Separar pedidos.')+
-    bloco(2,'Travado, prazo curto','Falta pote e a entrega é em até 4 dias. É o que precisa entrar na programação primeiro.')+
-    bloco(3,'Travado, com folga','Falta pote, mas ainda há tempo de envasar antes do prazo.')+
-    bloco(4,'Pronto pra separar','O estoque cobre o pedido inteiro.')+
-    bloco(5,'Sem prazo','Linhas sem data de entrega — normalmente import antigo ou e-commerce.')+
+    (!filtroData?rankBlocks(lista):(
+      secaoData('📅 Até '+dbr(filtroData),'entrega prevista até essa data — inclui o que já está vencido',comData.filter(g=>g.dt<=filtroData))+
+      secaoData('📅 Depois de '+dbr(filtroData),'entrega prevista depois dessa data — pode esperar',comData.filter(g=>g.dt>filtroData))+
+      secaoData('Sem prazo','linhas sem data de entrega, fora da divisão acima — normalmente import antigo ou e-commerce',semData)
+    ))+
     (envL.length?'<div class="card"><b style="font-size:16px">O que envasar pra destravar</b>'+
       '<p style="margin:3px 0 10px;font-size:13px;color:#7A6A57">Consolidado por produto, já descontando o estoque na ordem da fila: quem tem entrega mais cedo consome o saldo primeiro.</p>'+
       '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr>'+
