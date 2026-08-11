@@ -572,7 +572,7 @@ async function sepConferirEan(l,cod,diz){
   return 'segue';
 }
 
-const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao,treinamento:tTreinamento,separacao:tSeparacao};
+const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao,treinamento:tTreinamento,separacao:tSeparacao,relComercial:tRelComercial};
 function tela(n,arg){TELAS[n](arg)}
 
 /* ================= INÍCIO ================= */
@@ -591,6 +591,7 @@ async function tInicio(){
       <button onclick="tela('mrp')"><span class="ico" style="background:#FBEAEA">🛒</span><span><b>Compras / MRP</b><small>O que comprar, quanto e até quando</small></span></button>
       <button onclick="tela('vendas')"><span class="ico" style="background:#EAF3EA">🛍️</span><span><b>Vendas / Despacho</b><small>Demanda dos marketplaces — o que envasar</small></span></button>
       <button onclick="tela('carteira')"><span class="ico" style="background:#E4EDF2">📑</span><span><b>Carteira de pedidos</b><small>Quem está esperando, o que venceu e o que trava</small></span></button>
+      <button onclick="tela('relComercial')"><span class="ico" style="background:#E4EDF2">📊</span><span><b>Relatório comercial</b><small>Ritmo, cobrança, concentração e mix — Varejo (LBR)</small></span></button>
       <button onclick="tela('separacao')"><span class="ico" style="background:#EAF3EA">✅</span><span><b>Separar pedidos</b><small>Check no que foi pra caixa — baixa o estoque na hora</small></span></button>
       <button onclick="tela('receber')"><span class="ico" style="background:#E7F0E4">📦</span><span><b>Receber mercadoria</b><small>Confirmar chegada das compras</small></span></button>
       <button onclick="tela('movimento')"><span class="ico" style="background:#EAE4F2">🔄</span><span><b>Entrada / Saída de Estoque</b><small>Balde, matéria-prima ou pote — escolha e conte</small></span></button>
@@ -2002,7 +2003,8 @@ async function tCarteira(){
       '<input type="date" id="carteiraData" value="'+filtroData+'" onchange="EST.filtroCarteiraData=this.value;tela(\'carteira\')" style="max-width:180px">'+
       (filtroData?'<button class="btnSec" style="min-height:36px;padding:6px 14px;font-size:13px" onclick="EST.filtroCarteiraData=\'\';tela(\'carteira\')">✕ limpar filtro</button>':'')+
       '</div></div>'+
-    '<div style="display:flex;gap:10px;margin-bottom:8px">'+
+    '<div style="display:flex;gap:10px;margin-bottom:8px;flex-wrap:wrap">'+
+    '<button onclick="tela(\'relComercial\')" style="background:#3E7C45;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px">📊 Relatório comercial</button>'+
     '<button class="btn-impr-carteira" onclick="imprimirCarteira()" style="background:#22303A;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px">🖨️ Imprimir carteira de pedidos</button>'+
     '<button class="btn-impr-envase" onclick="imprimirEnvase()" style="background:#3E7C45;color:#fff;border:none;border-radius:10px;padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:7px">🖨️ Imprimir fila de envase</button>'+
     '</div>'+
@@ -2031,6 +2033,271 @@ async function tCarteira(){
   '</main>';
 }
 
+
+
+async function tRelComercial(){
+  document.getElementById('app').innerHTML=`${trilha('')}${topo('Relatório comercial','carteira do Varejo — LBR')}<main><div class="center">Carregando…</div></main>`;
+  const {data:vp,error}=await sb.from('vendas_pedidos')
+    .select('pedido_numero,cliente,cidade,emissao,entrega,baixado_em,status,qtd,valor_unitario,produto_nome,produto_acabado_id,produto_acabado(nome,linha,saldo_potes)')
+    .eq('canal','Varejo');
+  if(error){document.getElementById('app').innerHTML=`${trilha('')}${topo('Relatório comercial','erro')}<main><div class="card"><p>${error.message}</p></div></main>`;return;}
+  const hj=hojeLocal();
+  const podeVer=EST.gestor===true;
+  const rs=v=>podeVer?('R$&nbsp;'+fmt(v,2)):'R$&nbsp;—';
+  const linhas=(vp||[]).map(r=>{const pa=r.produto_acabado||{};return{
+    ped:r.pedido_numero,cli:r.cliente||'sem cliente',cid:r.cidade||'',
+    emi:r.emissao||null,ent:r.entrega||null,bx:r.baixado_em||null,
+    st:r.status,qtd:Number(r.qtd)||0,unit:Number(r.valor_unitario)||0,
+    prod:pa.nome||r.produto_nome||'—',linha:pa.linha||'—',
+    saldo:Number(pa.saldo_potes)||0,pid:r.produto_acabado_id};});
+  linhas.forEach(l=>l.val=l.qtd*l.unit);
+  const bx=linhas.filter(l=>l.st==='baixado');
+  const ab=linhas.filter(l=>l.st==='aberto');
+  if(!linhas.length){
+    document.getElementById('app').innerHTML=`${trilha('')}${topo('Relatório comercial','sem dados')}<main><div class="card"><p style="margin:0">Nenhum pedido do Varejo encontrado. Importe a planilha da LBR na tela <b>Vendas / Despacho</b> primeiro.</p><button class="btnSec" style="margin-top:10px" onclick="tela('vendas')">Ir para Vendas / Despacho</button></div></main>`;return;
+  }
+  const total_bx=bx.reduce((s,l)=>s+l.val,0);
+  const total_bx_un=bx.reduce((s,l)=>s+l.qtd,0);
+  const peds_bx=new Set(bx.map(l=>l.ped)).size;
+  const total_ab=ab.reduce((s,l)=>s+l.val,0);
+  const total_ab_un=ab.reduce((s,l)=>s+l.qtd,0);
+  const peds_ab=new Set(ab.map(l=>l.ped)).size;
+  const ticket=peds_bx>0?total_bx/peds_bx:0;
+  const ticket_un=peds_bx>0?total_bx_un/peds_bx:0;
+  const bxDatas=bx.map(l=>l.bx).filter(Boolean).sort();
+  const d0=bxDatas[0]||null,d1=bxDatas[bxDatas.length-1]||null;
+  const dias_periodo=d0&&d1?Math.round((new Date(d1+'T12:00')-new Date(d0+'T12:00'))/86400000)+1:0;
+  const media_dia=dias_periodo>0?total_bx/dias_periodo:0;
+  const media_un_dia=dias_periodo>0?total_bx_un/dias_periodo:0;
+  const proj14=media_dia*14;
+  const proj14_un=media_un_dia*14;
+  const venc=ab.filter(l=>l.ent&&l.ent<hj);
+  const val_venc=venc.reduce((s,l)=>s+l.val,0);
+  const un_venc=venc.reduce((s,l)=>s+l.qtd,0);
+  const peds_venc=new Set(venc.map(l=>l.ped)).size;
+  const meio=d0&&d1?new Date((new Date(d0+'T12:00').getTime()+new Date(d1+'T12:00').getTime())/2).toISOString().slice(0,10):null;
+  const s1=meio?bx.filter(l=>l.bx&&l.bx<=meio):[];
+  const s2=meio?bx.filter(l=>l.bx&&l.bx>meio):[];
+  const s1v=s1.reduce((s,l)=>s+l.val,0);
+  const s2v=s2.reduce((s,l)=>s+l.val,0);
+  const s1u=s1.reduce((s,l)=>s+l.qtd,0);
+  const s2u=s2.reduce((s,l)=>s+l.qtd,0);
+  const s1p=new Set(s1.map(l=>l.ped)).size;
+  const s2p=new Set(s2.map(l=>l.ped)).size;
+  const delta_val=s1v>0?((s2v-s1v)/s1v*100):(s2v>0?100:0);
+  const delta_un=s1u>0?((s2u-s1u)/s1u*100):(s2u>0?100:0);
+  const venc_por_cli={};
+  venc.forEach(l=>{
+    if(!venc_por_cli[l.cli])venc_por_cli[l.cli]={cli:l.cli,cid:l.cid,val:0,un:0,peds:new Set(),maxDias:0,skus:new Set(),tem:0,sem:0,val_tem:0,val_sem:0};
+    const g=venc_por_cli[l.cli];
+    g.val+=l.val;g.un+=l.qtd;g.peds.add(l.ped);g.skus.add(l.prod);
+    const d=Math.round((new Date(hj+'T12:00')-new Date(l.ent+'T12:00'))/86400000);
+    if(d>g.maxDias)g.maxDias=d;
+    if(l.saldo>=l.qtd){g.tem+=l.qtd;g.val_tem+=l.val;}else{g.sem+=l.qtd;g.val_sem+=l.val;}
+  });
+  const vencL=Object.values(venc_por_cli).sort((a,b)=>b.val-a.val);
+  const porCli={};
+  linhas.forEach(l=>{
+    if(!porCli[l.cli])porCli[l.cli]={cli:l.cli,r_val:0,r_un:0,a_val:0,a_un:0,r_peds:new Set(),a_peds:new Set()};
+    const g=porCli[l.cli];
+    if(l.st==='baixado'){g.r_val+=l.val;g.r_un+=l.qtd;g.r_peds.add(l.ped);}
+    else{g.a_val+=l.val;g.a_un+=l.qtd;g.a_peds.add(l.ped);}
+  });
+  const cliL=Object.values(porCli).map(g=>({cli:g.cli,r_val:g.r_val,r_un:g.r_un,a_val:g.a_val,a_un:g.a_un,r_peds:g.r_peds.size,a_peds:g.a_peds.size,tot:g.r_val+g.a_val,tot_un:g.r_un+g.a_un})).sort((a,b)=>b.tot-a.tot);
+  const tot_geral=cliL.reduce((s,c)=>s+c.tot,0);
+  const tot_un_geral=cliL.reduce((s,c)=>s+c.tot_un,0);
+  cliL.forEach(c=>{c.pct=tot_geral>0?c.tot/tot_geral*100:0;c.pct_un=tot_un_geral>0?c.tot_un/tot_un_geral*100:0;c.dias_venda=media_dia>0?c.tot/media_dia:0;});
+  const top5=cliL.slice(0,5);
+  const top3_pct=cliL.slice(0,3).reduce((s,c)=>s+c.pct,0);
+  const top3_pct_un=cliL.slice(0,3).reduce((s,c)=>s+c.pct_un,0);
+  const porLinha={};
+  linhas.forEach(l=>{
+    if(!porLinha[l.linha])porLinha[l.linha]={linha:l.linha,r_val:0,r_un:0,a_val:0,a_un:0,s1_val:0,s2_val:0,s1_un:0,s2_un:0};
+    const g=porLinha[l.linha];
+    if(l.st==='baixado'){
+      g.r_val+=l.val;g.r_un+=l.qtd;
+      if(l.bx&&meio&&l.bx<=meio){g.s1_val+=l.val;g.s1_un+=l.qtd;}
+      else if(l.bx){g.s2_val+=l.val;g.s2_un+=l.qtd;}
+    }else{g.a_val+=l.val;g.a_un+=l.qtd;}
+  });
+  const linL=Object.values(porLinha).map(g=>Object.assign({},g,{tot:g.r_val+g.a_val,tot_un:g.r_un+g.a_un,delta_val:g.s1_val>0?(g.s2_val-g.s1_val)/g.s1_val*100:(g.s2_val>0?100:0),delta_un:g.s1_un>0?(g.s2_un-g.s1_un)/g.s1_un*100:(g.s2_un>0?100:0)})).sort((a,b)=>b.tot-a.tot);
+  const totLin=linL.reduce((s,l)=>s+l.tot,0);
+  const totLinUn=linL.reduce((s,l)=>s+l.tot_un,0);
+  linL.forEach(l=>{l.pct=totLin>0?l.tot/totLin*100:0;l.pct_un=totLinUn>0?l.tot_un/totLinUn*100:0;});
+  const cliBx=new Set(bx.map(l=>l.cli));
+  const cliAb=new Set(ab.map(l=>l.cli));
+  const cliUnicos=new Set([...cliBx,...cliAb]);
+  const cliVoltou=[...cliBx].filter(c=>cliAb.has(c));
+  const cliOneShot=[...cliBx].filter(c=>!cliAb.has(c));
+  const cliNovoAb=[...cliAb].filter(c=>!cliBx.has(c));
+  const pedsPorCli={};
+  linhas.forEach(l=>{if(!pedsPorCli[l.cli])pedsPorCli[l.cli]=new Set();pedsPorCli[l.cli].add(l.ped);});
+  const multi=Object.values(pedsPorCli).filter(peds=>peds.size>1).length;
+  const soUm=Object.values(pedsPorCli).filter(peds=>peds.size===1).length;
+  const seta=d=>d>5?'▲':(d<-5?'▼':'●');
+  const corDelta=d=>d>5?'var(--pistache)':(d<-5?'var(--morango)':'#7A6A57');
+  const dfmt=iso=>iso?new Date(iso+'T12:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}):'—';
+  const dfmtL=iso=>iso?new Date(iso+'T12:00').toLocaleDateString('pt-BR'):'—';
+  const dproxDia=iso=>{const d=new Date(iso+'T12:00');d.setDate(d.getDate()+1);return d.toISOString().slice(0,10);};
+  const kpiHead=`<div class="card" style="background:#22303A;color:#fff;border-radius:14px;padding:20px 22px">
+    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start;margin-bottom:14px">
+      <div><small style="font-size:9.5px;font-weight:800;letter-spacing:.16em;color:rgba(255,255,255,.55)">CANAL VAREJO · LBR</small>
+        <div style="font-size:22px;font-weight:800;line-height:1.15;margin-top:4px">Relatório comercial</div>
+        <div style="font-size:12.5px;color:rgba(255,255,255,.65);margin-top:2px">${dfmtL(d0)} a ${dfmtL(d1)} · ${dias_periodo} dias · gerado ${new Date().toLocaleString('pt-BR')}</div></div>
+      ${podeVer?`<span style="background:#3E7C45;color:#fff;padding:5px 10px;border-radius:6px;font-size:10px;font-weight:800;letter-spacing:.08em">🔓 R$ LIBERADO</span>`:`<button onclick="destravarPIN()" style="background:#B8862B;color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:12px;font-weight:700;cursor:pointer">🔒 Mostrar valores em R$</button>`}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;padding-top:14px;border-top:1px solid rgba(255,255,255,.14)">
+      <div><small style="font-size:9.5px;font-weight:800;letter-spacing:.14em;color:rgba(255,255,255,.55)">VENDIDO NO PERÍODO</small><b class="mono" style="font-size:20px;font-weight:600;display:block;margin-top:4px">${rs(total_bx)}</b><small style="font-size:11px;color:rgba(255,255,255,.65);display:block">${fmt(total_bx_un,0)} un · ${peds_bx} pedidos</small></div>
+      <div><small style="font-size:9.5px;font-weight:800;letter-spacing:.14em;color:rgba(255,255,255,.55)">TICKET POR PEDIDO</small><b class="mono" style="font-size:20px;font-weight:600;display:block;margin-top:4px">${rs(ticket)}</b><small style="font-size:11px;color:rgba(255,255,255,.65);display:block">${fmt(ticket_un,0)} un/pedido</small></div>
+      <div><small style="font-size:9.5px;font-weight:800;letter-spacing:.14em;color:rgba(255,255,255,.55)">EM CARTEIRA</small><b class="mono" style="font-size:20px;font-weight:600;display:block;margin-top:4px">${rs(total_ab)}</b><small style="font-size:11px;color:rgba(255,255,255,.65);display:block">${fmt(total_ab_un,0)} un · ${peds_ab} pedidos</small></div>
+      <div><small style="font-size:9.5px;font-weight:800;letter-spacing:.14em;color:rgba(255,255,255,.55)">JÁ VENCIDO</small><b class="mono" style="font-size:20px;font-weight:600;display:block;margin-top:4px;color:${val_venc>0?'#F2A0A0':'#fff'}">${rs(val_venc)}</b><small style="font-size:11px;color:rgba(255,255,255,.65);display:block">${peds_venc} pedido${peds_venc!==1?'s':''} · ${fmt(un_venc,0)} un</small></div>
+      <div><small style="font-size:9.5px;font-weight:800;letter-spacing:.14em;color:rgba(255,255,255,.55)">PROJEÇÃO 14 DIAS</small><b class="mono" style="font-size:20px;font-weight:600;display:block;margin-top:4px">${rs(proj14)}</b><small style="font-size:11px;color:rgba(255,255,255,.65);display:block">no ritmo atual</small></div>
+    </div>
+  </div>`;
+  const bloco1_cor=delta_val>5?'var(--pistache)':(delta_val<-5?'var(--morango)':'var(--mel)');
+  const bloco1=`<div class="card" style="border-left:6px solid ${bloco1_cor}">
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start;margin-bottom:10px">
+      <div><small style="color:#7A6A57;font-weight:800;letter-spacing:.1em">1 · RITMO SEMANAL</small>
+        <b style="font-size:16px;display:block;margin-top:2px">Está acelerando ou desacelerando?</b>
+        <p style="font-size:12.5px;color:#7A6A57;margin:3px 0 0;max-width:60ch">Comparando as duas metades do período de vendas do canal Varejo.</p></div>
+      <div style="text-align:right"><div class="mono" style="font-size:22px;font-weight:700;color:${bloco1_cor}">${seta(delta_val)} ${fmt(Math.abs(delta_val),1)}%</div>
+        <small style="color:#7A6A57;font-size:11px">${podeVer?'variação em R$ semana a semana':'variação em un semana a semana'}</small></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      <div style="background:#F7F2EA;border-radius:9px;padding:11px 13px">
+        <small style="color:#7A6A57;font-weight:700;font-size:10px;letter-spacing:.08em">SEMANA 1 · ${dfmt(d0)} a ${dfmt(meio)}</small>
+        <div class="mono" style="font-size:18px;font-weight:700;margin-top:4px">${rs(s1v)}</div>
+        <div style="font-size:12px;color:#7A6A57">${fmt(s1u,0)} un · ${s1p} pedidos</div></div>
+      <div style="background:#F7F2EA;border-radius:9px;padding:11px 13px">
+        <small style="color:#7A6A57;font-weight:700;font-size:10px;letter-spacing:.08em">SEMANA 2 · ${dfmt(meio?dproxDia(meio):null)} a ${dfmt(d1)}</small>
+        <div class="mono" style="font-size:18px;font-weight:700;margin-top:4px;color:${bloco1_cor}">${rs(s2v)}</div>
+        <div style="font-size:12px;color:#7A6A57">${fmt(s2u,0)} un · ${s2p} pedidos</div></div>
+    </div>
+    <div class="mono" style="background:#F7F2EA;border-radius:9px;padding:10px 13px;font-size:12.5px;line-height:1.7">
+      <b style="font-size:14px">${rs(media_dia)}</b> por dia <span style="color:#7A6A57">×</span> <b>14</b> dias <span style="color:#7A6A57">=</span> <b style="color:${bloco1_cor}">${rs(proj14)}</b> projetados nas próximas 2 semanas
+      ${!podeVer?`<br><span style="font-size:12px;color:#7A6A57"><b>${fmt(media_un_dia,0)}</b> un/dia × 14 = <b>${fmt(proj14_un,0)}</b> un projetadas</span>`:''}
+    </div>
+  </div>`;
+  const bloco2_cor=val_venc>0?'var(--morango)':'var(--pistache)';
+  const bloco2=`<div class="card" style="border-left:6px solid ${bloco2_cor}">
+    <div style="margin-bottom:10px">
+      <small style="color:#7A6A57;font-weight:800;letter-spacing:.1em">2 · O QUE COBRAR HOJE</small>
+      <b style="font-size:16px;display:block;margin-top:2px">${vencL.length?`${vencL.length} cliente${vencL.length!==1?'s':''} com pedido vencido`:'Nenhum pedido vencido'}</b>
+      <p style="font-size:12.5px;color:#7A6A57;margin:3px 0 0;max-width:60ch">Pedidos abertos cuja data de entrega prometida já passou. Ordenados pelo valor em risco.</p>
+    </div>
+    ${vencL.length?vencL.map(g=>{
+      const dias=g.maxDias;const cor=dias>7?'var(--morango)':(dias>3?'var(--laranja)':'var(--mel)');
+      return `<div style="border:1px solid var(--linha);border-left:5px solid ${cor};border-radius:11px;padding:12px 14px;margin-bottom:9px;background:#fff">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
+          <div><b style="font-size:14.5px;font-weight:700;display:block;max-width:44ch">${g.cli}</b>
+            <small style="font-size:11.5px;color:#7A6A57">${g.cid} · ${g.peds.size} pedido${g.peds.size!==1?'s':''} · ${g.skus.size} SKU${g.skus.size!==1?'s':''}</small></div>
+          <div style="text-align:right"><small style="color:#7A6A57;font-weight:700;font-size:9.5px;letter-spacing:.1em">VENCIDO HÁ</small>
+            <div class="mono" style="font-size:18px;font-weight:700;color:${cor}">${dias} dia${dias!==1?'s':''}</div>
+            <div class="mono" style="font-size:15px;font-weight:700;margin-top:2px">${rs(g.val)}</div>
+            <small style="color:#7A6A57;font-size:11px">${fmt(g.un,0)} un</small></div>
+        </div>
+        ${g.sem>0?`<div style="margin-top:8px;padding:7px 10px;background:#FBEAEA;border-radius:7px;font-size:12px;color:#33200F"><b style="color:var(--morango)">⚠ ${fmt(g.sem,0)} un sem estoque</b> — precisa envasar antes de cobrar. <span class="mono">${rs(g.val_sem)}</span> em risco.</div>`:`<div style="margin-top:8px;padding:7px 10px;background:#EAF3EA;border-radius:7px;font-size:12px;color:#33200F"><b style="color:var(--pistache)">✓ tem estoque pra todo o pedido</b> — pode separar e cobrar agora.</div>`}
+      </div>`;}).join(''):`<p style="margin:0;font-size:13px;color:#7A6A57">✓ Nenhum pedido em aberto passou da data de entrega. Boa notícia.</p>`}
+  </div>`;
+  const maiorPct=top5[0]?top5[0].pct:0;
+  const maiorDias=top5[0]?top5[0].dias_venda:0;
+  const bloco3_cor=maiorPct>=20?'var(--mel)':'var(--pistache)';
+  const bloco3=`<div class="card" style="border-left:6px solid ${bloco3_cor}">
+    <div style="margin-bottom:10px">
+      <small style="color:#7A6A57;font-weight:800;letter-spacing:.1em">3 · CONCENTRAÇÃO</small>
+      <b style="font-size:16px;display:block;margin-top:2px">Se o maior cliente sumir, perco ${podeVer?fmt(maiorDias,1):fmt(top5[0]?top5[0].tot_un/media_un_dia:0,1)} dias de venda</b>
+      <p style="font-size:12.5px;color:#7A6A57;margin:3px 0 0;max-width:60ch">"Dias de venda" = valor do cliente ÷ venda média diária do período. Traduz o peso em algo que muda decisão.</p>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr>
+        <th style="text-align:left;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 5px">CLIENTE</th>
+        <th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 5px">FATURADO</th>
+        <th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 5px">EM CARTEIRA</th>
+        <th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 5px">TOTAL</th>
+        <th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 5px">= DIAS</th>
+      </tr></thead>
+      <tbody>${top5.map(c=>{
+        const alto=c.pct>=20;const dias=podeVer?c.dias_venda:(media_un_dia>0?c.tot_un/media_un_dia:0);
+        return `<tr><td style="padding:6px 6px;border-bottom:1px solid var(--linha)">
+          <b>${c.cli}</b><div style="font-size:11px;color:#7A6A57">${c.r_peds} faturado${c.r_peds!==1?'s':''} · ${c.a_peds} em carteira</div></td>
+          <td class="mono" style="padding:6px;text-align:right;border-bottom:1px solid var(--linha)">${podeVer?rs(c.r_val):fmt(c.r_un,0)+' un'}</td>
+          <td class="mono" style="padding:6px;text-align:right;border-bottom:1px solid var(--linha)">${podeVer?rs(c.a_val):fmt(c.a_un,0)+' un'}</td>
+          <td class="mono" style="padding:6px;text-align:right;border-bottom:1px solid var(--linha);font-weight:700">${podeVer?rs(c.tot):fmt(c.tot_un,0)+' un'}<div style="font-size:11px;color:${alto?'var(--mel)':'#7A6A57'};font-weight:${alto?800:500}">${fmt(podeVer?c.pct:c.pct_un,1)}%</div></td>
+          <td class="mono" style="padding:6px;text-align:right;border-bottom:1px solid var(--linha);color:${alto?'var(--mel)':'var(--cacau)'};font-weight:700">${fmt(dias,1)}</td></tr>`;}).join('')}
+      </tbody>
+    </table>
+    <div class="mono" style="margin-top:10px;background:#F7F2EA;border-radius:9px;padding:9px 12px;font-size:12.5px">
+      <b>${top5[0]?top5[0].cli:'—'}</b> sozinho <span style="color:#7A6A57">=</span> <b style="color:${maiorPct>=20?'var(--mel)':'var(--pistache)'}">${fmt(podeVer?maiorPct:(top5[0]?top5[0].pct_un:0),1)}%</b>
+      <span style="color:#7A6A57">·</span> top 3 juntos <span style="color:#7A6A57">=</span> <b>${fmt(podeVer?top3_pct:top3_pct_un,1)}%</b>
+      <span style="color:#7A6A57">·</span> <b>${cliUnicos.size}</b> clientes únicos no período
+    </div>
+  </div>`;
+  const linCresce=linL.filter(l=>l.delta_val>10).length;
+  const linCai=linL.filter(l=>l.delta_val<-10).length;
+  const bloco4=`<div class="card" style="border-left:6px solid var(--ardosia,#22303A)">
+    <div style="margin-bottom:10px">
+      <small style="color:#7A6A57;font-weight:800;letter-spacing:.1em">4 · MIX POR LINHA</small>
+      <b style="font-size:16px;display:block;margin-top:2px">O que puxa e o que sai de foco</b>
+      <p style="font-size:12.5px;color:#7A6A57;margin:3px 0 0;max-width:60ch">"Δ semana" compara semana 2 com semana 1 dentro da mesma linha. ▲ acima de 5% · ▼ abaixo de −5%.</p>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr>
+        <th style="text-align:left;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 5px">LINHA</th>
+        <th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 5px">FATURADO</th>
+        <th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 5px">EM CARTEIRA</th>
+        <th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 5px">TOTAL</th>
+        <th style="text-align:right;font-size:9.5px;letter-spacing:.08em;color:#7A6A57;padding:0 6px 5px">Δ SEMANA</th>
+      </tr></thead>
+      <tbody>${linL.map(l=>{const d=podeVer?l.delta_val:l.delta_un;return `
+        <tr><td style="padding:6px;border-bottom:1px solid var(--linha)"><b>${l.linha}</b></td>
+        <td class="mono" style="padding:6px;text-align:right;border-bottom:1px solid var(--linha)">${podeVer?rs(l.r_val):fmt(l.r_un,0)+' un'}</td>
+        <td class="mono" style="padding:6px;text-align:right;border-bottom:1px solid var(--linha)">${podeVer?rs(l.a_val):fmt(l.a_un,0)+' un'}</td>
+        <td class="mono" style="padding:6px;text-align:right;border-bottom:1px solid var(--linha);font-weight:700">${podeVer?rs(l.tot):fmt(l.tot_un,0)+' un'}<div style="font-size:11px;color:#7A6A57;font-weight:500">${fmt(podeVer?l.pct:l.pct_un,1)}%</div></td>
+        <td class="mono" style="padding:6px;text-align:right;border-bottom:1px solid var(--linha);color:${corDelta(d)};font-weight:700">${seta(d)} ${fmt(Math.abs(d),1)}%</td></tr>`;}).join('')}
+      </tbody>
+    </table>
+    <div style="margin-top:10px;background:#F7F2EA;border-radius:9px;padding:9px 12px;font-size:12.5px;color:#33200F">
+      ${linCresce>0?`<span style="color:var(--pistache);font-weight:700">▲ ${linCresce} linha${linCresce!==1?'s':''} crescendo</span>`:''}
+      ${linCresce>0&&linCai>0?' · ':''}
+      ${linCai>0?`<span style="color:var(--morango);font-weight:700">▼ ${linCai} linha${linCai!==1?'s':''} caindo</span>`:''}
+      ${linCresce===0&&linCai===0?'<span style="color:#7A6A57">Nenhuma linha com variação significativa (±5%).</span>':''}
+    </div>
+  </div>`;
+  const bloco5=`<div class="card" style="border-left:6px solid var(--pistache)">
+    <div style="margin-bottom:10px">
+      <small style="color:#7A6A57;font-weight:800;letter-spacing:.1em">5 · RECORRÊNCIA</small>
+      <b style="font-size:16px;display:block;margin-top:2px">${cliUnicos.size} clientes únicos · ${multi} voltaram no período</b>
+      <p style="font-size:12.5px;color:#7A6A57;margin:3px 0 0;max-width:60ch">Cliente com mais de um pedido no período (faturado ou carteira) já é um sinal de recorrência. O resto pode ser one-shot.</p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+      <div style="background:#F7F2EA;border-radius:9px;padding:11px 13px"><small style="color:#7A6A57;font-weight:700;font-size:10px;letter-spacing:.08em">JÁ COMPROU E TEM EM ABERTO</small><div class="mono" style="font-size:22px;font-weight:700;margin-top:4px;color:var(--pistache)">${cliVoltou.length}</div><div style="font-size:11.5px;color:#7A6A57">voltaram a pedir no período</div></div>
+      <div style="background:#F7F2EA;border-radius:9px;padding:11px 13px"><small style="color:#7A6A57;font-weight:700;font-size:10px;letter-spacing:.08em">COMPROU MAS NÃO TEM EM ABERTO</small><div class="mono" style="font-size:22px;font-weight:700;margin-top:4px">${cliOneShot.length}</div><div style="font-size:11.5px;color:#7A6A57">candidato a reativação</div></div>
+      <div style="background:#F7F2EA;border-radius:9px;padding:11px 13px"><small style="color:#7A6A57;font-weight:700;font-size:10px;letter-spacing:.08em">SÓ EM CARTEIRA</small><div class="mono" style="font-size:22px;font-weight:700;margin-top:4px">${cliNovoAb.length}</div><div style="font-size:11.5px;color:#7A6A57">ainda não faturou 1º pedido</div></div>
+      <div style="background:#F7F2EA;border-radius:9px;padding:11px 13px"><small style="color:#7A6A57;font-weight:700;font-size:10px;letter-spacing:.08em">COM MAIS DE 1 PEDIDO</small><div class="mono" style="font-size:22px;font-weight:700;margin-top:4px">${multi}</div><div style="font-size:11.5px;color:#7A6A57">de ${cliUnicos.size} · ${fmt(cliUnicos.size>0?multi/cliUnicos.size*100:0,0)}% recorrentes</div></div>
+    </div>
+  </div>`;
+  const rodape=`<div class="card"><small style="color:#7A6A57;font-size:11.5px;line-height:1.6"><b>Como ler.</b>
+    <b>Vendido</b> = pedido que estava na carteira e sumiu do relatório da LBR (foi faturado ou cancelado — a planilha não distingue).
+    <b>Em carteira</b> = pedido ainda aberto, valor de face (qtd × preço unitário da linha).
+    <b>Já vencido</b> = pedido em aberto cuja data de entrega prometida já passou.
+    <b>Dias de venda</b> = valor do cliente ÷ venda média diária do período — mede o impacto se o cliente parar.
+    <b>Δ semana</b> = variação da metade final do período contra a inicial.<br><br>
+    <b>Fonte.</b> <span class="mono">vendas_pedidos</span> (canal Varejo). Ritmo = <span class="mono">baixado_em</span>; carteira e vencidos = <span class="mono">entrega</span>; linha e SKU = <span class="mono">produto_acabado</span>.
+    O campo <b>saldo</b> considera o estoque do momento — não desconta reservas.<br><br>
+    <b>Não cobre.</b> E-commerce (Up Seller) — não traz preço. Faturamento por NF-e — vive no app comercial. Custo e margem.
+    ${!podeVer?'<br><br><b>Sem PIN do gestor:</b> valores em R$ ficam ocultos por decisão registrada no doc-mestre §0c. Quantidades, % e dias continuam visíveis.':''}</small></div>`;
+  document.getElementById('app').innerHTML=`${trilha('')}${topo('Relatório comercial','carteira do Varejo — LBR')}<main>${kpiHead}${bloco1}${bloco2}${bloco3}${bloco4}${bloco5}${rodape}</main>`;
+}
+
+async function destravarPIN(){
+  const pin=prompt('PIN do gestor para ver valores em R$:');
+  if(pin==null)return;
+  const {data:ok,error}=await sb.rpc('verificar_pin',{p_nome:'Gestor',p_pin:String(pin).trim()});
+  if(error){msg(error.message,true);return;}
+  if(!ok){msg('PIN do gestor incorreto',true);return;}
+  EST.gestor=true;
+  tela('relComercial');
+}
 
 function imprimirCarteira(){
   const hj=new Date().toLocaleDateString('pt-BR');
