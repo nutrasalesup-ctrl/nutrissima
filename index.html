@@ -250,7 +250,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-08-06d-codbarras';
+const APP_VERSAO='2026-08-12-trava-estoque';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -268,6 +268,24 @@ const brData=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR');
 function trilha(atual){const etapas=['Programação','Compra','Receber','Pesagem','Moinho','Balde','Envase','Estoque'];return '<div class="trilha">'+etapas.map(e=>`<span class="${e===atual?'atual':''}">${e}</span>`).join('')+'</div>'}
 function topo(t,sub,voltar=true){return `<div class="topo">${voltar?'<button class="voltar" onclick="tela(\'inicio\')">←</button>':''}<div><h1>${t}</h1><p>${sub||''}</p></div></div>`}
 function precisaOperador(){if(!EST.operador){msg('Escolha primeiro quem é você, na tela inicial',true);tela('inicio');return true}return false}
+
+/* ===== Trava de estoque (12/08/2026) =====
+   Pede senha antes de QUALQUER entrada ou baixa de saldo. A senha não está aqui:
+   mora com hash (bcrypt) na tabela travas_acesso e é conferida pela RPC verificar_senha,
+   que devolve só true/false. Liberação vale TRAVA_MIN minutos e vive só em memória —
+   fechou o app, pede de novo. */
+const TRAVA_MIN=15;
+async function travaEstoque(){
+  if(EST.estoqueAte&&Date.now()<EST.estoqueAte)return true;
+  const s=prompt('Senha para mexer no estoque\n(entrada ou baixa de saldo):');
+  if(s==null)return false;
+  const {data:ok,error}=await sb.rpc('verificar_senha',{p_chave:'estoque',p_senha:String(s).trim()});
+  if(error){msg(error.message,true);return false}
+  if(!ok){msg('Senha incorreta — nada foi lançado',true);return false}
+  EST.estoqueAte=Date.now()+TRAVA_MIN*60000;
+  msg('Estoque liberado por '+TRAVA_MIN+' min');
+  return true;
+}
 
 /* ================= BOOT / AUTH ================= */
 async function boot(){
@@ -405,6 +423,7 @@ async function sepConfirmar(){
     if(novo!==ja)itens.push({linha_id:l.id,qtd:novo,sem_baixa:!!EST.sep.semBaixa[l.id]});
   });
   if(!itens.length)return msg('Nada mudou neste pedido',true);
+  if(!await travaEstoque())return;
   const {data,error}=await sb.rpc('separar_pedido',{p_pedido:ped,p_canal:'Varejo',p_itens:itens,p_responsavel:EST.operador});
   if(error)return msg(error.message,true);
   const r=data||{};
@@ -877,6 +896,7 @@ async function ajuste(btn){
   if(isNaN(n)||n<0)return msg('Valor inválido',true);
   const motivo=prompt('Motivo do ajuste (obrigatório):\nex.: contagem física, perda, vencimento, erro de lançamento');
   if(motivo==null)return; if(!motivo.trim())return msg('O motivo é obrigatório',true);
+  if(!await travaEstoque())return;
   const {error}=await sb.rpc('ajustar_estoque',{p_tipo:t,p_id:id,p_saldo_real:n,p_motivo:motivo.trim(),p_responsavel:EST.operador});
   if(error)return msg(error.message,true);
   msg('✅ Ajustado: '+fmt(atual)+' → '+fmt(n)+' '+un);
@@ -918,6 +938,7 @@ async function confReceber(id){
   const q=parseNumBR(document.getElementById('rQtd').value);
   if(!q||q<=0)return msg('Informe a quantidade',true);
   const lote=document.getElementById('rLote').value.trim()||null;
+  if(!await travaEstoque())return;
   const ped=Number(c.quantidade_solicitada)||0, falta=Math.round((ped-q)*1000)/1000;
   if(falta>0){
     if(confirm('Chegou '+fmt(q)+' de '+fmt(ped)+' '+un+' — faltam '+fmt(falta)+' '+un+'.\n\nOK = entrega parcial: o saldo continua pendente com o fornecedor e o MRP conta ele como "a caminho".\nCancelar = fecha o pedido só com o que chegou (o resto volta a ser compra nova).')){
@@ -1360,6 +1381,7 @@ async function addBaldeEntrada(produtoId,nome,lote,kgPrevisto){
   const v=document.getElementById('baldeKg').value;
   const n=parseNumBR(v);
   if(!n||n<=0)return msg('Quantidade inválida',true);
+  if(!await travaEstoque())return;
   const {error}=await sb.rpc('entrada_balde',{p_produto_id:produtoId,p_kg:n,p_responsavel:EST.operador,p_lote:lote||'MANUAL'});
   if(error)return msg(error.message,true);
   msg('✅ '+fmt(n)+' kg lançados no balde');
@@ -2440,6 +2462,7 @@ async function confPesagem(progId){
   const lote=document.getElementById('wLote').value.trim();
   if(!lote)return msg('Informe o lote',true);
   const lotesMP=[...document.querySelectorAll('.ck-wrap')].map(w=>({item_id:w.dataset.item,lotes:(w.querySelector('.ck-lote').value||'').trim()})).filter(x=>x.lotes);
+  if(!await travaEstoque())return;
   const {error}=await sb.rpc('confirmar_pesagem',{p_prog:progId,p_responsavel:EST.operador,p_lote:lote,p_lotes:lotesMP});
   if(error)return msg(error.message,true);
   msg('✅ Pesagem concluída — estoque baixado · lote '+lote);tela('programacao');
@@ -2497,6 +2520,7 @@ async function confBaixa(){
   if(precisaOperador())return;
   const p=EST.cache.paBaixa.find(x=>x.id===EST.bx.paId);if(!p)return;
   const n=EST.bx.potes;if(!n||n<=0)return msg('Conte pelo menos 1 pote',true);
+  if(!await travaEstoque())return;
   const {error}=await sb.rpc('baixa_despacho',{p_pa:p.id,p_potes:n,p_responsavel:EST.operador});
   if(error)return msg(error.message,true);
   msg('✅ Baixa de '+n+' potes de '+p.nome+' registrada');
@@ -2697,6 +2721,7 @@ async function confMovimento(){
   }else{
     params[conf.paramId]=p.id;params[conf.paramQtd]=n;params.p_responsavel=EST.operador;
   }
+  if(!await travaEstoque())return;
   const {error}=await sb.rpc(rpc,params);
   if(error)return msg(error.message,true);
   msg('✅ '+(p.mix?'Baixa de balde (mistura)':conf.titulo)+' — '+p.nome+': '+fmt(n,conf.decimal?1:0));
@@ -2789,6 +2814,7 @@ async function confEnvaseSimples(){
   const baldeId=EST.es.baldeId||(baldeAuto&&!EST.es.forcarBalde?baldeAuto.produto_id:null);
   if(!mix&&!baldeId)return msg('Escolha o balde',true);
   const lote=loteSugestao(1);
+  if(!await travaEstoque())return;
   const {error}=await sb.rpc('envasar',{p_produto:mix?null:baldeId,p_pa:p.id,p_potes:n,p_responsavel:EST.operador,p_lote:lote});
   if(error)return msg(error.message,true);
   msg('✅ '+n+' potes de '+p.nome+' envasados — lote '+lote);
@@ -2866,6 +2892,7 @@ async function confEnvase(){
   if(precisaOperador())return;
   const p=EST.cache.pa.find(x=>x.id===ePa.value);
   const n=Math.round(parseNumBR(ePotes.value));if(!n||n<=0)return msg('Informe os potes',true);
+  if(!await travaEstoque())return;
   if(p.peso_pote_kg==null){
     const peso=Number((document.getElementById('ePeso')?.value||'').replace(',','.'));
     if(!peso||peso<=0)return msg('Informe o peso do pote',true);
