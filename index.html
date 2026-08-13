@@ -1622,23 +1622,15 @@ async function tVendas(){
     if(d.plataforma) byPa[pid].plats[d.plataforma]=(byPa[pid].plats[d.plataforma]||0)+(Number(d.qtd_potes)||0);
   });
   const hj=hojeLocal();
-  const grade=x=>{
-    const falta=Math.max(0,x.dem-x.saldo), venc=x.prazo&&x.prazo<=hj;
-    let rank,cor,bg,tag;
-    if(falta>0&&venc){rank=1;cor='#C63A3A';bg='#FDECEC';tag='ENVASAR JÁ';}
-    else if(falta>0){rank=2;cor='#D9772B';bg='#FBEEE2';tag='ENVASAR';}
-    else{rank=3;cor='#3E7C45';bg='#EAF3EA';tag='EM ESTOQUE';}
-    return {falta,rank,cor,bg,tag};
+  const diasAte=d=>{ if(!d) return null; const dt=new Date(d+'T12:00'), h=new Date(hj+'T12:00'); return Math.round((dt-h)/86400000); };
+  const corUrgencia=dias=>{
+    if(dias===null) return ['#8A6B3D','SEM PRAZO'];
+    if(dias<0) return ['#C63A3A','VENCIDO'];
+    if(dias===0) return ['#C63A3A','HOJE'];
+    if(dias===1) return ['#D9772B','AMANHÃ'];
+    if(dias<=3) return ['#B8862B','ESTA SEMANA'];
+    return ['#3E7C45','COM FOLGA'];
   };
-  const lista=Object.values(byPa).map(x=>({...x,g:grade(x)}));
-  lista.sort((a,b)=>a.g.rank-b.g.rank||((a.prazo||'9')<(b.prazo||'9')?-1:1));
-  const totPot=lista.reduce((s,x)=>s+x.dem,0), totFalta=lista.reduce((s,x)=>s+x.g.falta,0);
-  const nm=EST.cache.naoMapeados||[];
-  const porCanal={};linhas.forEach(d=>{if(d.plataforma)porCanal[d.plataforma]=(porCanal[d.plataforma]||0)+(Number(d.qtd_potes)||0)});
-  const canais=Object.entries(porCanal).sort((a,b)=>b[1]-a[1]);
-  const urgentes=lista.filter(x=>x.g.rank===1);
-  const envasar=lista.filter(x=>x.g.rank===2);
-  const emEstoque=lista.filter(x=>x.g.rank===3);
   const corCanal=nome=>{const n=(nome||'').toLowerCase();
     if(n.includes('tiktok'))return['#000','#fff'];
     if(n.includes('shopee'))return['#EE4D2D','#fff'];
@@ -1646,23 +1638,79 @@ async function tVendas(){
     if(n.includes('varejo'))return['#2F6DA8','#fff'];
     return['#8A6B3D','#fff'];
   };
-  const cartao=x=>{const g=x.g;const platsArr=Object.entries(x.plats).sort((a,b)=>b[1]-a[1]);return `
-    <div style="background:#fff;border:1.5px solid var(--linha);border-left:4px solid ${g.cor};border-radius:10px;padding:10px 12px;margin-bottom:8px">
+  const listaPa=Object.values(byPa);
+  const totPot=listaPa.reduce((s,x)=>s+x.dem,0), totFalta=listaPa.reduce((s,x)=>s+Math.max(0,x.dem-x.saldo),0);
+  const nm=EST.cache.naoMapeados||[];
+  const porCanal={};linhas.forEach(d=>{if(d.plataforma)porCanal[d.plataforma]=(porCanal[d.plataforma]||0)+(Number(d.qtd_potes)||0)});
+  const canais=Object.entries(porCanal).sort((a,b)=>b[1]-a[1]);
+  const byData={};
+  linhas.forEach(d=>{
+    const dk=d.data_despacho||'sem-prazo', pid=d.produto_acabado_id, info=d.produto_acabado||{};
+    if(!byData[dk])byData[dk]={};
+    if(!byData[dk][pid])byData[dk][pid]={nome:info.nome||'—',saldo:Number(info.saldo_potes)||0,dem:0,plats:{}};
+    byData[dk][pid].dem+=Number(d.qtd_potes)||0;
+    if(d.plataforma)byData[dk][pid].plats[d.plataforma]=(byData[dk][pid].plats[d.plataforma]||0)+(Number(d.qtd_potes)||0);
+  });
+  const datasOrdenadas=Object.keys(byData).filter(k=>k!=='sem-prazo').sort();
+  if(byData['sem-prazo'])datasOrdenadas.push('sem-prazo');
+  if(!EST.filtroDatasVendas)EST.filtroDatasVendas=[];
+  const selDatas=EST.filtroDatasVendas.filter(d=>datasOrdenadas.includes(d));
+  const datasMostrar=selDatas.length?selDatas:datasOrdenadas;
+  const cartaoItem=(x,cor)=>{const platsArr=Object.entries(x.plats).sort((a,b)=>b[1]-a[1]);const falta=Math.max(0,x.dem-x.saldo);return `
+    <div style="background:#fff;border:1px solid var(--linha);border-radius:9px;padding:9px 11px;margin-bottom:6px">
       <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
-        <b style="font-size:14.5px;line-height:1.3">${x.nome}</b>
-        ${g.falta>0?`<b class="mono" style="color:${g.cor};font-size:16px;white-space:nowrap">${fmt(g.falta,0)}</b>`:'<span style="color:var(--pistache);font-size:13px;white-space:nowrap">✓ cobre</span>'}
+        <b style="font-size:13.5px;line-height:1.3">${x.nome}</b>
+        ${falta>0?`<b class="mono" style="color:${cor};font-size:15px;white-space:nowrap">${fmt(falta,0)}</b>`:'<span style="color:var(--pistache);font-size:12px;white-space:nowrap;font-weight:700">✓ cobre</span>'}
       </div>
-      <div style="font-size:12px;color:#7A6A57;margin-top:3px">demanda <b>${fmt(x.dem,0)}</b> · estoque ${fmt(x.saldo,0)}${x.prazo?(x.prazo<=hj?` · <b style="color:var(--morango)">⏰ prazo ${new Date(x.prazo+'T12:00').toLocaleDateString('pt-BR')}</b>`:' · prazo '+new Date(x.prazo+'T12:00').toLocaleDateString('pt-BR')):''}</div>
-      ${platsArr.length?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:6px">${platsArr.map(([p,q])=>{const[bg,fg]=corCanal(p);return `<span style="background:${bg};color:${fg};font-size:11px;font-weight:800;border-radius:20px;padding:3px 10px;white-space:nowrap">${p} · ${fmt(q,0)}</span>`}).join('')}</div>`:''}
+      <div style="font-size:11.5px;color:#7A6A57;margin-top:2px">demanda <b>${fmt(x.dem,0)}</b> · estoque ${fmt(x.saldo,0)}</div>
+      ${platsArr.length?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px">${platsArr.map(([p,q])=>{const[bg,fg]=corCanal(p);return `<span style="background:${bg};color:${fg};font-size:10.5px;font-weight:800;border-radius:20px;padding:2px 9px;white-space:nowrap">${p} · ${fmt(q,0)}</span>`}).join('')}</div>`:''}
     </div>`;};
-  const coluna=(titulo,cor,items)=>`
-    <div style="background:${cor}0D;border:1px solid ${cor}33;border-radius:14px;padding:12px;min-width:0">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <b style="font-size:13px;color:${cor};text-transform:uppercase;letter-spacing:.03em">${titulo}</b>
-        <span style="background:${cor};color:#fff;border-radius:20px;padding:2px 10px;font-size:12px;font-weight:800">${items.length}</span>
-      </div>
-      ${items.length?items.map(cartao).join(''):'<p style="color:#A99A82;font-size:13px;margin:0">vazio</p>'}
+  const chipsData=datasOrdenadas.map(dk=>{
+    const dias=diasAte(dk==='sem-prazo'?null:dk);
+    const [cor]=corUrgencia(dias);
+    const rot=dk==='sem-prazo'?'Sem prazo':new Date(dk+'T12:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+    const sel=selDatas.includes(dk);
+    return `<button onclick="EST.filtroDatasVendas=(EST.filtroDatasVendas||[]).includes('${dk}')?EST.filtroDatasVendas.filter(x=>x!=='${dk}'):[...(EST.filtroDatasVendas||[]),'${dk}'];tela('vendas')" style="border:1.5px solid ${sel?cor:'var(--linha)'};background:${sel?cor:'#fff'};color:${sel?'#fff':'var(--cacau)'};border-radius:20px;padding:7px 13px;font-weight:800;font-size:12px;min-height:36px">${rot}</button>`;
+  }).join('');
+  let resumoCombo='';
+  if(selDatas.length>=2){
+    const byProdCombo={};
+    selDatas.forEach(dk=>{
+      Object.entries(byData[dk]).forEach(([pid,x])=>{
+        if(!byProdCombo[pid])byProdCombo[pid]={nome:x.nome,saldo:x.saldo,dem:0,plats:{}};
+        byProdCombo[pid].dem+=x.dem;
+        Object.entries(x.plats).forEach(([p,q])=>{byProdCombo[pid].plats[p]=(byProdCombo[pid].plats[p]||0)+q;});
+      });
+    });
+    const entradas=Object.values(byProdCombo).sort((a,b)=>(b.dem-b.saldo)-(a.dem-a.saldo));
+    const naoCobre=entradas.filter(x=>x.dem>x.saldo);
+    const labels=selDatas.map(dk=>dk==='sem-prazo'?'Sem prazo':new Date(dk+'T12:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})).join(' + ');
+    resumoCombo=`<div class="card" style="border-color:#C9AF8C;background:#FBF6EC">
+      <b style="font-size:14px">📦 Resumo combinado — ${labels}</b>
+      <div style="font-size:12px;color:#7A6A57;margin:4px 0 10px">o estoque é o mesmo pros dois dias — isso mostra se ele aguenta a soma</div>
+      ${naoCobre.length?`<div style="background:#FDF7F7;border:1px solid #E8B9B9;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;color:var(--morango);font-weight:700">⚠️ ${naoCobre.length} produto(s) não cobrem a soma das datas selecionadas</div>`:`<div style="background:#EAF3EA;border:1px solid #C7DFC9;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;color:var(--pistache-esc);font-weight:700">✓ estoque cobre todos os produtos nas datas selecionadas</div>`}
+      ${entradas.map(x=>cartaoItem(x,'#C63A3A')).join('')}
     </div>`;
+  }
+  const secoesData=datasMostrar.map(dk=>{
+    const dias=diasAte(dk==='sem-prazo'?null:dk);
+    const [cor,tag]=corUrgencia(dias);
+    const rot=dk==='sem-prazo'?'Sem prazo':new Date(dk+'T12:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
+    const items=Object.values(byData[dk]).sort((a,b)=>b.dem-a.dem);
+    const total=items.reduce((s,x)=>s+x.dem,0);
+    return `<div style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:${cor};border-radius:12px;padding:11px 15px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <b style="color:#fff;font-size:14.5px">📅 ${rot}</b>
+          <span style="background:#fff;color:${cor};font-size:10.5px;font-weight:900;border-radius:20px;padding:3px 9px;letter-spacing:.02em">${tag}</span>
+        </div>
+        <span style="color:#fff;font-size:12.5px;font-weight:800">${fmt(total,0)} potes · ${items.length}</span>
+      </div>
+      <div style="background:${cor}0D;border:1px solid ${cor}33;border-radius:14px;padding:10px">
+        ${items.map(x=>cartaoItem(x,cor)).join('')}
+      </div>
+    </div>`;
+  }).join('');
   document.getElementById('app').innerHTML=`
   ${topo('Vendas / Despacho','demanda e-commerce + varejo × estoque de potes')}
   <main>
@@ -1691,11 +1739,13 @@ async function tVendas(){
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${canais.map(([nome,q])=>{const[bg,fg]=corCanal(nome);return `<span style="background:${bg};color:${fg};border-radius:20px;padding:5px 14px;font-weight:800;font-size:13px">${nome} · ${fmt(q,0)}</span>`}).join('')}</div>
     </div>`:''}
     ${nm.length?`<div class="card" style="border-color:#E8B9B9;background:#FDF7F7"><b style="color:var(--morango)">Códigos a mapear (${nm.length})</b><small style="color:#7A6A57;display:block;margin:4px 0 8px">vieram na planilha mas não estão no de-para — aponte o SKU e reimporte</small>${nm.map(x=>`<div class="item-row"><span>${x.codigo} <small style="color:#7A6A57">· ${fmt(x.qtd,0)} potes<br>${(x.nome||'').slice(0,48)}</small></span><button onclick="mapearCodigo('${String(x.codigo).replace(/'/g,"\\'")}')" style="border:1px solid var(--linha);background:#fff;border-radius:8px;padding:8px 12px">mapear</button></div>`).join('')}</div>`:''}
-    ${lista.length?`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin-top:12px">
-      ${coluna('🔴 Envasar já','#C63A3A',urgentes)}
-      ${coluna('🟠 Envasar','#D9772B',envasar)}
-      ${coluna('🟢 Em estoque','#3E7C45',emEstoque)}
-    </div>`:`<div class="card"><div class="center">Sem demanda em aberto ${fv==='varejo'?'no varejo':(fv==='ecom'?'no e-commerce':'')}. 🛍️</div></div>`}
+    ${datasOrdenadas.length?`<div class="card" style="padding:10px 14px">
+      <small style="color:#7A6A57;font-weight:700;letter-spacing:.02em;margin-right:4px">DATA-LIMITE DE DESPACHO</small>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${chipsData}${selDatas.length?`<button onclick="EST.filtroDatasVendas=[];tela('vendas')" style="border:1.5px dashed var(--linha);background:#fff;color:var(--cacau);border-radius:20px;padding:7px 13px;font-weight:800;font-size:12px;min-height:36px">✕ limpar</button>`:''}</div>
+      <small style="color:#7A6A57;display:block;margin-top:7px">toque em 2+ datas pra somar a demanda e ver se o estoque cobre o período combinado</small>
+    </div>`:''}
+    ${resumoCombo}
+    ${datasOrdenadas.length?secoesData:`<div class="card"><div class="center">Sem demanda em aberto ${fv==='varejo'?'no varejo':(fv==='ecom'?'no e-commerce':'')}. 🛍️</div></div>`}
   </main>`;
 }
 function carregarXLSX(){
