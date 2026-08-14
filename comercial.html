@@ -256,6 +256,7 @@ var TELAS = {
   inicio:      { rotulo:"Início",         fn:telaInicio },
   faturamento: { rotulo:"Faturamento",    fn:telaFaturamento },
   clientes:    { rotulo:"Clientes",       fn:telaClientes },
+  contatos:    { rotulo:"Contatos",       fn:telaContatos },
   representantes:{ rotulo:"Representantes", fn:telaRepres },
   importar:    { rotulo:"Importar NF-e",  fn:telaImportar },
   pendencias:  { rotulo:"Pendências",     fn:telaPendencias }
@@ -501,6 +502,100 @@ function filtraClientes(){
         '<td class="n">'+brl(c._v)+'</td>'+
         '<td class="mono">'+dataBR(c._ultima)+'</td></tr>';
     }).join("")+'</tbody></table></div>';
+}
+
+/* ================= CRM: contatos ================= */
+async function telaContatos(){
+  var rc = await sb.from("clientes").select("id,razao_social").order("razao_social");
+  var clientesL = rc.data || [];
+  ST.cache.clientesSelect = clientesL;
+
+  var opcoes = '<option value="">Selecione o cliente…</option>' +
+    clientesL.map(function(c){ return '<option value="'+c.id+'">'+esc(c.razao_social)+'</option>'; }).join("");
+
+  var h = '<h2>Contatos</h2><p class="sub">Pessoas de contato dentro de cada cliente</p>'+
+    '<div class="card" style="--u:#3E7C45"><h3>Cadastrar contato</h3>'+
+    '<label for="ctCliente">Cliente</label><select id="ctCliente">'+opcoes+'</select>'+
+    '<label for="ctNome">Nome</label><input id="ctNome" placeholder="Nome do contato">'+
+    '<label for="ctCargo">Cargo (opcional)</label><input id="ctCargo" placeholder="Ex.: Comprador">'+
+    '<label for="ctTelefone">Telefone (opcional)</label><input id="ctTelefone" placeholder="(00) 00000-0000">'+
+    '<label for="ctEmail">E-mail (opcional)</label><input id="ctEmail" type="email">'+
+    '<label style="display:flex;align-items:center;gap:8px;margin-top:14px;text-transform:none;letter-spacing:0;font-size:14px;font-weight:500">'+
+      '<input type="checkbox" id="ctDecisor" style="width:auto"> É decisor de compra'+
+    '</label>'+
+    '<label for="ctObs">Observações (opcional)</label><input id="ctObs" placeholder="Anotação livre">'+
+    '<button class="b" style="margin-top:14px" onclick="salvarContato()">Cadastrar</button></div>'+
+    '<input id="ctBusca" placeholder="Buscar por nome ou cliente" oninput="filtraContatos()">'+
+    '<div id="ctLista" style="margin-top:12px"></div>';
+  pinta(h);
+  carregarContatos();
+}
+async function carregarContatos(){
+  var r = await sb.schema("crm").from("contatos")
+    .select("id,cliente_id,nome,cargo,telefone,email,decisor,ativo")
+    .order("nome");
+  var lista = $("ctLista");
+  if(r.error){
+    if(lista) lista.innerHTML = '<div class="card" style="--u:#C63A3A">Não consegui ler os contatos: '+esc(r.error.message)+'</div>';
+    return;
+  }
+  var porCliente = {};
+  (ST.cache.clientesSelect||[]).forEach(function(c){ porCliente[c.id] = c.razao_social; });
+  ST.cache.contatos = (r.data||[]).map(function(x){
+    x._cliente = porCliente[x.cliente_id] || "—";
+    return x;
+  });
+  filtraContatos();
+}
+function filtraContatos(){
+  var q = ($("ctBusca") ? $("ctBusca").value : "").toLowerCase().trim();
+  var L = (ST.cache.contatos||[]).filter(function(x){
+    if(!x.ativo) return false;
+    if(!q) return true;
+    return (x.nome||"").toLowerCase().indexOf(q) >= 0
+        || (x._cliente||"").toLowerCase().indexOf(q) >= 0;
+  });
+  var lista = $("ctLista");
+  if(!lista) return;
+  if(!L.length){ lista.innerHTML = '<div class="vazio">Nenhum contato encontrado.</div>'; return; }
+  lista.innerHTML = '<div class="tw"><table><thead><tr>'+
+    '<th>Nome</th><th>Cliente</th><th>Cargo</th><th>Telefone</th><th>E-mail</th><th></th>'+
+    '</tr></thead><tbody>'+
+    L.map(function(x){
+      return '<tr><td>'+esc(x.nome)+(x.decisor?' <span class="tag" style="background:#B8862B">decisor</span>':'')+'</td>'+
+        '<td>'+esc(x._cliente)+'</td>'+
+        '<td>'+esc(x.cargo||"—")+'</td>'+
+        '<td class="mono">'+esc(x.telefone||"—")+'</td>'+
+        '<td>'+esc(x.email||"—")+'</td>'+
+        '<td><button class="s" onclick="inativarContato(\''+x.id+'\')">Inativar</button></td></tr>';
+    }).join("")+'</tbody></table></div>';
+}
+async function salvarContato(){
+  var clienteId = $("ctCliente").value;
+  var nome = $("ctNome").value.trim();
+  if(!clienteId) return msg("Escolha o cliente", true);
+  if(!nome) return msg("O nome é obrigatório", true);
+  var r = await sb.schema("crm").from("contatos").insert({
+    cliente_id: clienteId,
+    nome: nome,
+    cargo: $("ctCargo").value.trim() || null,
+    telefone: $("ctTelefone").value.trim() || null,
+    email: $("ctEmail").value.trim() || null,
+    decisor: $("ctDecisor").checked,
+    observacoes: $("ctObs").value.trim() || null,
+    criado_por: ST.email
+  });
+  if(r.error) return msg("Não deu para cadastrar: "+r.error.message, true);
+  msg("Contato cadastrado");
+  $("ctNome").value=""; $("ctCargo").value=""; $("ctTelefone").value="";
+  $("ctEmail").value=""; $("ctDecisor").checked=false; $("ctObs").value="";
+  carregarContatos();
+}
+async function inativarContato(id){
+  var r = await sb.schema("crm").from("contatos").update({ativo:false}).eq("id", id);
+  if(r.error) return msg("Não deu para inativar: "+r.error.message, true);
+  msg("Contato inativado");
+  carregarContatos();
 }
 
 /* ================= representantes ================= */
