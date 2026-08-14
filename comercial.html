@@ -275,6 +275,7 @@ var TELAS = {
   inicio:      { rotulo:"Início",         fn:telaInicio },
   faturamento: { rotulo:"Faturamento",    fn:telaFaturamento },
   clientes:    { rotulo:"Clientes",       fn:telaClientes },
+  ficha:       { rotulo:"Ficha",          fn:telaFicha },
   contatos:    { rotulo:"Contatos",       fn:telaContatos },
   agenda:      { rotulo:"Agenda",         fn:telaAgenda },
   oportunidades:{ rotulo:"Oportunidades", fn:telaOportunidades },
@@ -525,17 +526,224 @@ function filtraClientes(){
     }).join("")+'</tbody></table></div>';
 }
 
+/* ================= CRM: ficha do cliente (360º) ================= */
+var SEG_ROTULO = {
+  varejo:"Varejo", marketplace:"Marketplace",
+  terceirizacao:"Terceirização", representante:"Representante"
+};
+async function telaFicha(){
+  var rc = await sb.from("clientes")
+    .select("id,razao_social,nome_fantasia,municipio,uf,documento,segmento,situacao,observacao")
+    .order("razao_social");
+  ST.cache.clientesSelect = rc.data || [];
+
+  pinta('<h2>Ficha do cliente</h2><p class="sub">Tudo sobre um cliente num lugar só</p>'+
+    '<div class="card" style="--u:#22303A">'+
+    campoBuscaCliente("fiBuscaCli","fiCliente")+
+    '<label for="fiCliente">Cliente</label>'+
+    '<select id="fiCliente" onchange="abrirFicha()">'+opcoesCliente(ST.cache.clientesSelect)+'</select>'+
+    '</div><div id="fiCorpo"><div class="vazio">Escolha um cliente para ver a ficha.</div></div>');
+}
+async function abrirFicha(){
+  var cid = $("fiCliente").value;
+  var alvo = $("fiCorpo");
+  if(!alvo) return;
+  if(!cid){ alvo.innerHTML = '<div class="vazio">Escolha um cliente para ver a ficha.</div>'; return; }
+  alvo.innerHTML = '<div class="vazio">Carregando…</div>';
+
+  var c = (ST.cache.clientesSelect||[]).filter(function(x){ return x.id === cid; })[0];
+  if(!c){ alvo.innerHTML = '<div class="vazio">Cliente não encontrado.</div>'; return; }
+
+  var rCart = await sb.from("vendas_pedidos")
+    .select("pedido_numero,produto_nome,qtd,qtd_separada,valor_unitario,emissao,entrega,status")
+    .eq("cliente_id", cid).order("entrega", {ascending:true, nullsFirst:false});
+  var rNf = await sb.from("nf_venda")
+    .select("numero,emissao,v_prod,classificacao").eq("cliente_id", cid)
+    .order("emissao", {ascending:false});
+  var rCt = await sb.schema("crm").from("contatos")
+    .select("nome,cargo,telefone,email,decisor").eq("cliente_id", cid).eq("ativo", true);
+  var rIn = await sb.schema("crm").from("interacoes")
+    .select("tipo,data_interacao,resumo,proximo_passo,data_proximo_passo,concluido")
+    .eq("cliente_id", cid).order("data_interacao", {ascending:false});
+  var rOp = await sb.schema("crm").from("oportunidades")
+    .select("titulo,etapa,valor_estimado,previsao_fechamento").eq("cliente_id", cid);
+
+  var cart = rCart.data || [], nfs = rNf.data || [];
+  var cts = rCt.data || [], ints = rIn.data || [], ops = rOp.data || [];
+
+  function vl(x){ return (Number(x.qtd)||0) * (Number(x.valor_unitario)||0); }
+  var abertos = cart.filter(function(x){ return x.status === 'aberto'; });
+  var vAberto = abertos.reduce(function(a,x){ return a + vl(x); }, 0);
+  var vTotal  = cart.reduce(function(a,x){ return a + vl(x); }, 0);
+  var faturado = nfs.filter(function(n){ return n.classificacao === 'venda'; })
+                    .reduce(function(a,n){ return a + (Number(n.v_prod)||0); }, 0);
+  var ultimaNf = nfs.length ? nfs[0].emissao : null;
+  var ultimoPed = cart.reduce(function(a,x){
+    return (x.emissao && (!a || x.emissao > a)) ? x.emissao : a; }, null);
+  var diasSemComprar = ultimoPed ? -diasAte(ultimoPed) : null;
+
+  var h = '';
+  /* cabeçalho do cliente */
+  h += '<div class="card" style="--u:#22303A"><h3>'+esc(c.razao_social)+'</h3>'+
+    '<div style="font-size:13.5px;color:var(--tinta2)">'+
+      (c.municipio ? esc(c.municipio)+(c.uf?'/'+esc(c.uf):'')+' · ' : '')+
+      (c.documento ? '<span class="mono">'+esc(c.documento)+'</span>'
+                   : '<span style="color:var(--lar)">sem CNPJ — ainda não faturado</span>')+
+      (c.segmento ? ' · <span class="tag" style="background:'+
+        (c.segmento==='varejo'?'#3E7C45':c.segmento==='marketplace'?'#D9772B':
+         c.segmento==='terceirizacao'?'#B8862B':'#7A6A57')+'">'+
+        esc(SEG_ROTULO[c.segmento]||c.segmento)+'</span>' : '')+
+    '</div></div>';
+
+  if(c.segmento === 'marketplace' || c.segmento === 'terceirizacao'){
+    h += '<div class="card" style="--u:#D9772B">Este cadastro é um '+
+      esc(SEG_ROTULO[c.segmento])+', não um cliente final — os números abaixo '+
+      'agregam vários compradores ou um contrato industrial.</div>';
+  }
+
+  /* KPIs */
+  h += '<div class="kpis">'+
+    '<div class="kpi'+(vAberto>0?'':'')+'"><div class="r">Em carteira</div><div class="v">R$ '+brl(vAberto)+'</div>'+
+      '<div class="n">'+inte(abertos.length)+' linha(s) em aberto</div></div>'+
+    '<div class="kpi bom"><div class="r">Já faturado</div><div class="v">R$ '+brl(faturado)+'</div>'+
+      '<div class="n">'+inte(nfs.length)+' nota(s)</div></div>'+
+    '<div class="kpi'+(diasSemComprar !== null && diasSemComprar > 60 ? ' ruim':'')+'">'+
+      '<div class="r">Último pedido</div><div class="v">'+
+      (diasSemComprar === null ? '—' : inte(diasSemComprar)+'d')+'</div>'+
+      '<div class="n">'+(ultimoPed ? dataBR(ultimoPed) : 'nunca')+'</div></div>'+
+    '<div class="kpi"><div class="r">Última NF</div><div class="v mono" style="font-size:16px">'+
+      dataBR(ultimaNf)+'</div><div class="n">'+(ultimaNf?'faturamento':'sem faturamento')+'</div></div>'+
+    '</div>';
+
+  h += '<div class="conta">R$ '+brl(vTotal)+' pedido no total &nbsp;−&nbsp; '+
+       '<span class="p">R$ '+brl(vTotal - vAberto)+'</span> já baixado &nbsp;=&nbsp; '+
+       '<b>R$ '+brl(vAberto)+' em aberto</b></div>';
+
+  /* contatos */
+  h += secaoFicha('Contatos', cts.length, cts.map(function(x){
+    return '<div class="card" style="--u:'+(x.decisor?'#B8862B':'#DCD2C4')+'">'+
+      '<b>'+esc(x.nome)+'</b>'+(x.decisor?' <span class="tag" style="background:#B8862B">decisor</span>':'')+
+      '<div style="font-size:13.5px;color:var(--tinta2);margin-top:4px">'+
+        (x.cargo?esc(x.cargo)+' · ':'')+
+        (x.telefone?'<span class="mono">'+esc(x.telefone)+'</span> · ':'')+
+        esc(x.email||'')+'</div></div>';
+  }).join(""), 'Nenhum contato cadastrado.');
+
+  /* carteira em aberto */
+  h += secaoFicha('Em carteira', abertos.length,
+    abertos.length ? '<div class="tw"><table class="cards"><thead><tr>'+
+      '<th>Pedido</th><th>Produto</th><th style="text-align:right">Qtd</th>'+
+      '<th style="text-align:right">Valor</th><th>Entrega</th></tr></thead><tbody>'+
+      abertos.map(function(x){
+        var d = diasAte(x.entrega);
+        var atras = d !== null && d < 0;
+        return '<tr><td class="mono">'+esc(x.pedido_numero||'—')+'</td>'+
+          '<td data-r="Produto">'+esc(x.produto_nome||'—')+'</td>'+
+          '<td data-r="Qtd" class="n">'+inte(x.qtd)+
+            (Number(x.qtd_separada)>0?' <span style="color:var(--pist)">('+inte(x.qtd_separada)+' sep.)</span>':'')+'</td>'+
+          '<td data-r="Valor" class="n">'+brl(vl(x))+'</td>'+
+          '<td data-r="Entrega" class="mono"'+(atras?' style="color:var(--mor);font-weight:700"':'')+'>'+
+            dataBR(x.entrega)+(atras?' ⚠':'')+'</td></tr>';
+      }).join("")+'</tbody></table></div>' : '', 'Nada em aberto.');
+
+  /* oportunidades */
+  h += secaoFicha('Oportunidades', ops.length, ops.map(function(x){
+    var fechada = x.etapa.indexOf('fechado') === 0;
+    return '<div class="card" style="--u:'+(x.etapa==='fechado_ganho'?'#3E7C45':
+            x.etapa==='fechado_perdido'?'#C63A3A':'#B8862B')+'">'+
+      '<b>'+esc(x.titulo)+'</b>'+
+      '<div style="font-size:13.5px;color:var(--tinta2);margin-top:4px">'+
+        esc(ETAPA_ROTULO[x.etapa]||x.etapa)+
+        (x.valor_estimado!=null?' · R$ '+brl(x.valor_estimado):'')+
+        (x.previsao_fechamento&&!fechada?' · previsão '+dataBR(x.previsao_fechamento):'')+
+      '</div></div>';
+  }).join(""), 'Nenhuma oportunidade.');
+
+  /* histórico de interações */
+  h += secaoFicha('Histórico de contato', ints.length, ints.slice(0,15).map(function(x){
+    var pend = x.proximo_passo && !x.concluido;
+    return '<div class="card" style="--u:'+(pend?'#D9772B':'#DCD2C4')+'">'+
+      '<div style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--tinta2);font-weight:700">'+
+        esc(x.tipo)+' · '+dataBR(x.data_interacao)+'</div>'+
+      '<div style="margin-top:4px">'+esc(x.resumo)+'</div>'+
+      (pend?'<div class="conta"><b>Pendente:</b> '+esc(x.proximo_passo)+
+            (x.data_proximo_passo?' · '+dataBR(x.data_proximo_passo):'')+'</div>':'')+
+      '</div>';
+  }).join(""), 'Nenhuma interação registrada.');
+
+  /* notas fiscais */
+  if(nfs.length){
+    h += secaoFicha('Notas fiscais', nfs.length,
+      '<div class="tw"><table class="cards"><thead><tr>'+
+      '<th>Número</th><th>Emissão</th><th style="text-align:right">Valor</th><th>Tipo</th>'+
+      '</tr></thead><tbody>'+
+      nfs.map(function(n){
+        return '<tr><td class="mono">'+esc(n.numero)+'</td>'+
+          '<td data-r="Emissão" class="mono">'+dataBR(n.emissao)+'</td>'+
+          '<td data-r="Valor" class="n">'+brl(n.v_prod)+'</td>'+
+          '<td data-r="Tipo">'+esc(n.classificacao)+'</td></tr>';
+      }).join("")+'</tbody></table></div>', '');
+  }
+
+  h += '<div class="conta" style="margin-top:18px;white-space:normal">'+
+    '<b>Como ler:</b> "Em carteira" = pedido lançado e ainda não baixado (fonte: carteira LBR). '+
+    '"Já faturado" = soma do valor da mercadoria das NF-e de venda — exclui sell-in e bonificação. '+
+    '"Último pedido" conta os dias desde a emissão mais recente; fica vermelho acima de 60 dias. '+
+    'Clientes sem CNPJ vieram da carteira e ainda não foram faturados.</div>';
+
+  alvo.innerHTML = h;
+}
+function secaoFicha(titulo, n, conteudo, vazio){
+  return '<h3 style="margin:22px 0 8px;font-size:14px;text-transform:uppercase;'+
+    'letter-spacing:.09em;color:var(--tinta2)">'+esc(titulo)+' · '+inte(n)+'</h3>'+
+    (n ? conteudo : '<div class="vazio" style="padding:18px">'+esc(vazio)+'</div>');
+}
+
+/* ================= CRM: seletor de cliente com busca ================= */
+/* Reaproveitado por Contatos, Agenda e Oportunidades. Mesmos critérios da
+   tela Clientes: nome, cidade ou documento. */
+function campoBuscaCliente(idBusca, idSelect){
+  return '<label for="'+idBusca+'">Buscar cliente</label>'+
+    '<input id="'+idBusca+'" placeholder="Nome, cidade ou CNPJ" '+
+      'oninput="filtraSelectCliente(\''+idBusca+'\',\''+idSelect+'\')">';
+}
+function opcoesCliente(L){
+  return '<option value="">Selecione o cliente…</option>' +
+    (L||[]).map(function(c){
+      return '<option value="'+c.id+'">'+esc(c.razao_social)+
+             (c.municipio ? ' — '+esc(c.municipio)+(c.uf?'/'+esc(c.uf):'') : '')+'</option>';
+    }).join("");
+}
+function filtraSelectCliente(idBusca, idSelect){
+  var campo = $(idBusca), sel = $(idSelect);
+  if(!campo || !sel) return;
+  var q = campo.value.toLowerCase().trim();
+  var qNum = q.replace(/\D/g,"");
+  var L = (ST.cache.clientesSelect||[]).filter(function(c){
+    if(!q) return true;
+    return (c.razao_social||"").toLowerCase().indexOf(q) >= 0
+        || (c.municipio||"").toLowerCase().indexOf(q) >= 0
+        || (qNum && (c.documento||"").indexOf(qNum) >= 0);
+  });
+  var selecionado = sel.value;
+  sel.innerHTML = opcoesCliente(L);
+  // preserva a escolha se ela continuar na lista filtrada
+  if(selecionado && L.some(function(c){ return c.id === selecionado; })) sel.value = selecionado;
+  if(q && L.length === 1) sel.value = L[0].id;
+  if(sel.onchange) sel.onchange();
+}
+
 /* ================= CRM: contatos ================= */
 async function telaContatos(){
-  var rc = await sb.from("clientes").select("id,razao_social").order("razao_social");
+  var rc = await sb.from("clientes").select("id,razao_social,municipio,uf,documento").order("razao_social");
   var clientesL = rc.data || [];
   ST.cache.clientesSelect = clientesL;
 
-  var opcoes = '<option value="">Selecione o cliente…</option>' +
-    clientesL.map(function(c){ return '<option value="'+c.id+'">'+esc(c.razao_social)+'</option>'; }).join("");
+  var opcoes = opcoesCliente(clientesL);
 
   var h = '<h2>Contatos</h2><p class="sub">Pessoas de contato dentro de cada cliente</p>'+
     '<div class="card" style="--u:#3E7C45"><h3>Cadastrar contato</h3>'+
+    campoBuscaCliente("ctBuscaCli","ctCliente")+
     '<label for="ctCliente">Cliente</label><select id="ctCliente">'+opcoes+'</select>'+
     '<label for="ctNome">Nome</label><input id="ctNome" placeholder="Nome do contato">'+
     '<label for="ctCargo">Cargo (opcional)</label><input id="ctCargo" placeholder="Ex.: Comprador">'+
@@ -631,18 +839,16 @@ function diasAte(dataISO){
   return Math.round((d - h) / 86400000);
 }
 async function telaAgenda(){
-  var rc = await sb.from("clientes").select("id,razao_social").order("razao_social");
+  var rc = await sb.from("clientes").select("id,razao_social,municipio,uf,documento").order("razao_social");
   ST.cache.clientesSelect = rc.data || [];
   var rk = await sb.schema("crm").from("contatos").select("id,cliente_id,nome").eq("ativo", true).order("nome");
   ST.cache.contatosTodos = rk.data || [];
 
-  var opcoes = '<option value="">Selecione o cliente…</option>' +
-    ST.cache.clientesSelect.map(function(c){
-      return '<option value="'+c.id+'">'+esc(c.razao_social)+'</option>';
-    }).join("");
+  var opcoes = opcoesCliente(ST.cache.clientesSelect);
 
   pinta('<h2>Agenda</h2><p class="sub">Interações registradas e o que precisa de retorno</p>'+
     '<div class="card" style="--u:#3E7C45"><h3>Registrar interação</h3>'+
+    campoBuscaCliente("agBuscaCli","agCliente")+
     '<label for="agCliente">Cliente</label><select id="agCliente" onchange="agContatosDoCliente()">'+opcoes+'</select>'+
     '<label for="agContato">Contato (opcional)</label><select id="agContato"><option value="">—</option></select>'+
     '<label for="agTipo">Tipo</label><select id="agTipo">'+
@@ -792,15 +998,12 @@ var ETAPA_ROTULO = {
   negociacao:"Negociação", fechado_ganho:"Ganho", fechado_perdido:"Perdido"
 };
 async function telaOportunidades(){
-  var rc = await sb.from("clientes").select("id,razao_social").order("razao_social");
+  var rc = await sb.from("clientes").select("id,razao_social,municipio,uf,documento").order("razao_social");
   ST.cache.clientesSelect = rc.data || [];
   var rp = await sb.from("produto_acabado").select("id,nome,linha").eq("ativo", true).order("nome");
   ST.cache.produtos = rp.data || [];
 
-  var opcoesCli = '<option value="">Selecione o cliente…</option>' +
-    ST.cache.clientesSelect.map(function(c){
-      return '<option value="'+c.id+'">'+esc(c.razao_social)+'</option>';
-    }).join("");
+  var opcoesCli = opcoesCliente(ST.cache.clientesSelect);
   var opcoesProd = '<option value="">— sem SKU específico —</option>' +
     ST.cache.produtos.map(function(p){
       return '<option value="'+p.id+'">'+esc(p.nome)+'</option>';
@@ -811,6 +1014,7 @@ async function telaOportunidades(){
 
   pinta('<h2>Oportunidades</h2><p class="sub">Funil de vendas — onde cada negócio está</p>'+
     '<div class="card" style="--u:#3E7C45"><h3>Nova oportunidade</h3>'+
+    campoBuscaCliente("opBuscaCli","opCliente")+
     '<label for="opCliente">Cliente</label><select id="opCliente">'+opcoesCli+'</select>'+
     '<label for="opTitulo">O que é</label><input id="opTitulo" placeholder="Ex.: entrada da linha Nutritiva na rede">'+
     '<label for="opProduto">Produto (opcional)</label><select id="opProduto">'+opcoesProd+'</select>'+
