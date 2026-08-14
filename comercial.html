@@ -81,11 +81,12 @@ tbody tr:hover{background:#FBF7F1}
 /* ---------- controles ---------- */
 label{display:block; font-size:12px; font-weight:700; text-transform:uppercase;
       letter-spacing:.08em; color:var(--tinta2); margin:12px 0 5px}
-input,select{
+input:not([type=checkbox]):not([type=radio]),select{
   width:100%; padding:11px 12px; border:1.5px solid var(--linha); border-radius:11px;
   background:var(--leite); color:var(--cacau); font:inherit; font-size:15px;
 }
-input:focus,select:focus{outline:2px solid var(--ard); outline-offset:1px; border-color:transparent}
+input:not([type=checkbox]):not([type=radio]):focus,select:focus{outline:2px solid var(--ard); outline-offset:1px; border-color:transparent}
+input[type=checkbox],input[type=radio]{width:17px; height:17px; accent-color:var(--pist); margin:0; flex:0 0 auto}
 button.b{
   background:var(--pist); color:#fff; border:none; border-radius:12px;
   padding:13px 18px; font:inherit; font-weight:700; font-size:15px; cursor:pointer;
@@ -124,6 +125,24 @@ button:focus-visible{outline:2px solid var(--ard); outline-offset:2px}
   .kpis{grid-template-columns:repeat(2,1fr)}
   h2{font-size:17px}
   .hd .marca{font-size:15px}
+
+  /* lista de contatos vira cartões empilhados — evita rolagem lateral no celular */
+  table.cards thead{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0)}
+  table.cards, table.cards tbody, table.cards tr, table.cards td{display:block; width:100%}
+  .tw:has(table.cards){border:none; background:transparent; overflow:visible}
+  table.cards tr{
+    background:var(--leite); border:1.5px solid var(--linha); border-radius:14px;
+    padding:12px 14px; margin-bottom:10px;
+  }
+  table.cards tr:hover{background:var(--leite)}
+  table.cards td{border:none; padding:3px 0; text-align:left}
+  table.cards td:first-child{font-weight:800; font-size:15.5px; padding-bottom:6px}
+  table.cards td[data-r]:not(:empty)::before{
+    content:attr(data-r) " · "; color:var(--tinta2); font-size:11px;
+    text-transform:uppercase; letter-spacing:.08em; font-weight:700;
+  }
+  table.cards td:last-child{padding-top:10px}
+  table.cards td:last-child button{width:100%}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
 </style>
@@ -558,15 +577,15 @@ function filtraContatos(){
   var lista = $("ctLista");
   if(!lista) return;
   if(!L.length){ lista.innerHTML = '<div class="vazio">Nenhum contato encontrado.</div>'; return; }
-  lista.innerHTML = '<div class="tw"><table><thead><tr>'+
+  lista.innerHTML = '<div class="tw"><table class="cards"><thead><tr>'+
     '<th>Nome</th><th>Cliente</th><th>Cargo</th><th>Telefone</th><th>E-mail</th><th></th>'+
     '</tr></thead><tbody>'+
     L.map(function(x){
       return '<tr><td>'+esc(x.nome)+(x.decisor?' <span class="tag" style="background:#B8862B">decisor</span>':'')+'</td>'+
-        '<td>'+esc(x._cliente)+'</td>'+
-        '<td>'+esc(x.cargo||"—")+'</td>'+
-        '<td class="mono">'+esc(x.telefone||"—")+'</td>'+
-        '<td>'+esc(x.email||"—")+'</td>'+
+        '<td data-r="Cliente">'+esc(x._cliente)+'</td>'+
+        '<td data-r="Cargo">'+esc(x.cargo||"—")+'</td>'+
+        '<td data-r="Telefone" class="mono">'+esc(x.telefone||"—")+'</td>'+
+        '<td data-r="E-mail">'+esc(x.email||"—")+'</td>'+
         '<td><button class="s" onclick="inativarContato(\''+x.id+'\')">Inativar</button></td></tr>';
     }).join("")+'</tbody></table></div>';
 }
