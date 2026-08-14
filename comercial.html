@@ -4,147 +4,132 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Nutríssima — Comercial</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
 :root{
-  --ard:#22303A; --cacau:#33200F; --leite:#FFFDF9; --casca:#EFE7DC;
-  --linha:#DCD2C4; --tinta2:#7A6A57;
-  --pist:#3E7C45; --mor:#C63A3A; --mel:#B8862B; --lar:#D9772B;
+  --cacau:#33200F; --leite:#FFFDF9; --casca:#EFE7DC; --linha:#DCD2C4;
+  --pist:#3E7C45; --pist-esc:#2E5F34; --mor:#C63A3A; --mel:#B8862B; --lar:#D9772B;
+  --ard:#22303A; --tinta2:#7A6A57; --raio:14px;
 }
-*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0}
-body{
-  background:var(--casca); color:var(--cacau);
-  font-family:Archivo,system-ui,-apple-system,sans-serif; font-weight:500;
-  line-height:1.5; font-size:15px;
-}
-.mono{font-family:'IBM Plex Mono',ui-monospace,monospace; font-variant-numeric:tabular-nums}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--leite);
+     color:var(--cacau);min-height:100vh}
+.mono{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+#app{max-width:520px;margin:0 auto;min-height:100vh;padding-bottom:90px}
 
-/* ---------- topo ---------- */
-header{background:var(--ard); color:#fff; padding:14px 0 0}
-.wrap{max-width:1040px; margin:0 auto; padding:0 14px}
-.hd{display:flex; align-items:center; justify-content:space-between; gap:10px}
-.hd .marca{font-weight:800; font-size:17px; letter-spacing:-.01em}
-.hd .marca span{opacity:.62; font-weight:600}
-.hd .quem{font-size:12px; opacity:.72; text-align:right; line-height:1.3}
-.hd .quem b{display:block; font-weight:600}
-nav{display:flex; gap:6px; overflow-x:auto; padding:12px 0 0; scrollbar-width:none}
-nav::-webkit-scrollbar{display:none}
-nav button{
-  flex:0 0 auto; background:rgba(255,255,255,.08); color:#fff;
-  border:1px solid rgba(255,255,255,.16); border-bottom:none;
-  border-radius:11px 11px 0 0; padding:9px 14px; font:inherit; font-size:13px;
-  font-weight:600; cursor:pointer;
-}
-nav button.on{background:var(--casca); color:var(--cacau); border-color:transparent}
-nav button:focus-visible{outline:2px solid #fff; outline-offset:2px}
+/* trilha comercial + topo (padrao do ERP) */
+.trilha{display:flex;gap:4px;overflow-x:auto;padding:10px 16px;background:var(--cacau);scrollbar-width:none}
+.trilha::-webkit-scrollbar{display:none}
+.trilha span{flex:none;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+             color:#B9A896;padding:5px 10px;border-radius:99px;border:1px solid #5A4630}
+.trilha span.atual{background:var(--pist);border-color:var(--pist);color:#fff}
+.topo{padding:16px;display:flex;align-items:center;gap:12px}
+.topo .voltar{width:46px;height:46px;border-radius:12px;border:1.5px solid var(--linha);
+              background:#fff;font-size:20px;cursor:pointer;color:var(--cacau);flex:none}
+.topo h1{font-size:24px;font-weight:900;line-height:1.15}
+.topo p,.sub{font-size:13.5px;color:var(--tinta2)}
+main{padding:4px 16px}
+.quem{margin-left:auto;font-size:11px;color:var(--tinta2);text-align:right;line-height:1.3;flex:none}
+.quem b{display:block;font-weight:700;font-size:11.5px}
 
-main{max-width:1040px; margin:0 auto; padding:18px 14px 70px}
+/* menu de acoes */
+.pergunta{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
+          color:#8A7A64;margin:14px 0 8px}
+.acoes{display:grid;gap:12px}
+.acoes button{display:flex;align-items:center;gap:14px;padding:18px;border-radius:var(--raio);
+              border:1.5px solid var(--linha);background:#fff;cursor:pointer;text-align:left;
+              min-height:72px;font-family:inherit;width:100%}
+.acoes .ico{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;
+            font-size:22px;flex:none}
+.acoes b{font-size:18px;display:block;color:var(--cacau)}
+.acoes small{font-size:13px;color:var(--tinta2)}
 
-/* ---------- blocos ---------- */
-h2{font-size:19px; font-weight:800; margin:0 0 3px}
-.sub{color:var(--tinta2); font-size:13.5px; margin:0 0 16px}
-.card{
-  background:var(--leite); border:1.5px solid var(--linha);
-  border-left:7px solid var(--u,var(--linha)); border-radius:14px;
-  padding:14px 16px; margin-bottom:12px;
-}
-.card h3{margin:0 0 8px; font-size:15px; font-weight:800}
-.kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:16px}
-.kpi{background:var(--leite); border:1.5px solid var(--linha); border-radius:14px; padding:12px 14px}
-.kpi .r{font-size:10.5px; text-transform:uppercase; letter-spacing:.11em; color:var(--tinta2); font-weight:700}
-.kpi .v{font-family:'IBM Plex Mono',monospace; font-weight:600; font-size:21px; font-variant-numeric:tabular-nums; margin-top:3px}
-.kpi .n{font-size:12px; color:var(--tinta2); margin-top:2px}
+/* cartoes com tarja de urgencia (padrao de relatorios) */
+.card{background:#fff;border:1.5px solid var(--linha);border-left:7px solid var(--u,var(--linha));
+      border-radius:var(--raio);padding:14px 16px;margin-bottom:12px}
+.card h3{margin:0 0 8px;font-size:16px;font-weight:900}
+
+/* KPIs */
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.kpi{background:#fff;border:1.5px solid var(--linha);border-radius:var(--raio);padding:14px;text-align:center}
+.kpi .r{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--tinta2)}
+.kpi .v{font-size:30px;font-weight:900;font-variant-numeric:tabular-nums;display:block;
+        line-height:1.1;margin-top:3px;font-family:ui-monospace,Menlo,monospace}
+.kpi .n{font-size:12px;color:var(--tinta2);margin-top:3px}
+.kpi.ruim{border-color:#E8B9B9;background:#FDF7F7}
 .kpi.ruim .v{color:var(--mor)}
 .kpi.bom .v{color:var(--pist)}
 
-/* ---------- conta aberta ---------- */
-.conta{
-  font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums;
-  background:#F6F1E9; border:1px solid var(--linha); border-radius:11px;
-  padding:10px 12px; font-size:13px; margin:8px 0; overflow-x:auto; white-space:nowrap;
-}
-.conta .m{color:var(--mor); font-weight:600}
-.conta .p{color:var(--pist); font-weight:600}
+/* conta aberta */
+.conta{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;
+       background:#F6F1E8;border:1.5px solid var(--linha);border-radius:var(--raio);
+       padding:13px 15px;font-size:14px;margin:10px 0;overflow-x:auto;white-space:nowrap}
+.conta .m{color:var(--mor);font-weight:700}
+.conta .p{color:var(--pist);font-weight:700}
 
-/* ---------- tabela ---------- */
-.tw{overflow-x:auto; -webkit-overflow-scrolling:touch; border:1.5px solid var(--linha); border-radius:14px; background:var(--leite)}
-table{width:100%; border-collapse:collapse; font-size:13.5px}
-th{background:#E7DDD0; text-align:left; padding:9px 11px; font-size:10.5px;
-   text-transform:uppercase; letter-spacing:.08em; white-space:nowrap; font-weight:700}
-td{padding:9px 11px; border-top:1px solid var(--linha); vertical-align:top}
-td.n{font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap}
-tbody tr:hover{background:#FBF7F1}
+/* linhas e tabelas */
+.tw{border:1.5px solid var(--linha);border-radius:var(--raio);background:#fff;overflow-x:auto;
+    -webkit-overflow-scrolling:touch;margin-bottom:12px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{background:#F6F1E8;text-align:left;padding:10px 12px;font-size:10.5px;text-transform:uppercase;
+   letter-spacing:.06em;white-space:nowrap;font-weight:800;color:var(--tinta2)}
+td{padding:11px 12px;border-top:1px solid var(--linha);vertical-align:top}
+td.n{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;
+     text-align:right;white-space:nowrap;font-weight:700}
 
-/* ---------- controles ---------- */
-label{display:block; font-size:12px; font-weight:700; text-transform:uppercase;
-      letter-spacing:.08em; color:var(--tinta2); margin:12px 0 5px}
+/* controles */
+label{display:block;font-size:13px;font-weight:700;color:var(--tinta2);margin:12px 0 5px}
 input:not([type=checkbox]):not([type=radio]),select{
-  width:100%; padding:11px 12px; border:1.5px solid var(--linha); border-radius:11px;
-  background:var(--leite); color:var(--cacau); font:inherit; font-size:15px;
-}
-input:not([type=checkbox]):not([type=radio]):focus,select:focus{outline:2px solid var(--ard); outline-offset:1px; border-color:transparent}
-input[type=checkbox],input[type=radio]{width:17px; height:17px; accent-color:var(--pist); margin:0; flex:0 0 auto}
-button.b{
-  background:var(--pist); color:#fff; border:none; border-radius:12px;
-  padding:13px 18px; font:inherit; font-weight:700; font-size:15px; cursor:pointer;
-}
-button.b:disabled{opacity:.5; cursor:default}
-button.s{background:transparent; color:var(--cacau); border:1.5px solid var(--linha);
-         border-radius:11px; padding:8px 13px; font:inherit; font-size:13px; font-weight:600; cursor:pointer}
-button.s:hover{background:#F3ECE2}
-button:focus-visible{outline:2px solid var(--ard); outline-offset:2px}
-.drop{
-  border:2px dashed var(--linha); border-radius:14px; padding:26px 16px; text-align:center;
-  background:var(--leite); cursor:pointer;
-}
-.drop:hover,.drop.over{border-color:var(--pist); background:#F4F8F4}
-.drop b{display:block; font-size:15px; margin-bottom:4px}
-.drop span{color:var(--tinta2); font-size:13px}
+  width:100%;padding:13px 14px;font-size:17px;border:1.5px solid var(--linha);
+  border-radius:12px;font-family:inherit;background:#fff;color:var(--cacau)}
+input:not([type=checkbox]):not([type=radio]):focus,select:focus{outline:none;border-color:var(--pist)}
+input[type=checkbox],input[type=radio]{width:26px;height:26px;accent-color:var(--pist);flex:none;margin:0}
+button.b{width:100%;min-height:58px;font-size:18px;font-weight:900;border:none;border-radius:16px;
+         background:var(--pist);color:#fff;cursor:pointer;font-family:inherit;margin-top:10px}
+button.b:disabled{background:#C8C0B4}
+button.s{min-height:44px;font-size:15px;font-weight:700;border:1.5px solid var(--linha);
+         border-radius:12px;background:#fff;cursor:pointer;font-family:inherit;color:var(--cacau);
+         padding:10px 16px}
+button.s:hover{background:#F6F1E8}
+button:focus-visible{outline:2px solid var(--pist);outline-offset:2px}
+.drop{border:2px dashed var(--linha);border-radius:var(--raio);padding:26px 16px;text-align:center;
+      background:#fff;cursor:pointer}
+.drop:hover,.drop.over{border-color:var(--pist);background:#F4F8F4}
+.drop b{display:block;font-size:17px;margin-bottom:4px}
+.drop span{color:var(--tinta2);font-size:13.5px}
 
-/* ---------- avisos ---------- */
-.msg{position:fixed; left:50%; transform:translateX(-50%); bottom:20px; z-index:99;
-     background:var(--ard); color:#fff; padding:12px 18px; border-radius:12px;
-     font-size:14px; font-weight:600; max-width:88vw; box-shadow:0 6px 24px rgba(0,0,0,.22)}
+/* chips e avisos */
+.tag{display:inline-block;padding:4px 11px;border-radius:99px;font-size:11px;font-weight:800;
+     text-transform:uppercase;letter-spacing:.04em;color:#fff}
+.msg{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--cacau);
+     color:#fff;padding:14px 22px;border-radius:14px;font-weight:700;font-size:15px;z-index:99;
+     max-width:90%;text-align:center;box-shadow:0 6px 24px #0004}
 .msg.erro{background:var(--mor)}
-.vazio{text-align:center; color:var(--tinta2); padding:34px 16px; font-size:14px}
-.tag{display:inline-block; color:#fff; font-size:10px; font-weight:800; letter-spacing:.09em;
-     text-transform:uppercase; padding:3px 8px; border-radius:99px}
-.bar{height:7px; background:#E7DDD0; border-radius:99px; overflow:hidden; margin-top:5px}
-.bar i{display:block; height:100%; background:var(--pist)}
+.vazio{text-align:center;color:#8A7A64;padding:30px 12px;font-size:15px}
+.bar{height:7px;background:#EFE7DC;border-radius:99px;overflow:hidden;margin-top:5px}
+.bar i{display:block;height:100%;background:var(--pist)}
 
-/* ---------- login ---------- */
-.login{max-width:380px; margin:9vh auto; padding:0 16px}
-.login .cx{background:var(--leite); border:1.5px solid var(--linha); border-radius:16px; padding:22px}
-.login h1{font-size:21px; margin:0 0 4px; font-weight:800}
-.login p{color:var(--tinta2); font-size:13.5px; margin:0 0 6px}
+/* login */
+.login{max-width:380px;margin:9vh auto;padding:0 16px}
+.login .cx{background:#fff;border:1.5px solid var(--linha);border-radius:16px;padding:22px}
+.login h1{font-size:23px;margin:0 0 4px;font-weight:900}
+.login p{color:var(--tinta2);font-size:14px;margin:0 0 6px}
 
+/* tabela vira cartao no celular */
 @media(max-width:620px){
-  .kpis{grid-template-columns:repeat(2,1fr)}
-  h2{font-size:17px}
-  .hd .marca{font-size:15px}
-
-  /* lista de contatos vira cartões empilhados — evita rolagem lateral no celular */
-  table.cards thead{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0)}
-  table.cards, table.cards tbody, table.cards tr, table.cards td{display:block; width:100%}
-  .tw:has(table.cards){border:none; background:transparent; overflow:visible}
-  table.cards tr{
-    background:var(--leite); border:1.5px solid var(--linha); border-radius:14px;
-    padding:12px 14px; margin-bottom:10px;
-  }
-  table.cards tr:hover{background:var(--leite)}
-  table.cards td{border:none; padding:3px 0; text-align:left}
-  table.cards td:first-child{font-weight:800; font-size:15.5px; padding-bottom:6px}
-  table.cards td[data-r]:not(:empty)::before{
-    content:attr(data-r) " · "; color:var(--tinta2); font-size:11px;
-    text-transform:uppercase; letter-spacing:.08em; font-weight:700;
-  }
+  table.cards thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  table.cards,table.cards tbody,table.cards tr,table.cards td{display:block;width:100%}
+  .tw:has(table.cards){border:none;background:transparent;overflow:visible}
+  table.cards tr{background:#fff;border:1.5px solid var(--linha);border-radius:12px;
+                 padding:12px 14px;margin-bottom:10px}
+  table.cards td{border:none;padding:3px 0;text-align:left}
+  table.cards td:first-child{font-weight:900;font-size:15.5px;padding-bottom:6px}
+  table.cards td[data-r]:not(:empty)::before{content:attr(data-r) " · ";color:var(--tinta2);
+    font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:800}
   table.cards td:last-child{padding-top:10px}
   table.cards td:last-child button{width:100%}
 }
-@media(prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+@media(min-width:560px){ .kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))} }
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
@@ -272,39 +257,78 @@ function lerNFe(texto, nomeArquivo){
 
 /* ================= navegação ================= */
 var TELAS = {
-  inicio:      { rotulo:"Início",         fn:telaInicio },
-  faturamento: { rotulo:"Faturamento",    fn:telaFaturamento },
-  clientes:    { rotulo:"Clientes",       fn:telaClientes },
-  ficha:       { rotulo:"Ficha",          fn:telaFicha },
-  contatos:    { rotulo:"Contatos",       fn:telaContatos },
-  agenda:      { rotulo:"Agenda",         fn:telaAgenda },
-  oportunidades:{ rotulo:"Oportunidades", fn:telaOportunidades },
-  representantes:{ rotulo:"Representantes", fn:telaRepres },
-  importar:    { rotulo:"Importar NF-e",  fn:telaImportar },
-  pendencias:  { rotulo:"Pendências",     fn:telaPendencias }
+  inicio:      { rotulo:"CRM Comercial",  sub:"Clientes, faturamento e funil", fn:telaInicio, etapa:"" },
+  ficha:       { rotulo:"Ficha do cliente", sub:"Carteira, notas, contatos e histórico", fn:telaFicha, etapa:"Clientes" },
+  agenda:      { rotulo:"Agenda",         sub:"Interações e o que precisa de retorno", fn:telaAgenda, etapa:"Contato" },
+  oportunidades:{ rotulo:"Oportunidades", sub:"Funil de vendas por etapa", fn:telaOportunidades, etapa:"Proposta" },
+  contatos:    { rotulo:"Contatos",       sub:"Quem decide dentro de cada cliente", fn:telaContatos, etapa:"Contato" },
+  resumo:      { rotulo:"Resumo",         sub:"Faturamento, ticket e concentração", fn:telaResumo, etapa:"Pedido" },
+  faturamento: { rotulo:"Faturamento",    sub:"O que já saiu em nota fiscal", fn:telaFaturamento, etapa:"Pedido" },
+  clientes:    { rotulo:"Clientes",       sub:"Cadastro e quanto cada um comprou", fn:telaClientes, etapa:"Clientes" },
+  representantes:{ rotulo:"Representantes", sub:"Cadastro básico", fn:telaRepres, etapa:"Clientes" },
+  importar:    { rotulo:"Importar NF-e",  sub:"Ler XML e alimentar o faturamento", fn:telaImportar, etapa:"Pedido" },
+  pendencias:  { rotulo:"Pendências",     sub:"Códigos de NF sem produto cadastrado", fn:telaPendencias, etapa:"Pedido" }
 };
 var telaAtual = "inicio";
 
+/* trilha comercial — mesma ideia da trilha de produção do ERP */
+function trilha(atual){
+  var etapas = ["Clientes","Contato","Proposta","Pedido"];
+  return '<div class="trilha">'+etapas.map(function(e){
+    return '<span class="'+(e===atual?"atual":"")+'">'+esc(e)+'</span>';
+  }).join("")+'</div>';
+}
+function topo(t, sub, voltar){
+  return '<div class="topo">'+
+    (voltar ? '<button class="voltar" onclick="ir(\'inicio\')" aria-label="Voltar">←</button>' : '')+
+    '<div><h1>'+esc(t)+'</h1><p>'+esc(sub||"")+'</p></div>'+
+    '<div class="quem"><b>'+esc(ST.email)+'</b>'+
+      '<button class="s" style="margin-top:4px;min-height:32px;padding:5px 11px;font-size:12px" onclick="sair()">Sair</button>'+
+    '</div></div>';
+}
 function moldura(conteudo){
-  var abas = Object.keys(TELAS).map(function(k){
-    return '<button onclick="ir(\''+k+'\')" class="'+(k===telaAtual?"on":"")+'">'+
-           esc(TELAS[k].rotulo)+'</button>';
-  }).join("");
-  return '<header><div class="wrap">'+
-      '<div class="hd">'+
-        '<div class="marca">Nutríssima <span>· Comercial</span></div>'+
-        '<div class="quem"><b>'+esc(ST.email)+'</b>'+
-          '<button class="s" style="margin-top:4px;background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.2)" onclick="sair()">Sair</button>'+
-        '</div>'+
-      '</div>'+
-      '<nav>'+abas+'</nav>'+
-    '</div></header>'+
-    '<main id="corpo">'+conteudo+'</main>';
+  var t = TELAS[telaAtual] || TELAS.inicio;
+  return trilha(t.etapa)+topo(t.rotulo, t.sub, telaAtual !== "inicio")+
+         '<main id="corpo">'+conteudo+'</main>';
 }
 function ir(k){
   telaAtual = k;
   $("app").innerHTML = moldura('<div class="vazio">Carregando…</div>');
   TELAS[k].fn();
+}
+
+/* tela inicial — menu em botões grandes, padrão do ERP */
+var MENU = [
+  ["ficha",        "🪪","#E4EDF2",""],
+  ["resumo",       "📈","#E4EDF2",""],
+  ["agenda",       "🗓️","#F6ECD6",""],
+  ["oportunidades","🎯","#EAF3EA",""],
+  ["contatos",     "👥","#EFE7DC",""],
+  ["faturamento",  "📊","#E4EDF2",""],
+  ["clientes",     "🏢","#EAF3EA",""],
+  ["representantes","🤝","#F3EAD8",""],
+  ["importar",     "📥","#E7F0E4",""],
+  ["pendencias",   "⚠️","#FBEAEA",""]
+];
+async function telaInicio(){
+  var alerta = "";
+  try{
+    var r = await sb.schema("crm").from("interacoes")
+      .select("data_proximo_passo").eq("concluido", false).not("proximo_passo","is",null);
+    var hj = hojeISO();
+    var atras = (r.data||[]).filter(function(x){ return x.data_proximo_passo && x.data_proximo_passo < hj; }).length;
+    var hoje  = (r.data||[]).filter(function(x){ return x.data_proximo_passo === hj; }).length;
+    if(atras || hoje) alerta = (atras?atras+" atrasado(s)":"")+(atras&&hoje?" · ":"")+(hoje?hoje+" para hoje":"");
+  }catch(e){}
+  var h = '<p class="pergunta">O que você vai fazer agora?</p><div class="acoes">'+
+    MENU.map(function(m){
+      var t = TELAS[m[0]];
+      var sub = (m[0]==="agenda" && alerta) ? alerta : t.sub;
+      return '<button onclick="ir(\''+m[0]+'\')">'+
+        '<span class="ico" style="background:'+m[2]+'">'+m[1]+'</span>'+
+        '<span><b>'+esc(t.rotulo)+'</b><small>'+esc(sub)+'</small></span></button>';
+    }).join("")+'</div>';
+  pinta(h);
 }
 function pinta(html){
   var c = $("corpo");
@@ -339,8 +363,8 @@ async function sair(){
   telaLogin();
 }
 
-/* ================= início ================= */
-async function telaInicio(){
+/* ================= resumo (painel de faturamento) ================= */
+async function telaResumo(){
   var r = await sb.from("v_faturamento").select("*");
   if(r.error) return pinta('<div class="card" style="--u:#C63A3A">Não consegui ler o faturamento: '+esc(r.error.message)+'</div>');
   var L = r.data || [];
@@ -350,7 +374,7 @@ async function telaInicio(){
   var semSkuN = (pend.data||[]).length;
 
   if(!L.length){
-    return pinta('<h2>Início</h2><p class="sub">Nenhuma nota importada ainda.</p>'+
+    return pinta(
       '<div class="card" style="--u:#3E7C45"><h3>Comece pela importação</h3>'+
       '<p>Envie os XMLs das notas fiscais e o faturamento aparece aqui, por produto, cliente e marca.</p>'+
       '<button class="b" style="margin-top:8px" onclick="ir(\'importar\')">Importar NF-e</button></div>');
@@ -385,8 +409,7 @@ async function telaInicio(){
   var datas = L.map(function(x){ return x.emissao; }).filter(Boolean).sort();
   var periodo = datas.length ? dataBR(datas[0])+" a "+dataBR(datas[datas.length-1]) : "—";
 
-  var h = '<h2>Resultado comercial</h2><p class="sub">'+esc(periodo)+
-    ' · valores líquidos, já sem bonificação e sem venda para distribuidor</p>';
+  var h = '';
 
   h += '<div class="kpis">'+
     '<div class="kpi bom"><div class="r">Faturamento líquido</div><div class="v">R$ '+brl(liq)+'</div>'+
@@ -446,7 +469,7 @@ async function telaFaturamento(){
   var r = await sb.from("v_faturamento").select("*").order("emissao",{ascending:false});
   if(r.error) return pinta('<div class="card" style="--u:#C63A3A">'+esc(r.error.message)+'</div>');
   var L = r.data || [];
-  if(!L.length) return pinta('<h2>Faturamento</h2><div class="vazio">Nada importado ainda.</div>');
+  if(!L.length) return pinta('<div class="vazio">Nada importado ainda.</div>');
 
   var porNota = {};
   L.forEach(function(x){
@@ -460,8 +483,7 @@ async function telaFaturamento(){
   var notas = Object.keys(porNota).map(function(k){ return porNota[k]; })
     .sort(function(a,b){ return (a.emissao<b.emissao)?1:-1; });
 
-  var h = '<h2>Faturamento</h2><p class="sub">'+inte(notas.length)+
-    ' notas · toque na linha para ver o pedido de origem</p>'+
+  var h = 
     '<div class="tw"><table><thead><tr>'+
     '<th>Emissão</th><th>Cliente</th><th>UF</th><th>Emitente</th>'+
     '<th style="text-align:right">Itens</th><th style="text-align:right">Un</th>'+
@@ -498,8 +520,7 @@ async function telaClientes(){
     c._v = a.v; c._ultima = a.ultima; return c;
   }).sort(function(a,b){ return b._v - a._v; });
 
-  pinta('<h2>Clientes</h2><p class="sub">'+inte(C.length)+
-    ' cadastrados a partir das notas fiscais</p>'+
+  pinta(
     '<input id="busca" placeholder="Buscar por nome, cidade ou CNPJ" oninput="filtraClientes()">'+
     '<div id="lista" style="margin-top:12px"></div>');
   filtraClientes();
@@ -537,7 +558,7 @@ async function telaFicha(){
     .order("razao_social");
   ST.cache.clientesSelect = rc.data || [];
 
-  pinta('<h2>Ficha do cliente</h2><p class="sub">Tudo sobre um cliente num lugar só</p>'+
+  pinta(
     '<div class="card" style="--u:#22303A">'+
     campoBuscaCliente("fiBuscaCli","fiCliente")+
     '<label for="fiCliente">Cliente</label>'+
@@ -741,7 +762,7 @@ async function telaContatos(){
 
   var opcoes = opcoesCliente(clientesL);
 
-  var h = '<h2>Contatos</h2><p class="sub">Pessoas de contato dentro de cada cliente</p>'+
+  var h = 
     '<div class="card" style="--u:#3E7C45"><h3>Cadastrar contato</h3>'+
     campoBuscaCliente("ctBuscaCli","ctCliente")+
     '<label for="ctCliente">Cliente</label><select id="ctCliente">'+opcoes+'</select>'+
@@ -846,7 +867,7 @@ async function telaAgenda(){
 
   var opcoes = opcoesCliente(ST.cache.clientesSelect);
 
-  pinta('<h2>Agenda</h2><p class="sub">Interações registradas e o que precisa de retorno</p>'+
+  pinta(
     '<div class="card" style="--u:#3E7C45"><h3>Registrar interação</h3>'+
     campoBuscaCliente("agBuscaCli","agCliente")+
     '<label for="agCliente">Cliente</label><select id="agCliente" onchange="agContatosDoCliente()">'+opcoes+'</select>'+
@@ -1012,7 +1033,7 @@ async function telaOportunidades(){
     return '<option value="'+e.k+'">'+esc(e.r)+'</option>';
   }).join("");
 
-  pinta('<h2>Oportunidades</h2><p class="sub">Funil de vendas — onde cada negócio está</p>'+
+  pinta(
     '<div class="card" style="--u:#3E7C45"><h3>Nova oportunidade</h3>'+
     campoBuscaCliente("opBuscaCli","opCliente")+
     '<label for="opCliente">Cliente</label><select id="opCliente">'+opcoesCli+'</select>'+
@@ -1192,7 +1213,7 @@ async function fecharOportunidade(id, ganhou){
 async function telaRepres(){
   var r = await sb.from("representantes").select("*").order("nome");
   var L = (r.data||[]);
-  var h = '<h2>Representantes</h2><p class="sub">Cadastro básico — carteira e metas entram depois</p>'+
+  var h = 
     '<div class="card" style="--u:#3E7C45"><h3>Cadastrar representante</h3>'+
     '<label for="rn">Nome</label><input id="rn" placeholder="Como ele é chamado">'+
     '<label for="rr">Região</label><input id="rr" placeholder="Ex.: Sul de Minas">'+
@@ -1230,8 +1251,8 @@ async function salvarRepres(){
 
 /* ================= importar ================= */
 function telaImportar(){
-  pinta('<h2>Importar NF-e</h2>'+
-    '<p class="sub">Envie os XMLs das notas. Arquivo repetido é reconhecido pela chave e não duplica.</p>'+
+  pinta(
+    ''+
     '<div class="drop" id="drop" onclick="document.getElementById(\'arq\').click()">'+
       '<b>Escolher arquivos XML</b><span>ou arraste os arquivos para cá — pode mandar vários de uma vez</span>'+
     '</div>'+
@@ -1465,7 +1486,7 @@ async function telaPendencias(){
     .sort(function(a,b){ return b.valor - a.valor; });
 
   if(!L.length){
-    return pinta('<h2>Pendências</h2>'+
+    return pinta(
       '<div class="card" style="--u:#3E7C45"><h3>Nada pendente</h3>'+
       '<p>Todo item faturado está ligado a um produto do cadastro.</p></div>');
   }
@@ -1480,8 +1501,8 @@ async function telaPendencias(){
       return '<option value="'+s.id+'">'+esc(s.linha+" · "+s.nome)+'</option>';
     }).join("");
 
-  pinta('<h2>Pendências de cadastro</h2>'+
-    '<p class="sub">'+L.length+' código(s) faturado(s) que ainda não apontam para um produto</p>'+
+  pinta(
+    ''+
     '<div class="kpis"><div class="kpi ruim"><div class="r">Fora das análises</div>'+
       '<div class="v">R$ '+brl(total)+'</div><div class="n">em '+L.length+' códigos</div></div></div>'+
     L.map(function(x, idx){
