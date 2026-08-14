@@ -276,6 +276,7 @@ var TELAS = {
   faturamento: { rotulo:"Faturamento",    fn:telaFaturamento },
   clientes:    { rotulo:"Clientes",       fn:telaClientes },
   contatos:    { rotulo:"Contatos",       fn:telaContatos },
+  agenda:      { rotulo:"Agenda",         fn:telaAgenda },
   representantes:{ rotulo:"Representantes", fn:telaRepres },
   importar:    { rotulo:"Importar NF-e",  fn:telaImportar },
   pendencias:  { rotulo:"Pendências",     fn:telaPendencias }
@@ -615,6 +616,167 @@ async function inativarContato(id){
   if(r.error) return msg("Não deu para inativar: "+r.error.message, true);
   msg("Contato inativado");
   carregarContatos();
+}
+
+/* ================= CRM: agenda / interações ================= */
+function hojeISO(){
+  var d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10);
+}
+function diasAte(dataISO){
+  if(!dataISO) return null;
+  var h = new Date(hojeISO()+"T00:00:00");
+  var d = new Date(String(dataISO).slice(0,10)+"T00:00:00");
+  return Math.round((d - h) / 86400000);
+}
+async function telaAgenda(){
+  var rc = await sb.from("clientes").select("id,razao_social").order("razao_social");
+  ST.cache.clientesSelect = rc.data || [];
+  var rk = await sb.schema("crm").from("contatos").select("id,cliente_id,nome").eq("ativo", true).order("nome");
+  ST.cache.contatosTodos = rk.data || [];
+
+  var opcoes = '<option value="">Selecione o cliente…</option>' +
+    ST.cache.clientesSelect.map(function(c){
+      return '<option value="'+c.id+'">'+esc(c.razao_social)+'</option>';
+    }).join("");
+
+  pinta('<h2>Agenda</h2><p class="sub">Interações registradas e o que precisa de retorno</p>'+
+    '<div class="card" style="--u:#3E7C45"><h3>Registrar interação</h3>'+
+    '<label for="agCliente">Cliente</label><select id="agCliente" onchange="agContatosDoCliente()">'+opcoes+'</select>'+
+    '<label for="agContato">Contato (opcional)</label><select id="agContato"><option value="">—</option></select>'+
+    '<label for="agTipo">Tipo</label><select id="agTipo">'+
+      '<option value="visita">Visita</option><option value="ligacao">Ligação</option>'+
+      '<option value="mensagem">Mensagem</option><option value="email">E-mail</option>'+
+      '<option value="reuniao">Reunião</option><option value="outro">Outro</option></select>'+
+    '<label for="agData">Data da interação</label><input id="agData" type="date" value="'+hojeISO()+'">'+
+    '<label for="agResumo">O que foi conversado</label><input id="agResumo" placeholder="Resumo da conversa">'+
+    '<label for="agPasso">Próximo passo (opcional)</label><input id="agPasso" placeholder="Ex.: enviar tabela de preços">'+
+    '<label for="agPassoData">Quando</label><input id="agPassoData" type="date">'+
+    '<button class="b" style="margin-top:14px" onclick="salvarInteracao()">Registrar</button></div>'+
+    '<div id="agLista"></div>');
+  carregarAgenda();
+}
+function agContatosDoCliente(){
+  var cid = $("agCliente").value;
+  var L = (ST.cache.contatosTodos||[]).filter(function(x){ return x.cliente_id === cid; });
+  $("agContato").innerHTML = '<option value="">—</option>' +
+    L.map(function(x){ return '<option value="'+x.id+'">'+esc(x.nome)+'</option>'; }).join("");
+}
+async function carregarAgenda(){
+  var r = await sb.schema("crm").from("interacoes")
+    .select("id,cliente_id,contato_id,tipo,data_interacao,resumo,proximo_passo,data_proximo_passo,concluido")
+    .order("data_interacao", {ascending:false});
+  var lista = $("agLista");
+  if(!lista) return;
+  if(r.error){
+    lista.innerHTML = '<div class="card" style="--u:#C63A3A">Não consegui ler a agenda: '+esc(r.error.message)+'</div>';
+    return;
+  }
+  var nomeCliente = {}, nomeContato = {};
+  (ST.cache.clientesSelect||[]).forEach(function(c){ nomeCliente[c.id] = c.razao_social; });
+  (ST.cache.contatosTodos||[]).forEach(function(c){ nomeContato[c.id] = c.nome; });
+
+  var todas = r.data || [];
+  var pendentes = todas.filter(function(x){ return x.proximo_passo && !x.concluido; });
+
+  // agrupamento pela decisão: o que precisa de ação, por urgência do retorno
+  var grupos = [
+    { t:"Atrasado",        cor:"#C63A3A", f:function(d){ return d !== null && d < 0; } },
+    { t:"Hoje",            cor:"#D9772B", f:function(d){ return d === 0; } },
+    { t:"Próximos 7 dias", cor:"#B8862B", f:function(d){ return d !== null && d >= 1 && d <= 7; } },
+    { t:"Mais adiante",    cor:"#3E7C45", f:function(d){ return d !== null && d > 7; } },
+    { t:"Sem data marcada",cor:"#7A6A57", f:function(d){ return d === null; } }
+  ];
+
+  var h = "";
+  var atrasados = pendentes.filter(function(x){ var d=diasAte(x.data_proximo_passo); return d!==null && d<0; }).length;
+  var deHoje = pendentes.filter(function(x){ return diasAte(x.data_proximo_passo) === 0; }).length;
+
+  h += '<div class="kpis">'+
+    '<div class="kpi'+(atrasados?' ruim':'')+'"><div class="r">Atrasado</div><div class="v">'+inte(atrasados)+'</div>'+
+      '<div class="n">retorno vencido</div></div>'+
+    '<div class="kpi"><div class="r">Para hoje</div><div class="v">'+inte(deHoje)+'</div>'+
+      '<div class="n">próximo passo marcado</div></div>'+
+    '<div class="kpi"><div class="r">Em aberto</div><div class="v">'+inte(pendentes.length)+'</div>'+
+      '<div class="n">de '+inte(todas.length)+' interações</div></div>'+
+    '</div>';
+
+  h += '<div class="conta">'+inte(todas.length)+' interações &nbsp;−&nbsp; '+
+    inte(todas.length - pendentes.length)+' já resolvidas &nbsp;=&nbsp; '+
+    '<b>'+inte(pendentes.length)+' aguardando retorno</b></div>';
+
+  grupos.forEach(function(g){
+    var L = pendentes.filter(function(x){ return g.f(diasAte(x.data_proximo_passo)); })
+                     .sort(function(a,b){
+                       return String(a.data_proximo_passo||"9999").localeCompare(String(b.data_proximo_passo||"9999"));
+                     });
+    if(!L.length) return;
+    h += '<h3 style="margin:20px 0 8px;font-size:14px;text-transform:uppercase;letter-spacing:.09em;color:var(--tinta2)">'+
+         esc(g.t)+' · '+inte(L.length)+'</h3>';
+    L.forEach(function(x){
+      var d = diasAte(x.data_proximo_passo);
+      var quando = x.data_proximo_passo
+        ? dataBR(x.data_proximo_passo) + (d < 0 ? ' · '+Math.abs(d)+' dia(s) atrás'
+                                        : d === 0 ? ' · hoje' : ' · em '+d+' dia(s)')
+        : "sem data";
+      h += '<div class="card" style="--u:'+g.cor+'">'+
+        '<h3>'+esc(nomeCliente[x.cliente_id] || "—")+'</h3>'+
+        '<div style="font-size:13.5px;color:var(--tinta2);margin-bottom:6px">'+
+          esc(x.tipo)+' em '+dataBR(x.data_interacao)+
+          (x.contato_id && nomeContato[x.contato_id] ? ' · '+esc(nomeContato[x.contato_id]) : '')+
+        '</div>'+
+        '<div style="margin-bottom:8px">'+esc(x.resumo)+'</div>'+
+        '<div class="conta"><b>Próximo passo:</b> '+esc(x.proximo_passo)+' &nbsp;·&nbsp; '+esc(quando)+'</div>'+
+        '<button class="s" style="margin-top:8px" onclick="concluirInteracao(\''+x.id+'\')">Marcar como feito</button>'+
+        '</div>';
+    });
+  });
+
+  var semPasso = todas.filter(function(x){ return !x.proximo_passo || x.concluido; });
+  if(semPasso.length){
+    h += '<h3 style="margin:24px 0 8px;font-size:14px;text-transform:uppercase;letter-spacing:.09em;color:var(--tinta2)">'+
+         'Histórico · '+inte(semPasso.length)+'</h3>'+
+         '<div class="tw"><table class="cards"><thead><tr>'+
+         '<th>Cliente</th><th>Tipo</th><th>Data</th><th>Resumo</th></tr></thead><tbody>'+
+      semPasso.slice(0,40).map(function(x){
+        return '<tr><td>'+esc(nomeCliente[x.cliente_id]||"—")+'</td>'+
+          '<td data-r="Tipo">'+esc(x.tipo)+'</td>'+
+          '<td data-r="Data" class="mono">'+dataBR(x.data_interacao)+'</td>'+
+          '<td data-r="Resumo">'+esc(x.resumo)+'</td></tr>';
+      }).join("")+'</tbody></table></div>';
+  }
+
+  if(!todas.length) h = '<div class="vazio">Nenhuma interação registrada ainda.</div>';
+  lista.innerHTML = h;
+}
+async function salvarInteracao(){
+  var cid = $("agCliente").value;
+  var resumo = $("agResumo").value.trim();
+  if(!cid) return msg("Escolha o cliente", true);
+  if(!resumo) return msg("Descreva o que foi conversado", true);
+  var passo = $("agPasso").value.trim();
+  var passoData = $("agPassoData").value;
+  if(passoData && !passo) return msg("Escreva qual é o próximo passo", true);
+  var r = await sb.schema("crm").from("interacoes").insert({
+    cliente_id: cid,
+    contato_id: $("agContato").value || null,
+    tipo: $("agTipo").value,
+    data_interacao: $("agData").value || hojeISO(),
+    resumo: resumo,
+    proximo_passo: passo || null,
+    data_proximo_passo: passoData || null,
+    criado_por: ST.email
+  });
+  if(r.error) return msg("Não deu para registrar: "+r.error.message, true);
+  msg("Interação registrada");
+  $("agResumo").value=""; $("agPasso").value=""; $("agPassoData").value="";
+  carregarAgenda();
+}
+async function concluirInteracao(id){
+  var r = await sb.schema("crm").from("interacoes").update({concluido:true}).eq("id", id);
+  if(r.error) return msg("Não deu para concluir: "+r.error.message, true);
+  msg("Marcado como feito");
+  carregarAgenda();
 }
 
 /* ================= representantes ================= */
