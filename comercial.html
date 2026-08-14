@@ -10,11 +10,13 @@
   --pist:#3E7C45; --pist-esc:#2E5F34; --mor:#C63A3A; --mel:#B8862B; --lar:#D9772B;
   --ard:#22303A; --tinta2:#7A6A57; --raio:14px;
 }
-*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent;min-width:0}
+html{overflow-x:hidden}
 body{font-family:-apple-system,system-ui,'Segoe UI',sans-serif;background:var(--leite);
-     color:var(--cacau);min-height:100vh}
+     color:var(--cacau);min-height:100vh;overflow-x:hidden}
 .mono{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
 #app{max-width:520px;margin:0 auto;min-height:100vh;padding-bottom:90px}
+img,svg{max-width:100%}
 
 /* trilha comercial + topo (padrao do ERP) */
 .trilha{display:flex;gap:4px;overflow-x:auto;padding:10px 16px;background:var(--cacau);scrollbar-width:none}
@@ -115,7 +117,8 @@ button:focus-visible{outline:2px solid var(--pist);outline-offset:2px}
 .login p{color:var(--tinta2);font-size:14px;margin:0 0 6px}
 
 /* tabela vira cartao no celular */
-@media(max-width:620px){
+/* celular estreito: tabela vira cartão empilhado, sem rolagem lateral */
+@media(max-width:619px){
   table.cards thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
   table.cards,table.cards tbody,table.cards tr,table.cards td{display:block;width:100%}
   .tw:has(table.cards){border:none;background:transparent;overflow:visible}
@@ -127,8 +130,38 @@ button:focus-visible{outline:2px solid var(--pist);outline-offset:2px}
     font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:800}
   table.cards td:last-child{padding-top:10px}
   table.cards td:last-child button{width:100%}
+  /* topo não pode estourar em tela de 320-360px: título quebra, e-mail encolhe */
+  .topo{flex-wrap:wrap}
+  .topo h1{font-size:20px}
+  .quem{font-size:10px;max-width:120px}
+  .quem b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .acoes button{padding:15px}
+  .conta{white-space:normal;line-height:1.6;font-size:13.5px}
 }
-@media(min-width:560px){ .kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))} }
+@media(min-width:400px){ .kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))} }
+
+/* tablet/desktop — mesmos degraus do restante do ERP (index.html), pra não
+   ficar uma coluna de celular perdida no meio de uma tela grande */
+@media(min-width:820px){
+  #app{max-width:900px}
+  main{padding:8px 28px}
+  .topo{padding:20px 28px}
+  .topo h1{font-size:27px}
+  .topo p,.sub{font-size:14px}
+  .pergunta{margin:18px 0 10px}
+  .acoes{grid-template-columns:1fr 1fr;gap:14px}
+  .acoes button{min-height:76px;padding:18px}
+  .card{padding:18px 20px}
+  .kpis{grid-template-columns:repeat(4,1fr)}
+  button.b{max-width:340px}
+}
+@media(min-width:1200px){
+  #app{max-width:1040px}
+  .acoes{grid-template-columns:repeat(3,1fr)}
+}
+@media(min-width:1440px){
+  #app{max-width:1300px}
+}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
