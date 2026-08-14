@@ -277,6 +277,7 @@ var TELAS = {
   clientes:    { rotulo:"Clientes",       fn:telaClientes },
   contatos:    { rotulo:"Contatos",       fn:telaContatos },
   agenda:      { rotulo:"Agenda",         fn:telaAgenda },
+  oportunidades:{ rotulo:"Oportunidades", fn:telaOportunidades },
   representantes:{ rotulo:"Representantes", fn:telaRepres },
   importar:    { rotulo:"Importar NF-e",  fn:telaImportar },
   pendencias:  { rotulo:"Pendências",     fn:telaPendencias }
@@ -777,6 +778,210 @@ async function concluirInteracao(id){
   if(r.error) return msg("Não deu para concluir: "+r.error.message, true);
   msg("Marcado como feito");
   carregarAgenda();
+}
+
+/* ================= CRM: oportunidades ================= */
+var ETAPAS = [
+  { k:"prospeccao",      r:"Prospecção",  cor:"#7A6A57", prob:10 },
+  { k:"apresentacao",    r:"Apresentação",cor:"#B8862B", prob:30 },
+  { k:"proposta",        r:"Proposta",    cor:"#D9772B", prob:50 },
+  { k:"negociacao",      r:"Negociação",  cor:"#3E7C45", prob:75 }
+];
+var ETAPA_ROTULO = {
+  prospeccao:"Prospecção", apresentacao:"Apresentação", proposta:"Proposta",
+  negociacao:"Negociação", fechado_ganho:"Ganho", fechado_perdido:"Perdido"
+};
+async function telaOportunidades(){
+  var rc = await sb.from("clientes").select("id,razao_social").order("razao_social");
+  ST.cache.clientesSelect = rc.data || [];
+  var rp = await sb.from("produto_acabado").select("id,nome,linha").eq("ativo", true).order("nome");
+  ST.cache.produtos = rp.data || [];
+
+  var opcoesCli = '<option value="">Selecione o cliente…</option>' +
+    ST.cache.clientesSelect.map(function(c){
+      return '<option value="'+c.id+'">'+esc(c.razao_social)+'</option>';
+    }).join("");
+  var opcoesProd = '<option value="">— sem SKU específico —</option>' +
+    ST.cache.produtos.map(function(p){
+      return '<option value="'+p.id+'">'+esc(p.nome)+'</option>';
+    }).join("");
+  var opcoesEtapa = ETAPAS.map(function(e){
+    return '<option value="'+e.k+'">'+esc(e.r)+'</option>';
+  }).join("");
+
+  pinta('<h2>Oportunidades</h2><p class="sub">Funil de vendas — onde cada negócio está</p>'+
+    '<div class="card" style="--u:#3E7C45"><h3>Nova oportunidade</h3>'+
+    '<label for="opCliente">Cliente</label><select id="opCliente">'+opcoesCli+'</select>'+
+    '<label for="opTitulo">O que é</label><input id="opTitulo" placeholder="Ex.: entrada da linha Nutritiva na rede">'+
+    '<label for="opProduto">Produto (opcional)</label><select id="opProduto">'+opcoesProd+'</select>'+
+    '<label for="opValor">Valor estimado (R$, opcional)</label><input id="opValor" type="number" step="0.01" placeholder="0,00">'+
+    '<label for="opEtapa">Etapa</label><select id="opEtapa">'+opcoesEtapa+'</select>'+
+    '<label for="opPrevisao">Previsão de fechamento (opcional)</label><input id="opPrevisao" type="date">'+
+    '<label for="opObs">Observações (opcional)</label><input id="opObs" placeholder="Anotação livre">'+
+    '<button class="b" style="margin-top:14px" onclick="salvarOportunidade()">Cadastrar</button></div>'+
+    '<div id="opLista"></div>');
+  carregarOportunidades();
+}
+async function carregarOportunidades(){
+  var r = await sb.schema("crm").from("oportunidades")
+    .select("id,cliente_id,titulo,produto_acabado_id,valor_estimado,etapa,probabilidade,previsao_fechamento,motivo_perda")
+    .order("previsao_fechamento", {ascending:true, nullsFirst:false});
+  var lista = $("opLista");
+  if(!lista) return;
+  if(r.error){
+    lista.innerHTML = '<div class="card" style="--u:#C63A3A">Não consegui ler as oportunidades: '+esc(r.error.message)+'</div>';
+    return;
+  }
+  var nomeCliente = {}, nomeProd = {};
+  (ST.cache.clientesSelect||[]).forEach(function(c){ nomeCliente[c.id] = c.razao_social; });
+  (ST.cache.produtos||[]).forEach(function(p){ nomeProd[p.id] = p.nome; });
+
+  var todas = r.data || [];
+  if(!todas.length){
+    lista.innerHTML = '<div class="vazio">Nenhuma oportunidade cadastrada ainda.</div>';
+    return;
+  }
+  var abertas = todas.filter(function(x){ return x.etapa.indexOf("fechado") !== 0; });
+  var ganhas  = todas.filter(function(x){ return x.etapa === "fechado_ganho"; });
+  var perdidas= todas.filter(function(x){ return x.etapa === "fechado_perdido"; });
+
+  function soma(L){ return L.reduce(function(a,x){ return a + (Number(x.valor_estimado)||0); }, 0); }
+  // ponderado: valor × probabilidade da etapa (o que se espera fechar de fato)
+  function somaPond(L){
+    return L.reduce(function(a,x){
+      var e = ETAPAS.filter(function(g){ return g.k === x.etapa; })[0];
+      var p = (x.probabilidade != null ? x.probabilidade : (e ? e.prob : 0)) / 100;
+      return a + (Number(x.valor_estimado)||0) * p;
+    }, 0);
+  }
+  var vAberto = soma(abertas), vPond = somaPond(abertas), vGanho = soma(ganhas);
+  var taxa = (ganhas.length + perdidas.length) > 0
+    ? (ganhas.length / (ganhas.length + perdidas.length) * 100) : null;
+
+  var h = '<div class="kpis">'+
+    '<div class="kpi"><div class="r">Funil aberto</div><div class="v">R$ '+brl(vAberto)+'</div>'+
+      '<div class="n">em '+inte(abertas.length)+' oportunidades</div></div>'+
+    '<div class="kpi bom"><div class="r">Ponderado</div><div class="v">R$ '+brl(vPond)+'</div>'+
+      '<div class="n">valor × probabilidade</div></div>'+
+    '<div class="kpi bom"><div class="r">Ganho</div><div class="v">R$ '+brl(vGanho)+'</div>'+
+      '<div class="n">'+inte(ganhas.length)+' fechadas</div></div>'+
+    '<div class="kpi'+(taxa !== null && taxa < 50 ? ' ruim' : '')+'"><div class="r">Taxa de ganho</div>'+
+      '<div class="v">'+(taxa === null ? '—' : taxa.toFixed(0)+'%')+'</div>'+
+      '<div class="n">'+inte(ganhas.length)+' ganhas / '+inte(perdidas.length)+' perdidas</div></div>'+
+    '</div>';
+
+  h += '<div class="conta">R$ '+brl(vAberto)+' no funil &nbsp;×&nbsp; probabilidade por etapa &nbsp;=&nbsp; '+
+       '<span class="p">R$ '+brl(vPond)+'</span> esperado</div>';
+
+  ETAPAS.forEach(function(e){
+    var L = abertas.filter(function(x){ return x.etapa === e.k; });
+    if(!L.length) return;
+    h += '<h3 style="margin:20px 0 8px;font-size:14px;text-transform:uppercase;letter-spacing:.09em;color:var(--tinta2)">'+
+         esc(e.r)+' · '+inte(L.length)+' · R$ '+brl(soma(L))+'</h3>';
+    L.forEach(function(x){
+      var d = diasAte(x.previsao_fechamento);
+      var prev = x.previsao_fechamento
+        ? dataBR(x.previsao_fechamento) + (d < 0 ? ' · vencida há '+Math.abs(d)+' dia(s)'
+                                          : d === 0 ? ' · hoje' : ' · em '+d+' dia(s)')
+        : 'sem previsão';
+      var corCard = (d !== null && d < 0) ? '#C63A3A' : e.cor;
+      h += '<div class="card" style="--u:'+corCard+'">'+
+        '<h3>'+esc(nomeCliente[x.cliente_id]||"—")+'</h3>'+
+        '<div style="margin-bottom:6px">'+esc(x.titulo)+'</div>'+
+        '<div style="font-size:13.5px;color:var(--tinta2);margin-bottom:8px">'+
+          (x.produto_acabado_id && nomeProd[x.produto_acabado_id] ? esc(nomeProd[x.produto_acabado_id])+' · ' : '')+
+          esc(prev)+'</div>'+
+        (x.valor_estimado != null
+          ? '<div class="conta">R$ '+brl(x.valor_estimado)+' estimado &nbsp;×&nbsp; '+
+            (x.probabilidade != null ? x.probabilidade : e.prob)+'% &nbsp;=&nbsp; '+
+            '<span class="p">R$ '+brl((Number(x.valor_estimado)||0) * ((x.probabilidade != null ? x.probabilidade : e.prob)/100))+'</span></div>'
+          : '')+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+
+          '<button class="s" onclick="moverEtapa(\''+x.id+'\',1)">Avançar etapa</button>'+
+          '<button class="s" onclick="fecharOportunidade(\''+x.id+'\',true)">Ganhou</button>'+
+          '<button class="s" onclick="fecharOportunidade(\''+x.id+'\',false)">Perdeu</button>'+
+        '</div></div>';
+    });
+  });
+
+  var fechadas = ganhas.concat(perdidas);
+  if(fechadas.length){
+    h += '<h3 style="margin:24px 0 8px;font-size:14px;text-transform:uppercase;letter-spacing:.09em;color:var(--tinta2)">'+
+         'Fechadas · '+inte(fechadas.length)+'</h3>'+
+         '<div class="tw"><table class="cards"><thead><tr>'+
+         '<th>Cliente</th><th>Oportunidade</th><th>Resultado</th><th style="text-align:right">Valor</th><th>Motivo</th>'+
+         '</tr></thead><tbody>'+
+      fechadas.map(function(x){
+        var ganhou = x.etapa === "fechado_ganho";
+        return '<tr><td>'+esc(nomeCliente[x.cliente_id]||"—")+'</td>'+
+          '<td data-r="Oportunidade">'+esc(x.titulo)+'</td>'+
+          '<td data-r="Resultado"><span class="tag" style="background:'+(ganhou?'#3E7C45':'#C63A3A')+'">'+
+            (ganhou?'ganho':'perdido')+'</span></td>'+
+          '<td data-r="Valor" class="n">'+(x.valor_estimado != null ? brl(x.valor_estimado) : "—")+'</td>'+
+          '<td data-r="Motivo">'+esc(x.motivo_perda||"—")+'</td></tr>';
+      }).join("")+'</tbody></table></div>';
+  }
+  lista.innerHTML = h;
+}
+async function salvarOportunidade(){
+  var cid = $("opCliente").value;
+  var titulo = $("opTitulo").value.trim();
+  if(!cid) return msg("Escolha o cliente", true);
+  if(!titulo) return msg("Descreva a oportunidade", true);
+  var valor = $("opValor").value;
+  var prodId = $("opProduto").value;
+  var linha = null;
+  if(prodId){
+    var p = (ST.cache.produtos||[]).filter(function(y){ return y.id === prodId; })[0];
+    if(p) linha = p.linha || null;
+  }
+  var r = await sb.schema("crm").from("oportunidades").insert({
+    cliente_id: cid,
+    titulo: titulo,
+    produto_acabado_id: prodId || null,
+    linha: linha,
+    valor_estimado: valor !== "" ? Number(valor) : null,
+    etapa: $("opEtapa").value,
+    previsao_fechamento: $("opPrevisao").value || null,
+    observacoes: $("opObs").value.trim() || null
+  });
+  if(r.error) return msg("Não deu para cadastrar: "+r.error.message, true);
+  msg("Oportunidade cadastrada");
+  $("opTitulo").value=""; $("opValor").value=""; $("opPrevisao").value=""; $("opObs").value="";
+  carregarOportunidades();
+}
+async function moverEtapa(id, passo){
+  var atual = null;
+  var r0 = await sb.schema("crm").from("oportunidades").select("etapa").eq("id", id).single();
+  if(r0.error) return msg("Não consegui ler a etapa: "+r0.error.message, true);
+  atual = r0.data.etapa;
+  var idx = -1;
+  ETAPAS.forEach(function(e, i){ if(e.k === atual) idx = i; });
+  if(idx < 0) return msg("Essa oportunidade já está fechada", true);
+  var novo = idx + passo;
+  if(novo >= ETAPAS.length) return msg("Última etapa antes de fechar — use Ganhou ou Perdeu", true);
+  if(novo < 0) return msg("Já está na primeira etapa", true);
+  var r = await sb.schema("crm").from("oportunidades")
+    .update({ etapa: ETAPAS[novo].k, atualizado_em: new Date().toISOString() }).eq("id", id);
+  if(r.error) return msg("Não deu para mover: "+r.error.message, true);
+  msg("Movida para "+ETAPAS[novo].r);
+  carregarOportunidades();
+}
+async function fecharOportunidade(id, ganhou){
+  var motivo = null;
+  if(!ganhou){
+    motivo = prompt("Por que perdeu? (preço, prazo, concorrente, sem resposta…)");
+    if(motivo === null) return;
+    motivo = motivo.trim() || null;
+  }
+  var r = await sb.schema("crm").from("oportunidades").update({
+    etapa: ganhou ? "fechado_ganho" : "fechado_perdido",
+    motivo_perda: motivo,
+    atualizado_em: new Date().toISOString()
+  }).eq("id", id);
+  if(r.error) return msg("Não deu para fechar: "+r.error.message, true);
+  msg(ganhou ? "Marcada como ganha" : "Marcada como perdida");
+  carregarOportunidades();
 }
 
 /* ================= representantes ================= */
