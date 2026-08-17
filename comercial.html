@@ -534,6 +534,8 @@ async function telaFaturamento(){
 }
 
 /* ================= clientes ================= */
+var CLASS_ROTULO = { base:"Base", prospeccao:"Prospecção", lead:"Lead" };
+var CLASS_COR = { base:"#3E7C45", prospeccao:"#D9772B", lead:"#7A6A57" };
 async function telaClientes(){
   var rc = await sb.from("clientes").select("*").order("razao_social");
   if(rc.error) return pinta('<div class="card" style="--u:#C63A3A">'+esc(rc.error.message)+'</div>');
@@ -558,9 +560,26 @@ async function telaClientes(){
 
   pinta(
     formCliente()+
-    '<input id="busca" placeholder="Buscar por nome, cidade ou CNPJ" oninput="filtraClientes()" style="margin-top:16px">'+
+    barraFiltrosClientes()+
     '<div id="lista" style="margin-top:12px"></div>');
   filtraClientes();
+}
+function barraFiltrosClientes(){
+  var ufs = Array.from(new Set((ST.cache.clientes||[]).map(function(c){ return c.uf; }).filter(Boolean))).sort();
+  var ufOpcoes = ufs.map(function(u){ return '<option value="'+u+'">'+u+'</option>'; }).join("");
+  var segOpcoes = ["varejo","marketplace","terceirizacao","representante"].map(function(s){
+    return '<option value="'+s+'">'+SEG_ROTULO[s]+'</option>';
+  }).join("");
+  var classOpcoes = ["base","prospeccao","lead"].map(function(k){
+    return '<option value="'+k+'">'+CLASS_ROTULO[k]+'</option>';
+  }).join("");
+  return '<div style="margin-top:16px">'+
+    '<input id="busca" placeholder="Buscar por nome, cidade ou CNPJ" oninput="filtraClientes()">'+
+    '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'+
+      '<select id="filtroUf" style="flex:1;min-width:120px" onchange="filtraClientes()"><option value="">Todos os estados</option>'+ufOpcoes+'</select>'+
+      '<select id="filtroSegmento" style="flex:1;min-width:160px" onchange="filtraClientes()"><option value="">Todos os segmentos</option>'+segOpcoes+'</select>'+
+      '<select id="filtroClassificacao" style="flex:1;min-width:160px" onchange="filtraClientes()"><option value="">Todas as classificações</option>'+classOpcoes+'</select>'+
+    '</div></div>';
 }
 function formCliente(idEdicao){
   var c = idEdicao ? (ST.cache.clientes||[]).find(function(x){ return x.id===idEdicao; }) : null;
@@ -570,6 +589,9 @@ function formCliente(idEdicao){
     }).join("");
   var segOpcoes = ["varejo","marketplace","terceirizacao","representante"].map(function(s){
     return '<option value="'+s+'"'+(c&&c.segmento===s?' selected':'')+'>'+SEG_ROTULO[s]+'</option>';
+  }).join("");
+  var classOpcoes = ["base","prospeccao","lead"].map(function(k){
+    return '<option value="'+k+'"'+(c&&c.classificacao===k?' selected':'')+'>'+CLASS_ROTULO[k]+'</option>';
   }).join("");
   return '<div class="card" style="--u:#3E7C45"><h3>'+(c?"Editar cliente":"Cadastrar cliente")+'</h3>'+
     '<input type="hidden" id="clId" value="'+(c?c.id:"")+'">'+
@@ -588,6 +610,7 @@ function formCliente(idEdicao){
       '<div style="flex:0 0 80px"><label for="clUf">UF</label><input id="clUf" maxlength="2" style="text-transform:uppercase" value="'+(c?esc(c.uf||""):"")+'"></div>'+
     '</div>'+
     '<label for="clSegmento">Segmento</label><select id="clSegmento"><option value="">— não classificado —</option>'+segOpcoes+'</select>'+
+    '<label for="clClassificacao">Classificação comercial</label><select id="clClassificacao"><option value="">— não classificado —</option>'+classOpcoes+'</select>'+
     '<label for="clRepresentante">Representante</label><select id="clRepresentante">'+repOpcoes+'</select>'+
     '<label for="clObs">Observação (opcional)</label><input id="clObs" value="'+(c?esc(c.observacao||""):"")+'">'+
     '<div style="display:flex;gap:8px;margin-top:14px">'+
@@ -620,6 +643,7 @@ async function salvarCliente(){
     municipio: $("clMunicipio").value.trim() || null,
     uf: $("clUf").value.trim().toUpperCase() || null,
     segmento: $("clSegmento").value || null,
+    classificacao: $("clClassificacao").value || null,
     representante_id: $("clRepresentante").value || null,
     observacao: $("clObs").value.trim() || null
   };
@@ -638,7 +662,7 @@ async function salvarCliente(){
 function editarCliente(id){
   pinta(
     formCliente(id)+
-    '<input id="busca" placeholder="Buscar por nome, cidade ou CNPJ" oninput="filtraClientes()" style="margin-top:16px">'+
+    barraFiltrosClientes()+
     '<div id="lista" style="margin-top:12px"></div>');
   filtraClientes();
   var el = $("clRazao"); if(el) el.scrollIntoView({behavior:"smooth", block:"start"});
@@ -646,7 +670,13 @@ function editarCliente(id){
 function filtraClientes(){
   var q = ($("busca") ? $("busca").value : "").toLowerCase().trim();
   var qDigitos = q.replace(/\D/g,"");
+  var fUf = $("filtroUf") ? $("filtroUf").value : "";
+  var fSeg = $("filtroSegmento") ? $("filtroSegmento").value : "";
+  var fClass = $("filtroClassificacao") ? $("filtroClassificacao").value : "";
   var L = (ST.cache.clientes||[]).filter(function(c){
+    if(fUf && c.uf !== fUf) return false;
+    if(fSeg && c.segmento !== fSeg) return false;
+    if(fClass && c.classificacao !== fClass) return false;
     if(!q) return true;
     var casaNome = (c.razao_social||"").toLowerCase().indexOf(q) >= 0
         || (c.nome_fantasia||"").toLowerCase().indexOf(q) >= 0;
@@ -654,15 +684,16 @@ function filtraClientes(){
     var casaDoc = qDigitos.length > 0 && (c.documento||"").indexOf(qDigitos) >= 0;
     return casaNome || casaCidade || casaDoc;
   });
-  if(!L.length) return $("lista").innerHTML = '<div class="vazio">Nenhum cliente com esse termo.</div>';
+  if(!L.length) return $("lista").innerHTML = '<div class="vazio">Nenhum cliente com esse filtro.</div>';
   $("lista").innerHTML = '<div class="tw"><table><thead><tr>'+
-    '<th>Cliente</th><th>Cidade</th><th>UF</th><th>Documento</th>'+
+    '<th>Cliente</th><th>Cidade</th><th>UF</th><th>Documento</th><th>Classificação</th>'+
     '<th style="text-align:right">Comprado</th><th>Última</th><th></th>'+
     '</tr></thead><tbody>'+
     L.map(function(c){
       return '<tr><td>'+esc(c.razao_social)+'</td>'+
         '<td>'+esc(c.municipio||"—")+'</td><td>'+esc(c.uf||"—")+'</td>'+
         '<td class="mono">'+esc(c.documento)+'</td>'+
+        '<td>'+(c.classificacao?'<span class="tag" style="background:'+CLASS_COR[c.classificacao]+'">'+CLASS_ROTULO[c.classificacao]+'</span>':"—")+'</td>'+
         '<td class="n">'+brl(c._v)+'</td>'+
         '<td class="mono">'+dataBR(c._ultima)+'</td>'+
         '<td><button onclick="editarCliente(\''+c.id+'\')">✏️ editar</button></td></tr>';
