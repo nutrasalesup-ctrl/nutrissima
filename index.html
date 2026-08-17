@@ -330,7 +330,7 @@ async function tSeparacao(arg){
   document.getElementById('app').innerHTML=trilha('Separar')+topo('Separar pedido','check no que já foi pra caixa')+'<main><div class="center">Carregando…</div></main>';
   const [{data:lin,error},{data:todosPa}]=await Promise.all([
     sb.from('vendas_pedidos')
-      .select('id,pedido_numero,cliente,cidade,codigo,produto_nome,qtd,qtd_separada,entrega,produto_acabado_id,produto_acabado(nome,saldo_potes,ean)')
+      .select('id,pedido_numero,cliente,cidade,codigo,produto_nome,qtd,qtd_separada,entrega,produto_acabado_id,cliente_id,produto_acabado(nome,saldo_potes,ean),clientes(observacao)')
       .eq('canal','Varejo').eq('status','aberto').order('entrega'),
     sb.from('produto_acabado').select('nome,ean').not('ean','is',null)
   ]);
@@ -341,7 +341,7 @@ async function tSeparacao(arg){
   const peds={};
   (lin||[]).forEach(l=>{
     const k=l.pedido_numero||'(sem pedido)';
-    if(!peds[k])peds[k]={pedido:k,cliente:l.cliente,cidade:l.cidade,entrega:l.entrega,linhas:[],un:0,sep:0};
+    if(!peds[k])peds[k]={pedido:k,cliente:l.cliente,cidade:l.cidade,entrega:l.entrega,linhas:[],un:0,sep:0,obs:(l.clientes||{}).observacao||null};
     peds[k].linhas.push(l);peds[k].un+=Number(l.qtd||0);peds[k].sep+=Number(l.qtd_separada||0);
     if(l.entrega&&(!peds[k].entrega||l.entrega<peds[k].entrega))peds[k].entrega=l.entrega;
   });
@@ -363,7 +363,8 @@ async function tSeparacao(arg){
           '<b style="font-size:17px">'+(x.cliente||'—')+'</b>'+
           '<span class="mono" style="color:'+corDe(x.entrega)+';font-weight:700;font-size:13px">'+rotulo(x.entrega)+'</span></div>'+
           '<small style="color:#7A6A57">pedido <span class="mono">'+x.pedido+'</span>'+(x.cidade?' · '+x.cidade:'')+'</small>'+
-          '<p style="margin:8px 0 0;font-size:13.5px">'+x.linhas.length+' itens · <span class="mono">'+fmt(x.un,0)+'</span> un · '+estado+'</p></div>'+
+          '<p style="margin:8px 0 0;font-size:13.5px">'+x.linhas.length+' itens · <span class="mono">'+fmt(x.un,0)+'</span> un · '+estado+'</p>'+
+          (x.obs?'<p style="margin:8px 0 0;background:#C63A3A;color:#FFFDF9;font-weight:800;font-size:13.5px;padding:8px 10px;border-radius:8px">'+x.obs+'</p>':'')+'</div>'+
           '<button class="btnSec" style="margin-top:10px;min-height:44px;width:100%" onclick="sepEtiquetas(\''+x.pedido+'\')">🏷️ Etiquetas · '+sepCaixasEstimadas(x.un)+' cx</button></div>';
       }).join(''):'<div class="card"><div class="center">Nenhum pedido em aberto.</div></div>');
   }else{
@@ -397,6 +398,7 @@ async function tSeparacao(arg){
     const totalSep=p.linhas.reduce((s,l)=>s+((EST.sep.itens[l.id]!==undefined)?EST.sep.itens[l.id]:Number(l.qtd_separada||0)),0);
     corpo='<div class="card" style="margin-top:0;border-left:7px solid '+corDe(p.entrega)+'">'+
       '<b style="font-size:18px">'+(p.cliente||'—')+'</b><br><small style="color:#7A6A57">pedido <span class="mono">'+p.pedido+'</span>'+(p.cidade?' · '+p.cidade:'')+' · <span style="color:'+corDe(p.entrega)+';font-weight:700">'+rotulo(p.entrega)+'</span></small>'+
+      (p.obs?'<p style="margin:10px 0 0;background:#C63A3A;color:#FFFDF9;font-weight:800;font-size:15px;padding:10px 12px;border-radius:8px;text-align:center">'+p.obs+'</p>':'')+
       '<p style="margin:10px 0 0;font-size:13px"><span class="step-label" style="margin:0">② confira cada item e toque no ✓</span></p></div>'+
       cards+
       '<div class="card" style="text-align:center"><p style="margin:0 0 10px;font-size:13.5px">total do pedido: <span class="mono">'+fmt(p.un,0)+'</span> un · marcadas agora: <span class="mono" style="font-size:20px;font-weight:900">'+fmt(totalSep,0)+'</span></p>'+
