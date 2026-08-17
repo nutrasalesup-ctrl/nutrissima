@@ -553,30 +553,119 @@ async function telaClientes(){
     c._v = a.v; c._ultima = a.ultima; return c;
   }).sort(function(a,b){ return b._v - a._v; });
 
+  var rr = await sb.from("representantes").select("id,nome").order("nome");
+  ST.cache.representantes = rr.data || [];
+
   pinta(
-    '<input id="busca" placeholder="Buscar por nome, cidade ou CNPJ" oninput="filtraClientes()">'+
+    formCliente()+
+    '<input id="busca" placeholder="Buscar por nome, cidade ou CNPJ" oninput="filtraClientes()" style="margin-top:16px">'+
     '<div id="lista" style="margin-top:12px"></div>');
   filtraClientes();
 }
+function formCliente(idEdicao){
+  var c = idEdicao ? (ST.cache.clientes||[]).find(function(x){ return x.id===idEdicao; }) : null;
+  var repOpcoes = '<option value="">— sem representante —</option>'+
+    (ST.cache.representantes||[]).map(function(r){
+      return '<option value="'+r.id+'"'+(c&&c.representante_id===r.id?' selected':'')+'>'+esc(r.nome)+'</option>';
+    }).join("");
+  var segOpcoes = ["varejo","marketplace","terceirizacao","representante"].map(function(s){
+    return '<option value="'+s+'"'+(c&&c.segmento===s?' selected':'')+'>'+SEG_ROTULO[s]+'</option>';
+  }).join("");
+  return '<div class="card" style="--u:#3E7C45"><h3>'+(c?"Editar cliente":"Cadastrar cliente")+'</h3>'+
+    '<input type="hidden" id="clId" value="'+(c?c.id:"")+'">'+
+    '<label for="clTipo">Documento</label>'+
+    '<div style="display:flex;gap:8px">'+
+      '<select id="clTipo" style="flex:0 0 100px">'+
+        '<option value="CNPJ"'+(c&&c.tipo_doc==="CPF"?"":" selected")+'>CNPJ</option>'+
+        '<option value="CPF"'+(c&&c.tipo_doc==="CPF"?" selected":"")+'>CPF</option>'+
+      '</select>'+
+      '<input id="clDoc" placeholder="Só números" style="flex:1" value="'+(c?esc(c.documento||""):"")+'">'+
+    '</div>'+
+    '<label for="clRazao">Razão social</label><input id="clRazao" value="'+(c?esc(c.razao_social||""):"")+'">'+
+    '<label for="clFantasia">Nome fantasia (opcional)</label><input id="clFantasia" value="'+(c?esc(c.nome_fantasia||""):"")+'">'+
+    '<div style="display:flex;gap:8px">'+
+      '<div style="flex:1"><label for="clMunicipio">Cidade</label><input id="clMunicipio" value="'+(c?esc(c.municipio||""):"")+'"></div>'+
+      '<div style="flex:0 0 80px"><label for="clUf">UF</label><input id="clUf" maxlength="2" style="text-transform:uppercase" value="'+(c?esc(c.uf||""):"")+'"></div>'+
+    '</div>'+
+    '<label for="clSegmento">Segmento</label><select id="clSegmento"><option value="">— não classificado —</option>'+segOpcoes+'</select>'+
+    '<label for="clRepresentante">Representante</label><select id="clRepresentante">'+repOpcoes+'</select>'+
+    '<label for="clObs">Observação (opcional)</label><input id="clObs" value="'+(c?esc(c.observacao||""):"")+'">'+
+    '<div style="display:flex;gap:8px;margin-top:14px">'+
+      '<button class="b" onclick="salvarCliente()">'+(c?"Salvar alterações":"Cadastrar")+'</button>'+
+      (c?'<button onclick="telaClientes()">Cancelar edição</button>':"")+
+    '</div></div>';
+}
+async function salvarCliente(){
+  var id = $("clId").value.trim();
+  var doc = $("clDoc").value.replace(/\D/g,"");
+  var razao = $("clRazao").value.trim();
+  if(!razao) return msg("Razão social é obrigatória", true);
+  if(!doc) return msg("Documento é obrigatório", true);
+
+  // Antes de criar, avisa se já existe outro cliente com o mesmo CNPJ/CPF
+  // (evita duplicar quando o cadastro veio de um import sem documento)
+  var existente = (ST.cache.clientes||[]).find(function(x){
+    return (x.documento||"").replace(/\D/g,"") === doc && x.id !== id;
+  });
+  if(existente && !id){
+    if(!confirm('Já existe um cliente com esse documento: "'+existente.razao_social+'". Deseja editar aquele registro em vez de criar um novo?')) return;
+    id = existente.id;
+  }
+
+  var dados = {
+    tipo_doc: $("clTipo").value,
+    documento: doc,
+    razao_social: razao,
+    nome_fantasia: $("clFantasia").value.trim() || null,
+    municipio: $("clMunicipio").value.trim() || null,
+    uf: $("clUf").value.trim().toUpperCase() || null,
+    segmento: $("clSegmento").value || null,
+    representante_id: $("clRepresentante").value || null,
+    observacao: $("clObs").value.trim() || null
+  };
+
+  var r;
+  if(id){
+    r = await sb.from("clientes").update(dados).eq("id", id);
+  } else {
+    dados.criado_por = ST.email;
+    r = await sb.from("clientes").insert(dados);
+  }
+  if(r.error) return msg("Não deu para salvar: "+r.error.message, true);
+  msg(id ? "Cliente atualizado" : "Cliente cadastrado");
+  telaClientes();
+}
+function editarCliente(id){
+  pinta(
+    formCliente(id)+
+    '<input id="busca" placeholder="Buscar por nome, cidade ou CNPJ" oninput="filtraClientes()" style="margin-top:16px">'+
+    '<div id="lista" style="margin-top:12px"></div>');
+  filtraClientes();
+  var el = $("clRazao"); if(el) el.scrollIntoView({behavior:"smooth", block:"start"});
+}
 function filtraClientes(){
   var q = ($("busca") ? $("busca").value : "").toLowerCase().trim();
+  var qDigitos = q.replace(/\D/g,"");
   var L = (ST.cache.clientes||[]).filter(function(c){
     if(!q) return true;
-    return (c.razao_social||"").toLowerCase().indexOf(q) >= 0
-        || (c.municipio||"").toLowerCase().indexOf(q) >= 0
-        || (c.documento||"").indexOf(q.replace(/\D/g,"")) >= 0;
+    var casaNome = (c.razao_social||"").toLowerCase().indexOf(q) >= 0
+        || (c.nome_fantasia||"").toLowerCase().indexOf(q) >= 0;
+    var casaCidade = (c.municipio||"").toLowerCase().indexOf(q) >= 0;
+    var casaDoc = qDigitos.length > 0 && (c.documento||"").indexOf(qDigitos) >= 0;
+    return casaNome || casaCidade || casaDoc;
   });
   if(!L.length) return $("lista").innerHTML = '<div class="vazio">Nenhum cliente com esse termo.</div>';
   $("lista").innerHTML = '<div class="tw"><table><thead><tr>'+
     '<th>Cliente</th><th>Cidade</th><th>UF</th><th>Documento</th>'+
-    '<th style="text-align:right">Comprado</th><th>Última</th>'+
+    '<th style="text-align:right">Comprado</th><th>Última</th><th></th>'+
     '</tr></thead><tbody>'+
     L.map(function(c){
       return '<tr><td>'+esc(c.razao_social)+'</td>'+
         '<td>'+esc(c.municipio||"—")+'</td><td>'+esc(c.uf||"—")+'</td>'+
         '<td class="mono">'+esc(c.documento)+'</td>'+
         '<td class="n">'+brl(c._v)+'</td>'+
-        '<td class="mono">'+dataBR(c._ultima)+'</td></tr>';
+        '<td class="mono">'+dataBR(c._ultima)+'</td>'+
+        '<td><button onclick="editarCliente(\''+c.id+'\')">✏️ editar</button></td></tr>';
     }).join("")+'</tbody></table></div>';
 }
 
