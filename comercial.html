@@ -205,6 +205,30 @@ function msg(txt, erro){
 }
 
 /* ================= leitura da NF-e ================= */
+function elProgresso(){ return document.getElementById("res"); }
+/* tenta de novo em falha de rede (celular oscila); erro do banco não é retentado */
+async function comRetentativa(fn, tentativas){
+  tentativas = tentativas || 3;
+  var ultimoErro;
+  for(var t=1; t<=tentativas; t++){
+    try {
+      var r = await fn();
+      if(r && r.error){
+        var m = String(r.error.message||"");
+        var eRede = /load failed|fetch|network|timeout|aborted/i.test(m);
+        if(!eRede || t === tentativas) return r;
+        ultimoErro = r;
+      } else {
+        return r;
+      }
+    } catch(e){
+      ultimoErro = { error: { message: e.message || String(e) } };
+      if(t === tentativas) return ultimoErro;
+    }
+    await new Promise(function(res){ setTimeout(res, 800 * t); });
+  }
+  return ultimoErro;
+}
 async function expandirArquivos(arquivos, onProgress){
   var out = [];
   for(var i=0; i<arquivos.length; i++){
@@ -1519,12 +1543,15 @@ async function importar(files, opts){
     return $("res").innerHTML = cartaoEmitente(semEmitente);
   }
 
-  /* 3. notas que já existem */
+  /* 3. notas que já existem — consultado em blocos (URL tem limite de tamanho) */
   var chaves = lidas.map(function(n){ return n.chave; });
-  var rx = await sb.from("nf_venda").select("chave").in("chave", chaves);
-  if(rx.error) return $("res").innerHTML = erroCartao(rx.error.message);
   var jaTem = {};
-  (rx.data||[]).forEach(function(x){ jaTem[x.chave] = 1; });
+  for(var c0=0; c0<chaves.length; c0+=200){
+    if(elProgresso()) elProgresso().innerHTML = '<div class="card"><h3>Conferindo o que já existe… '+c0+' de '+chaves.length+'</h3></div>';
+    var rx = await comRetentativa(function(){ return sb.from("nf_venda").select("chave").in("chave", chaves.slice(c0, c0+200)); });
+    if(rx.error) return $("res").innerHTML = erroCartao(rx.error.message);
+    (rx.data||[]).forEach(function(x){ jaTem[x.chave] = 1; });
+  }
   var novas = lidas.filter(function(n){ return !jaTem[n.chave]; });
   var repetidas = lidas.length - novas.length;
 
@@ -1552,12 +1579,17 @@ async function importar(files, opts){
     });
     var listaCli = Object.keys(porDoc).map(function(k){ return porDoc[k]; });
     if(listaCli.length){
-      var rc = await sb.from("clientes").upsert(listaCli, { onConflict:"documento", ignoreDuplicates:true });
-      if(rc.error) return $("res").innerHTML = erroCartao(rc.error.message);
+      for(var u0=0; u0<listaCli.length; u0+=200){
+        var rc = await comRetentativa(function(){ return sb.from("clientes").upsert(listaCli.slice(u0, u0+200), { onConflict:"documento", ignoreDuplicates:true }); });
+        if(rc.error) return $("res").innerHTML = erroCartao(rc.error.message);
+      }
     }
-    var rcl = await sb.from("clientes").select("id,documento").in("documento", Object.keys(porDoc));
-    if(rcl.error) return $("res").innerHTML = erroCartao(rcl.error.message);
-    (rcl.data||[]).forEach(function(c){ cliId[c.documento] = c.id; });
+    var cliDocs = Object.keys(porDoc);
+    for(var d0=0; d0<cliDocs.length; d0+=200){
+      var rcl = await comRetentativa(function(){ return sb.from("clientes").select("id,documento").in("documento", cliDocs.slice(d0, d0+200)); });
+      if(rcl.error) return $("res").innerHTML = erroCartao(rcl.error.message);
+      (rcl.data||[]).forEach(function(c){ cliId[c.documento] = c.id; });
+    }
   }
 
   /* 5. de-para de produtos */
@@ -1586,10 +1618,14 @@ async function importar(files, opts){
       arquivo:n.arquivo, criado_por:ST.email
     };
   });
-  var rn = await sb.from("nf_venda").insert(linhasNota).select("id,chave");
-  if(rn.error) return $("res").innerHTML = erroCartao(rn.error.message);
+  /* gravar as notas em blocos — mandar tudo de uma vez estoura a conexão no celular */
   var idPorChave = {};
-  (rn.data||[]).forEach(function(x){ idPorChave[x.chave] = x.id; });
+  for(var b0=0; b0<linhasNota.length; b0+=200){
+    if(elProgresso()) elProgresso().innerHTML = '<div class="card"><h3>Gravando notas… '+b0+' de '+linhasNota.length+'</h3></div>';
+    var rn = await comRetentativa(function(){ return sb.from("nf_venda").insert(linhasNota.slice(b0, b0+200)).select("id,chave"); });
+    if(rn.error) return $("res").innerHTML = erroCartao(rn.error.message);
+    (rn.data||[]).forEach(function(x){ idPorChave[x.chave] = x.id; });
+  }
 
   /* 7. gravar itens */
   var linhasItem = [], naoMapeados = {};
@@ -1611,8 +1647,9 @@ async function importar(files, opts){
       });
     });
   });
-  for(var k=0; k<linhasItem.length; k+=400){
-    var ri = await sb.from("nf_venda_item").insert(linhasItem.slice(k, k+400));
+  for(var k=0; k<linhasItem.length; k+=200){
+    if(elProgresso()) elProgresso().innerHTML = '<div class="card"><h3>Gravando itens… '+k+' de '+linhasItem.length+'</h3></div>';
+    var ri = await comRetentativa(function(){ return sb.from("nf_venda_item").insert(linhasItem.slice(k, k+200)); });
     if(ri.error) return $("res").innerHTML = erroCartao(ri.error.message);
   }
 
