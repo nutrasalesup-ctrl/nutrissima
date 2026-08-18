@@ -1313,10 +1313,6 @@ async function carregarOportunidades(){
   (ST.cache.produtos||[]).forEach(function(p){ nomeProd[p.id] = p.nome; });
 
   var todas = r.data || [];
-  if(!todas.length){
-    lista.innerHTML = '<div class="vazio">Nenhuma oportunidade cadastrada ainda.</div>';
-    return;
-  }
   var abertas = todas.filter(function(x){ return x.etapa.indexOf("fechado") !== 0; });
   var ganhas  = todas.filter(function(x){ return x.etapa === "fechado_ganho"; });
   var perdidas= todas.filter(function(x){ return x.etapa === "fechado_perdido"; });
