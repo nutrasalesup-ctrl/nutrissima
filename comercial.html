@@ -175,7 +175,7 @@ button:focus-visible{outline:2px solid var(--pist);outline-offset:2px}
 var URL_SB = "https://nfzospymzvlwzlcpgolm.supabase.co";
 var KEY_SB = "sb_publishable_tNe4G9C0re2YDN9lsnRQXg_zQgFLmzn";
 var sb = null;
-var ST = { email:"", periodo:"todos", cache:{} };
+var ST = { email:"", periodo:"todos", cache:{}, papel:{ comercial:false, controladoria:false } };
 
 /* ================= utilitários ================= */
 function $(id){ return document.getElementById(id); }
@@ -283,6 +283,9 @@ function lerNFe(texto, nomeArquivo){
     v_ipi: Number(tag(tot,"vIPI")) || 0,
     v_st: Number(tag(tot,"vST")) || 0,
     v_nf: Number(tag(tot,"vNF")) || 0,
+    v_icms: Number(tag(tot,"vICMS")) || 0,
+    v_pis: Number(tag(tot,"vPIS")) || 0,
+    v_cofins: Number(tag(tot,"vCOFINS")) || 0,
     pedido_numero: achouPedido ? achouPedido[1] : null,
     itens: itens
   };
@@ -300,7 +303,8 @@ var TELAS = {
   clientes:    { rotulo:"Clientes",       sub:"Cadastro e quanto cada um comprou", fn:telaClientes, etapa:"Clientes" },
   representantes:{ rotulo:"Representantes", sub:"Cadastro básico", fn:telaRepres, etapa:"Clientes" },
   importar:    { rotulo:"Importar NF-e",  sub:"Ler XML e alimentar o faturamento", fn:telaImportar, etapa:"Pedido" },
-  pendencias:  { rotulo:"Pendências",     sub:"Códigos de NF sem produto cadastrado", fn:telaPendencias, etapa:"Pedido" }
+  pendencias:  { rotulo:"Pendências",     sub:"Códigos de NF sem produto cadastrado", fn:telaPendencias, etapa:"Pedido" },
+  controladoria:{ rotulo:"Controladoria", sub:"DRE e apuração fiscal (e-commerce)", fn:telaControladoria, etapa:"" }
 };
 var telaAtual = "inicio";
 
@@ -311,9 +315,10 @@ function trilha(atual){
     return '<span class="'+(e===atual?"atual":"")+'">'+esc(e)+'</span>';
   }).join("")+'</div>';
 }
+function telaBase(){ return ST.papel.comercial ? "inicio" : "controladoria"; }
 function topo(t, sub, voltar){
   return '<div class="topo">'+
-    (voltar ? '<button class="voltar" onclick="ir(\'inicio\')" aria-label="Voltar">←</button>' : '')+
+    (voltar ? '<button class="voltar" onclick="ir(\''+telaBase()+'\')" aria-label="Voltar">←</button>' : '')+
     '<div><h1>'+esc(t)+'</h1><p>'+esc(sub||"")+'</p></div>'+
     '<div class="quem"><b>'+esc(ST.email)+'</b>'+
       '<button class="s" style="margin-top:4px;min-height:32px;padding:5px 11px;font-size:12px" onclick="sair()">Sair</button>'+
@@ -321,7 +326,7 @@ function topo(t, sub, voltar){
 }
 function moldura(conteudo){
   var t = TELAS[telaAtual] || TELAS.inicio;
-  return trilha(t.etapa)+topo(t.rotulo, t.sub, telaAtual !== "inicio")+
+  return trilha(t.etapa)+topo(t.rotulo, t.sub, telaAtual !== telaBase())+
          '<main id="corpo">'+conteudo+'</main>';
 }
 function ir(k){
@@ -341,9 +346,11 @@ var MENU = [
   ["clientes",     "🏢","#EAF3EA",""],
   ["representantes","🤝","#F3EAD8",""],
   ["importar",     "📥","#E7F0E4",""],
-  ["pendencias",   "⚠️","#FBEAEA",""]
+  ["pendencias",   "⚠️","#FBEAEA",""],
+  ["controladoria","🧮","#EFE0D8",""]
 ];
 async function telaInicio(){
+  if(!ST.papel.comercial){ return ir("controladoria"); }
   var alerta = "";
   try{
     var r = await sb.schema("crm").from("interacoes")
@@ -388,12 +395,19 @@ async function entrar(){
   var r = await sb.auth.signInWithPassword({ email:em, password:se });
   if(r.error) return telaLogin("E-mail ou senha não conferem.");
   ST.email = em;
-  ir("inicio");
+  await carregarPapel();
+  ir(ST.papel.comercial ? "inicio" : "controladoria");
 }
 async function sair(){
   await sb.auth.signOut();
   ST.email = "";
+  ST.papel = { comercial:false, controladoria:false };
   telaLogin();
+}
+async function carregarPapel(){
+  var rc = await sb.rpc("eh_comercial");
+  var rk = await sb.rpc("eh_controladoria");
+  ST.papel = { comercial: !!rc.data, controladoria: !!rk.data };
 }
 
 /* ================= resumo (painel de faturamento) ================= */
@@ -1424,7 +1438,9 @@ function telaImportar(){
   });
 }
 
-async function importar(files){
+async function importar(files, opts){
+  opts = opts || {};
+  var criarClientes = opts.criarClientes !== false; // default true (fluxo comercial/B2B, comportamento original)
   var arr = Array.prototype.slice.call(files || []);
   if(!arr.length) return;
   $("res").innerHTML = '<div class="card"><h3>Lendo '+arr.length+' arquivo(s)…</h3></div>';
@@ -1481,27 +1497,30 @@ async function importar(files){
       cartaoFalhas(falhas, 0, repetidas);
   }
 
-  /* 4. clientes */
-  var porDoc = {};
-  novas.forEach(function(n){
-    if(!n.dest_documento) return;
-    porDoc[n.dest_documento] = {
-      documento: n.dest_documento, tipo_doc: n.dest_tipo,
-      razao_social: n.dest_nome, ie: n.dest_ie,
-      logradouro: n.dest_logradouro, numero: n.dest_numero, bairro: n.dest_bairro,
-      municipio: n.dest_municipio, uf: n.dest_uf, cep: n.dest_cep,
-      criado_por: ST.email
-    };
-  });
-  var listaCli = Object.keys(porDoc).map(function(k){ return porDoc[k]; });
-  if(listaCli.length){
-    var rc = await sb.from("clientes").upsert(listaCli, { onConflict:"documento", ignoreDuplicates:true });
-    if(rc.error) return $("res").innerHTML = erroCartao(rc.error.message);
-  }
-  var rcl = await sb.from("clientes").select("id,documento").in("documento", Object.keys(porDoc));
-  if(rcl.error) return $("res").innerHTML = erroCartao(rcl.error.message);
+  /* 4. clientes — só no fluxo comercial (B2B). E-commerce/marketplace é consumidor
+     final avulso e NÃO deve virar cadastro de cliente (poluiria o CRM comercial). */
   var cliId = {};
-  (rcl.data||[]).forEach(function(c){ cliId[c.documento] = c.id; });
+  var porDoc = {};
+  if(criarClientes){
+    novas.forEach(function(n){
+      if(!n.dest_documento) return;
+      porDoc[n.dest_documento] = {
+        documento: n.dest_documento, tipo_doc: n.dest_tipo,
+        razao_social: n.dest_nome, ie: n.dest_ie,
+        logradouro: n.dest_logradouro, numero: n.dest_numero, bairro: n.dest_bairro,
+        municipio: n.dest_municipio, uf: n.dest_uf, cep: n.dest_cep,
+        criado_por: ST.email
+      };
+    });
+    var listaCli = Object.keys(porDoc).map(function(k){ return porDoc[k]; });
+    if(listaCli.length){
+      var rc = await sb.from("clientes").upsert(listaCli, { onConflict:"documento", ignoreDuplicates:true });
+      if(rc.error) return $("res").innerHTML = erroCartao(rc.error.message);
+    }
+    var rcl = await sb.from("clientes").select("id,documento").in("documento", Object.keys(porDoc));
+    if(rcl.error) return $("res").innerHTML = erroCartao(rcl.error.message);
+    (rcl.data||[]).forEach(function(c){ cliId[c.documento] = c.id; });
+  }
 
   /* 5. de-para de produtos */
   var rd = await sb.from("depara_sku").select("codigo,produto_acabado_id");
@@ -1524,6 +1543,7 @@ async function importar(files){
       dest_municipio:n.dest_municipio, dest_uf:n.dest_uf,
       v_prod:n.v_prod, v_desc:n.v_desc, v_frete:n.v_frete, v_outro:n.v_outro,
       v_ipi:n.v_ipi, v_st:n.v_st, v_nf:n.v_nf,
+      v_icms:n.v_icms, v_pis:n.v_pis, v_cofins:n.v_cofins,
       pedido_numero:n.pedido_numero, classificacao:classif,
       arquivo:n.arquivo, criado_por:ST.email
     };
@@ -1575,10 +1595,10 @@ async function importar(files){
     '<div class="conta"><span class="p">R$ '+brl(somaProd)+'</span> mercadoria '+
     '&nbsp;−&nbsp; <span class="m">R$ '+brl(somaDesc)+'</span> desconto '+
     '&nbsp;=&nbsp; <b>R$ '+brl(somaProd-somaDesc)+'</b> líquido</div>'+
-    '<p style="font-size:13.5px;color:#7A6A57">'+linhasItem.length+' itens · '+
-    Object.keys(porDoc).length+' cliente(s) no arquivo'+
+    '<p style="font-size:13.5px;color:#7A6A57">'+linhasItem.length+' itens'+
+    (criarClientes ? ' · '+Object.keys(porDoc).length+' cliente(s) no arquivo' : ' · e-commerce, sem cadastro de cliente')+
     (repetidas ? ' · '+repetidas+' nota(s) já existiam e foram ignoradas' : '')+'</p>'+
-    '<button class="b" style="margin-top:6px" onclick="ir(\'inicio\')">Ver o resultado</button></div>';
+    '<button class="b" style="margin-top:6px" onclick="ir(\''+(criarClientes?"inicio":"controladoria")+'\')">Ver o resultado</button></div>';
 
   if(listaNM.length){
     var somaNM = listaNM.reduce(function(a,x){ return a + x.valor; }, 0);
@@ -1701,6 +1721,77 @@ async function ligarCodigo(codigo, selectId, descricao){
   telaPendencias();
 }
 
+/* ================= controladoria (DRE) ================= */
+async function telaControladoria(){
+  pinta('<div class="vazio">Carregando…</div>');
+  var r = await sb.from("v_dre_notas").select("*").eq("classificacao","venda").order("emissao");
+  if(r.error) return pinta('<div class="card" style="--u:#C63A3A">'+esc(r.error.message)+'</div>');
+  var N = r.data || [];
+
+  var porMes = {};
+  N.forEach(function(n){
+    var k = String(n.mes).slice(0,7);
+    if(!porMes[k]) porMes[k] = { mes:k, notas:0, bruta:0, liquida:0, icms:0, pis:0, cofins:0 };
+    porMes[k].notas++;
+    porMes[k].bruta += Number(n.v_nf)||0;
+    porMes[k].liquida += Number(n.v_liquido_nf)||0;
+    porMes[k].icms += Number(n.v_icms)||0;
+    porMes[k].pis += Number(n.v_pis)||0;
+    porMes[k].cofins += Number(n.v_cofins)||0;
+  });
+  var meses = Object.keys(porMes).sort();
+  var totalBruta = N.reduce(function(a,n){ return a+(Number(n.v_nf)||0); },0);
+  var totalLiquida = N.reduce(function(a,n){ return a+(Number(n.v_liquido_nf)||0); },0);
+  var cargaEfetiva = totalBruta ? (100*(totalBruta-totalLiquida)/totalBruta) : 0;
+
+  var h = '<div class="card" style="--u:#22303A"><h3>Importar e-commerce (série UpSeller/marketplace)</h3>'+
+    '<p style="font-size:13.5px;color:#7A6A57">Estas notas NÃO criam cadastro de cliente — são consumidor final avulso, ficam só aqui na apuração fiscal.</p>'+
+    '<input type="file" id="arqEcommerce" multiple accept=".xml" style="margin-top:10px" onchange="importarEcommerce(this.files)">'+
+    '<div id="resEcommerce" style="margin-top:10px"></div></div>';
+
+  h += '<div class="card" style="--u:#3E7C45"><h3>DRE — visão consolidada</h3>'+
+    '<p class="r">Receita bruta</p><p class="v">R$ '+brl(totalBruta)+'</p>'+
+    '<div class="conta">R$ '+brl(totalBruta)+' bruta &nbsp;−&nbsp; R$ '+brl(totalBruta-totalLiquida)+' ICMS+PIS+COFINS &nbsp;=&nbsp; <b>R$ '+brl(totalLiquida)+'</b> líquida</div>'+
+    '<p style="font-size:13.5px;color:#7A6A57;margin-top:8px">Carga tributária efetiva: <b>'+cargaEfetiva.toFixed(2)+'%</b> · '+N.length+' nota(s) no total (todas as séries, exclui sell-in e bonificação)</p></div>';
+
+  if(meses.length){
+    h += '<div class="tw"><table><thead><tr><th>Mês</th><th style="text-align:right">Notas</th>'+
+      '<th style="text-align:right">Bruta</th><th style="text-align:right">ICMS+PIS+COFINS</th>'+
+      '<th style="text-align:right">Líquida</th><th style="text-align:right">Carga</th></tr></thead><tbody>'+
+      meses.map(function(k){
+        var m = porMes[k];
+        var imp = m.icms+m.pis+m.cofins;
+        var carga = m.bruta ? (100*imp/m.bruta) : 0;
+        return '<tr><td class="mono">'+k+'</td><td class="n">'+m.notas+'</td>'+
+          '<td class="n">R$ '+brl(m.bruta)+'</td><td class="n">R$ '+brl(imp)+'</td>'+
+          '<td class="n">R$ '+brl(m.liquida)+'</td><td class="n">'+carga.toFixed(1)+'%</td></tr>';
+      }).join("")+'</tbody></table></div>';
+  } else {
+    h += '<div class="vazio">Nenhuma nota de venda apurada ainda. Suba os XMLs de e-commerce acima.</div>';
+  }
+
+  h += '<p style="font-size:12.5px;color:#7A6A57;margin-top:14px"><b>Como ler:</b> "Bruta" = valor total da nota (vNF). '+
+    '"Líquida" = bruta menos ICMS, PIS e COFINS (não desconta IPI/ST, que são repasse, não receita da empresa). '+
+    '"Carga tributária efetiva" = imposto pago ÷ receita bruta das notas já importadas — não é alíquota nominal.<br>'+
+    '<b>Cobertura:</b> só o que já foi importado aqui aparece; XMLs ainda não subidos não entram na conta.</p>';
+
+  pinta(h);
+}
+async function importarEcommerce(files){
+  var arr = Array.prototype.slice.call(files || []);
+  if(!arr.length) return;
+  $("resEcommerce").innerHTML = '<div class="card"><h3>Lendo '+arr.length+' arquivo(s)…</h3></div>';
+  var alvoOriginal = $("res");
+  // reaproveita o importar() padrão, mas mirando o card de resultado deste bloco
+  var resTemp = document.createElement("div");
+  resTemp.id = "res";
+  resTemp.style.display = "none";
+  document.body.appendChild(resTemp);
+  await importar(arr, { criarClientes:false });
+  $("resEcommerce").innerHTML = resTemp.innerHTML;
+  resTemp.remove();
+}
+
 /* ================= partida ================= */
 (async function(){
   if(typeof supabase === "undefined" || !supabase.createClient){
@@ -1713,7 +1804,8 @@ async function ligarCodigo(codigo, selectId, descricao){
   var s = await sb.auth.getSession();
   if(s.data && s.data.session){
     ST.email = s.data.session.user.email || "";
-    ir("inicio");
+    await carregarPapel();
+    ir(ST.papel.comercial ? "inicio" : "controladoria");
   } else {
     telaLogin();
   }
