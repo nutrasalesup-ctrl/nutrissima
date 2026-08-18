@@ -111,6 +111,39 @@ button:focus-visible{outline:2px solid var(--pist);outline-offset:2px}
 .bar{height:7px;background:#EFE7DC;border-radius:99px;overflow:hidden;margin-top:5px}
 .bar i{display:block;height:100%;background:var(--pist)}
 
+/* kanban de oportunidades */
+.kanban{display:flex;gap:12px;overflow-x:auto;padding:2px 2px 10px;-webkit-overflow-scrolling:touch;
+        scroll-snap-type:x proximity}
+.kanban-col{flex:0 0 82vw;max-width:320px;scroll-snap-align:start;background:#F6F1E8;
+            border:1.5px solid var(--linha);border-radius:var(--raio);display:flex;flex-direction:column}
+.kanban-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;
+             border-bottom:3px solid var(--u,var(--linha));border-radius:var(--raio) var(--raio) 0 0;
+             font-weight:900;font-size:13.5px;text-transform:uppercase;letter-spacing:.04em}
+.kanban-head b{font-family:ui-monospace,Menlo,monospace;background:var(--u,var(--tinta2));color:#fff;
+               padding:2px 9px;border-radius:99px;font-size:12.5px;font-weight:700}
+.kanban-body{padding:10px;flex:1;display:flex;flex-direction:column;gap:10px;min-height:60px;
+             transition:background .1s}
+.kanban-body.sobre{background:#E2EFE2}
+.kanban-card{background:#fff;border:1.5px solid var(--linha);border-left:6px solid var(--u,var(--linha));
+             border-radius:12px;padding:12px 13px;cursor:grab}
+.kanban-card.arrastando{opacity:.35}
+.kc-cliente{font-weight:900;font-size:14.5px;margin-bottom:2px}
+.kc-titulo{font-size:13.5px;margin-bottom:6px}
+.kc-meta{font-size:12px;color:var(--tinta2);margin-bottom:8px}
+.kc-vlr{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;font-size:12px;
+        background:#F6F1E8;border-radius:8px;padding:6px 8px;margin-bottom:8px;white-space:normal}
+.kc-acoes{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
+.kc-mv{min-height:34px;min-width:34px;border:1.5px solid var(--linha);border-radius:9px;background:#fff;
+       font-weight:900;font-size:16px;cursor:pointer;color:var(--cacau)}
+.kc-mv-off{min-height:34px;min-width:34px;display:inline-flex;align-items:center;justify-content:center;
+           color:#C8C0B4;font-size:16px}
+.kc-win,.kc-lose{min-height:34px;border:none;border-radius:9px;font-weight:800;font-size:11.5px;
+                 padding:0 10px;cursor:pointer;color:#fff}
+.kc-win{background:var(--pist)}
+.kc-lose{background:var(--mor)}
+@media(min-width:820px){ .kanban-col{flex:0 0 260px} }
+@media(min-width:1200px){ .kanban-col{flex:0 0 288px} }
+
 /* login */
 .login{max-width:380px;margin:9vh auto;padding:0 16px}
 .login .cx{background:#fff;border:1.5px solid var(--linha);border-radius:16px;padding:22px}
@@ -1316,11 +1349,16 @@ async function carregarOportunidades(){
   h += '<div class="conta">R$ '+brl(vAberto)+' no funil &nbsp;×&nbsp; probabilidade por etapa &nbsp;=&nbsp; '+
        '<span class="p">R$ '+brl(vPond)+'</span> esperado</div>';
 
-  ETAPAS.forEach(function(e){
+  h += '<div class="kanban">';
+  ETAPAS.forEach(function(e, idx){
     var L = abertas.filter(function(x){ return x.etapa === e.k; });
-    if(!L.length) return;
-    h += '<h3 style="margin:20px 0 8px;font-size:14px;text-transform:uppercase;letter-spacing:.09em;color:var(--tinta2)">'+
-         esc(e.r)+' · '+inte(L.length)+' · R$ '+brl(soma(L))+'</h3>';
+    h += '<div class="kanban-col">'+
+      '<div class="kanban-head" style="--u:'+e.cor+'"><span>'+esc(e.r)+'</span><b>'+inte(L.length)+'</b></div>'+
+      '<div class="kanban-body" ondragover="kbDragOver(event)" ondragleave="kbDragLeave(event)" '+
+        'ondrop="kbDrop(event,\''+e.k+'\')">';
+    if(!L.length){
+      h += '<div class="vazio" style="padding:14px 4px;font-size:13px">Nada aqui</div>';
+    }
     L.forEach(function(x){
       var d = diasAte(x.previsao_fechamento);
       var prev = x.previsao_fechamento
@@ -1328,24 +1366,32 @@ async function carregarOportunidades(){
                                           : d === 0 ? ' · hoje' : ' · em '+d+' dia(s)')
         : 'sem previsão';
       var corCard = (d !== null && d < 0) ? '#C63A3A' : e.cor;
-      h += '<div class="card" style="--u:'+corCard+'">'+
-        '<h3>'+esc(nomeCliente[x.cliente_id]||"—")+'</h3>'+
-        '<div style="margin-bottom:6px">'+esc(x.titulo)+'</div>'+
-        '<div style="font-size:13.5px;color:var(--tinta2);margin-bottom:8px">'+
+      h += '<div class="kanban-card" style="--u:'+corCard+'" draggable="true" '+
+        'ondragstart="kbDragStart(event,\''+x.id+'\')" ondragend="kbDragEnd(event)">'+
+        '<div class="kc-cliente">'+esc(nomeCliente[x.cliente_id]||"—")+'</div>'+
+        '<div class="kc-titulo">'+esc(x.titulo)+'</div>'+
+        '<div class="kc-meta">'+
           (x.produto_acabado_id && nomeProd[x.produto_acabado_id] ? esc(nomeProd[x.produto_acabado_id])+' · ' : '')+
           esc(prev)+'</div>'+
         (x.valor_estimado != null
-          ? '<div class="conta">R$ '+brl(x.valor_estimado)+' estimado &nbsp;×&nbsp; '+
-            (x.probabilidade != null ? x.probabilidade : e.prob)+'% &nbsp;=&nbsp; '+
-            '<span class="p">R$ '+brl((Number(x.valor_estimado)||0) * ((x.probabilidade != null ? x.probabilidade : e.prob)/100))+'</span></div>'
+          ? '<div class="kc-vlr">R$ '+brl(x.valor_estimado)+' × '+
+            (x.probabilidade != null ? x.probabilidade : e.prob)+'% = R$ '+
+            brl((Number(x.valor_estimado)||0) * ((x.probabilidade != null ? x.probabilidade : e.prob)/100))+'</div>'
           : '')+
-        '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+
-          '<button class="s" onclick="moverEtapa(\''+x.id+'\',1)">Avançar etapa</button>'+
-          '<button class="s" onclick="fecharOportunidade(\''+x.id+'\',true)">Ganhou</button>'+
-          '<button class="s" onclick="fecharOportunidade(\''+x.id+'\',false)">Perdeu</button>'+
+        '<div class="kc-acoes">'+
+          (idx>0
+            ? '<button class="kc-mv" onclick="moverEtapaDireta(\''+x.id+'\','+(idx-1)+')" title="Voltar etapa">‹</button>'
+            : '<span class="kc-mv-off">‹</span>')+
+          (idx<ETAPAS.length-1
+            ? '<button class="kc-mv" onclick="moverEtapaDireta(\''+x.id+'\','+(idx+1)+')" title="Avançar etapa">›</button>'
+            : '<span class="kc-mv-off">›</span>')+
+          '<button class="kc-win" onclick="fecharOportunidade(\''+x.id+'\',true)">✓ Ganhou</button>'+
+          '<button class="kc-lose" onclick="fecharOportunidade(\''+x.id+'\',false)">✕ Perdeu</button>'+
         '</div></div>';
     });
+    h += '</div></div>';
   });
+  h += '</div>';
 
   var fechadas = ganhas.concat(perdidas);
   if(fechadas.length){
@@ -1393,22 +1439,34 @@ async function salvarOportunidade(){
   $("opTitulo").value=""; $("opValor").value=""; $("opPrevisao").value=""; $("opObs").value="";
   carregarOportunidades();
 }
-async function moverEtapa(id, passo){
-  var atual = null;
-  var r0 = await sb.schema("crm").from("oportunidades").select("etapa").eq("id", id).single();
-  if(r0.error) return msg("Não consegui ler a etapa: "+r0.error.message, true);
-  atual = r0.data.etapa;
-  var idx = -1;
-  ETAPAS.forEach(function(e, i){ if(e.k === atual) idx = i; });
-  if(idx < 0) return msg("Essa oportunidade já está fechada", true);
-  var novo = idx + passo;
-  if(novo >= ETAPAS.length) return msg("Última etapa antes de fechar — use Ganhou ou Perdeu", true);
-  if(novo < 0) return msg("Já está na primeira etapa", true);
+async function moverEtapaDireta(id, novoIdx){
+  if(novoIdx < 0 || novoIdx >= ETAPAS.length) return;
   var r = await sb.schema("crm").from("oportunidades")
-    .update({ etapa: ETAPAS[novo].k, atualizado_em: new Date().toISOString() }).eq("id", id);
+    .update({ etapa: ETAPAS[novoIdx].k, atualizado_em: new Date().toISOString() }).eq("id", id);
   if(r.error) return msg("Não deu para mover: "+r.error.message, true);
-  msg("Movida para "+ETAPAS[novo].r);
+  msg("Movida para "+ETAPAS[novoIdx].r);
   carregarOportunidades();
+}
+/* arraste do quadro — mouse/desktop; celular usa as setas ‹ › do cartão */
+var kbDragId = null;
+function kbDragStart(ev, id){
+  kbDragId = id;
+  if(ev.dataTransfer){ ev.dataTransfer.setData("text/plain", id); ev.dataTransfer.effectAllowed = "move"; }
+  ev.target.classList.add("arrastando");
+}
+function kbDragEnd(ev){ ev.target.classList.remove("arrastando"); }
+function kbDragOver(ev){ ev.preventDefault(); ev.currentTarget.classList.add("sobre"); }
+function kbDragLeave(ev){ ev.currentTarget.classList.remove("sobre"); }
+function kbDrop(ev, etapaKey){
+  ev.preventDefault();
+  ev.currentTarget.classList.remove("sobre");
+  var id = (ev.dataTransfer && ev.dataTransfer.getData("text/plain")) || kbDragId;
+  kbDragId = null;
+  if(!id) return;
+  var idx = -1;
+  ETAPAS.forEach(function(e, i){ if(e.k === etapaKey) idx = i; });
+  if(idx < 0) return;
+  moverEtapaDireta(id, idx);
 }
 async function fecharOportunidade(id, ganhou){
   var motivo = null;
