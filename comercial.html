@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Nutríssima — Comercial</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 :root{
   --cacau:#33200F; --leite:#FFFDF9; --casca:#EFE7DC; --linha:#DCD2C4;
@@ -204,6 +205,32 @@ function msg(txt, erro){
 }
 
 /* ================= leitura da NF-e ================= */
+async function expandirArquivos(arquivos, onProgress){
+  var out = [];
+  for(var i=0; i<arquivos.length; i++){
+    var f = arquivos[i];
+    var nome = f.name || "arquivo";
+    if(/\.zip$/i.test(nome)){
+      if(typeof JSZip === "undefined") throw new Error("biblioteca de .zip não carregou — confira a internet e recarregue a página");
+      if(onProgress) onProgress("Descompactando "+nome+"…");
+      var zip = await JSZip.loadAsync(f);
+      var entradas = Object.keys(zip.files).filter(function(k){
+        return /\.xml$/i.test(k) && !zip.files[k].dir;
+      });
+      for(var j=0; j<entradas.length; j++){
+        if(onProgress && j % 500 === 0) onProgress("Descompactando "+nome+"… "+j+" de "+entradas.length);
+        var texto = await zip.files[entradas[j]].async("string");
+        out.push({ name: entradas[j].split("/").pop(), texto: texto });
+      }
+    } else if(/\.xml$/i.test(nome)){
+      var t;
+      try { t = await f.text(); } catch(e){ continue; }
+      out.push({ name: nome, texto: t });
+    }
+    // outros tipos de arquivo são ignorados silenciosamente
+  }
+  return out;
+}
 function tag(el, nome){
   if(!el) return null;
   var n = el.getElementsByTagNameNS("*", nome)[0];
@@ -1421,9 +1448,9 @@ function telaImportar(){
   pinta(
     ''+
     '<div class="drop" id="drop" onclick="document.getElementById(\'arq\').click()">'+
-      '<b>Escolher arquivos XML</b><span>ou arraste os arquivos para cá — pode mandar vários de uma vez</span>'+
+      '<b>Escolher arquivos XML ou .zip</b><span>ou arraste os arquivos para cá — pode mandar vários de uma vez, ou um .zip com tudo dentro</span>'+
     '</div>'+
-    '<input id="arq" type="file" accept=".xml,text/xml,application/xml" multiple '+
+    '<input id="arq" type="file" accept=".xml,.zip,text/xml,application/xml,application/zip" multiple '+
       'style="position:absolute;left:-9999px" onchange="importar(this.files)">'+
     '<div id="res" style="margin-top:16px"></div>');
   var d = $("drop");
@@ -1441,16 +1468,27 @@ function telaImportar(){
 async function importar(files, opts){
   opts = opts || {};
   var criarClientes = opts.criarClientes !== false; // default true (fluxo comercial/B2B, comportamento original)
-  var arr = Array.prototype.slice.call(files || []);
-  if(!arr.length) return;
+  var arrOriginal = Array.prototype.slice.call(files || []);
+  if(!arrOriginal.length) return;
+
+  /* 0. expandir .zip em .xml (assim não precisa descompactar antes de subir) */
+  $("res").innerHTML = '<div class="card"><h3>Preparando arquivos…</h3></div>';
+  var arr;
+  try {
+    arr = await expandirArquivos(arrOriginal, function(msg){
+      $("res").innerHTML = '<div class="card"><h3>'+esc(msg)+'</h3></div>';
+    });
+  } catch(e){
+    return $("res").innerHTML = erroCartao("não consegui ler os arquivos (zip corrompido?): "+e.message);
+  }
+  if(!arr.length) return $("res").innerHTML = '<div class="card" style="--u:#D9772B"><h3>Nenhum XML encontrado</h3><p>Confira se o .zip contém arquivos .xml.</p></div>';
   $("res").innerHTML = '<div class="card"><h3>Lendo '+arr.length+' arquivo(s)…</h3></div>';
 
   /* 1. ler os XMLs */
   var lidas = [], falhas = [], vistas = {};
   for(var i=0; i<arr.length; i++){
-    var texto;
-    try { texto = await arr[i].text(); }
-    catch(e){ falhas.push({ arq:arr[i].name, motivo:"não consegui abrir o arquivo" }); continue; }
+    if(i % 500 === 0) $("res").innerHTML = '<div class="card"><h3>Lendo… '+i+' de '+arr.length+'</h3></div>';
+    var texto = arr[i].texto;
     var nf = lerNFe(texto, arr[i].name);
     if(nf.erro){ falhas.push({ arq:arr[i].name, motivo:nf.erro }); continue; }
     if(vistas[nf.chave]){ continue; }
@@ -1746,8 +1784,9 @@ async function telaControladoria(){
 
   var h = '<div class="card" style="--u:#22303A"><h3>Importar e-commerce (série UpSeller/marketplace)</h3>'+
     '<p style="font-size:13.5px;color:#7A6A57">Estas notas NÃO criam cadastro de cliente — são consumidor final avulso, ficam só aqui na apuração fiscal.</p>'+
-    '<input type="file" id="arqEcommerce" multiple accept=".xml" style="margin-top:10px" onchange="importarEcommerce(this.files)">'+
-    '<div id="resEcommerce" style="margin-top:10px"></div></div>';
+    '<input type="file" id="arqEcommerce" multiple accept=".xml,.zip,application/zip" style="margin-top:10px" onchange="importar(this.files,{criarClientes:false})">'+
+    '<p style="font-size:12.5px;color:#7A6A57;margin-top:6px">Aceita .xml soltos ou um .zip com todos dentro — não precisa descompactar antes. Lotes grandes podem levar alguns minutos.</p>'+
+    '<div id="res" style="margin-top:10px"></div></div>';
 
   h += '<div class="card" style="--u:#3E7C45"><h3>DRE — visão consolidada</h3>'+
     '<p class="r">Receita bruta</p><p class="v">R$ '+brl(totalBruta)+'</p>'+
@@ -1776,20 +1815,6 @@ async function telaControladoria(){
     '<b>Cobertura:</b> só o que já foi importado aqui aparece; XMLs ainda não subidos não entram na conta.</p>';
 
   pinta(h);
-}
-async function importarEcommerce(files){
-  var arr = Array.prototype.slice.call(files || []);
-  if(!arr.length) return;
-  $("resEcommerce").innerHTML = '<div class="card"><h3>Lendo '+arr.length+' arquivo(s)…</h3></div>';
-  var alvoOriginal = $("res");
-  // reaproveita o importar() padrão, mas mirando o card de resultado deste bloco
-  var resTemp = document.createElement("div");
-  resTemp.id = "res";
-  resTemp.style.display = "none";
-  document.body.appendChild(resTemp);
-  await importar(arr, { criarClientes:false });
-  $("resEcommerce").innerHTML = resTemp.innerHTML;
-  resTemp.remove();
 }
 
 /* ================= partida ================= */
