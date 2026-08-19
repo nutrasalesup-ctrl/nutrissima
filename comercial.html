@@ -1707,7 +1707,19 @@ async function importar(files, opts){
     if(ri.error) return $("res").innerHTML = erroCartao(ri.error.message);
   }
 
-  /* 8. registrar a importação */
+  /* 8. reconciliar carteira (vendas_pedidos) com as notas recém-importadas —
+     casa por pedido_numero contra as notas que acabaram de entrar e, em
+     seguida, pelo nome já conhecido em cliente_alias (pedido cancelado ou
+     ainda sem nota). Não é bloqueante: se falhar, a importação da nota já
+     está gravada e a reconciliação pode ser rodada de novo depois. */
+  var reconc = null, reconcErro = null;
+  try{
+    var rrec = await sb.rpc("fn_reconciliar_clientes_pedidos");
+    if(rrec.error) reconcErro = rrec.error.message;
+    else reconc = (rrec.data && rrec.data[0]) || null;
+  }catch(e){ reconcErro = e.message; }
+
+  /* 9. registrar a importação */
   var somaProd = novas.reduce(function(a,n){ return a + n.v_prod; }, 0);
   var somaDesc = novas.reduce(function(a,n){ return a + n.v_desc; }, 0);
   var listaNM = Object.keys(naoMapeados).map(function(k){ return naoMapeados[k]; });
@@ -1715,11 +1727,12 @@ async function importar(files, opts){
     tipo:"nfe", arquivos:arr.length, lidos:lidas.length,
     gravados:novas.length, ignorados:repetidas,
     nao_mapeados: listaNM,
-    resultado: { itens:linhasItem.length, v_prod:somaProd, v_desc:somaDesc, falhas:falhas },
+    resultado: { itens:linhasItem.length, v_prod:somaProd, v_desc:somaDesc, falhas:falhas,
+      reconciliacao: reconc, reconciliacao_erro: reconcErro },
     criado_por: ST.email
   });
 
-  /* 9. resultado na tela */
+  /* 10. resultado na tela */
   var h = '<div class="card" style="--u:#3E7C45"><h3>'+novas.length+' nota(s) importada(s)</h3>'+
     '<div class="conta"><span class="p">R$ '+brl(somaProd)+'</span> mercadoria '+
     '&nbsp;−&nbsp; <span class="m">R$ '+brl(somaDesc)+'</span> desconto '+
@@ -1727,6 +1740,8 @@ async function importar(files, opts){
     '<p style="font-size:13.5px;color:#7A6A57">'+linhasItem.length+' itens'+
     (criarClientes ? ' · '+Object.keys(porDoc).length+' cliente(s) no arquivo' : ' · e-commerce, sem cadastro de cliente')+
     (repetidas ? ' · '+repetidas+' nota(s) já existiam e foram ignoradas' : '')+'</p>'+
+    (reconc && reconc.via_nota ? '<p style="font-size:13.5px;color:#3E7C45">🔗 '+reconc.via_nota+' pedido(s) da carteira ligado(s) a cliente por esta nota</p>' : '')+
+    (reconcErro ? '<p style="font-size:13.5px;color:#D9772B">⚠️ carteira não reconciliada automaticamente: '+esc(reconcErro)+'</p>' : '')+
     '<button class="b" style="margin-top:6px" onclick="ir(\''+(criarClientes?"inicio":"controladoria")+'\')">Ver o resultado</button></div>';
 
   if(listaNM.length){
