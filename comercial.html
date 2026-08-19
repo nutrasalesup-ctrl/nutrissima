@@ -111,6 +111,25 @@ button:focus-visible{outline:2px solid var(--pist);outline-offset:2px}
 .bar{height:7px;background:#EFE7DC;border-radius:99px;overflow:hidden;margin-top:5px}
 .bar i{display:block;height:100%;background:var(--pist)}
 
+/* dashboard gerencial: filtros e barras empilhadas */
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:3px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;padding:9px 14px;border-radius:99px;border:1.5px solid var(--linha);background:#fff;
+      font-size:13px;font-weight:800;color:var(--tinta2);cursor:pointer;font-family:inherit}
+.chip.ativo{background:var(--ard);border-color:var(--ard);color:#fff}
+.filtros2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.filtros2 label{margin:0 0 4px}
+.bar2{height:10px;background:#EFE7DC;border-radius:99px;overflow:hidden;margin-top:5px;display:flex}
+.bar2 i{display:block;height:100%}
+.linkavel{cursor:pointer}
+.linkavel:active{opacity:.65}
+.legenda{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--tinta2);margin:8px 0 4px}
+.legenda span{display:inline-flex;align-items:center;gap:5px}
+.legenda i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.delta{font-size:12px;font-weight:800;margin-top:2px}
+.delta.pos{color:var(--pist)}
+.delta.neg{color:var(--mor)}
+
 /* kanban de oportunidades */
 .kanban{display:flex;gap:12px;overflow-x:auto;padding:2px 2px 10px;-webkit-overflow-scrolling:touch;
         scroll-snap-type:x proximity}
@@ -382,7 +401,7 @@ var TELAS = {
   agenda:      { rotulo:"Agenda",         sub:"Interações e o que precisa de retorno", fn:telaAgenda, etapa:"Contato" },
   oportunidades:{ rotulo:"Oportunidades", sub:"Funil de vendas por etapa", fn:telaOportunidades, etapa:"Proposta" },
   contatos:    { rotulo:"Contatos",       sub:"Quem decide dentro de cada cliente", fn:telaContatos, etapa:"Contato" },
-  resumo:      { rotulo:"Resumo",         sub:"Faturamento, ticket e concentração", fn:telaResumo, etapa:"Pedido" },
+  resumo:      { rotulo:"Gerencial",      sub:"Visão comercial completa, com filtros", fn:telaGerencial, etapa:"Pedido" },
   faturamento: { rotulo:"Faturamento",    sub:"O que já saiu em nota fiscal", fn:telaFaturamento, etapa:"Pedido" },
   clientes:    { rotulo:"Clientes",       sub:"Cadastro e quanto cada um comprou", fn:telaClientes, etapa:"Clientes" },
   representantes:{ rotulo:"Representantes", sub:"Cadastro básico", fn:telaRepres, etapa:"Clientes" },
@@ -495,103 +514,360 @@ async function carregarPapel(){
 }
 
 /* ================= resumo (painel de faturamento) ================= */
-async function telaResumo(){
+/* ================= gerencial (dashboard comercial completo) ================= */
+var CORES_EMIT = { "Nutríssima":"#3E7C45", "LBR":"#22303A" };
+function corEmit(e){ return CORES_EMIT[e] || "#B8862B"; }
+
+function gerEstadoPadrao(){
+  if(!ST.ger) ST.ger = { preset:"mes", desde:null, ate:null, emitente:"todos", marca:"todos" };
+}
+function gerHoje(){ return hojeISO(); }
+function gerIsoData(d){ return new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
+function gerPeriodo(preset, desdeManual, ateManual){
+  var hoje = gerHoje();
+  if(preset === "custom") return { desde: desdeManual||null, ate: ateManual||hoje };
+  if(preset === "tudo") return { desde:null, ate:null };
+  if(preset === "ano") return { desde: hoje.slice(0,4)+"-01-01", ate: hoje };
+  if(preset === "3m"){
+    var d = new Date(hoje+"T00:00:00"); d.setMonth(d.getMonth()-2); d.setDate(1);
+    return { desde: gerIsoData(d), ate: hoje };
+  }
+  return { desde: hoje.slice(0,7)+"-01", ate: hoje }; // 'mes'
+}
+function gerPeriodoAnterior(desde, ate){
+  if(!desde || !ate) return { desde:null, ate:null };
+  var dd = new Date(desde+"T00:00:00"), da = new Date(ate+"T00:00:00");
+  var dias = Math.round((da-dd)/86400000) + 1;
+  var prevAte = new Date(dd.getTime() - 86400000);
+  var prevDesde = new Date(prevAte.getTime() - (dias-1)*86400000);
+  return { desde: gerIsoData(prevDesde), ate: gerIsoData(prevAte) };
+}
+function gerFiltrarL(L, desde, ate, emitente, marca){
+  return L.filter(function(x){
+    if(desde && (!x.emissao || x.emissao < desde)) return false;
+    if(ate && (!x.emissao || x.emissao > ate)) return false;
+    if(emitente !== "todos" && x.emitente !== emitente) return false;
+    var mk = x.marca || "— sem cadastro";
+    if(marca !== "todos" && mk !== marca) return false;
+    return true;
+  });
+}
+function gerTotais(rows){
+  var liq=0, un=0, notas={};
+  rows.forEach(function(x){
+    liq += Number(x.v_liquido)||0; un += Number(x.qtd)||0; notas[x.nf_id]=1;
+  });
+  var n = Object.keys(notas).length;
+  return { liq:liq, un:un, notas:n, ticket: n ? liq/n : 0 };
+}
+function gerPorMes(L, emitente, marca){
+  var rows = gerFiltrarL(L, null, null, emitente, marca);
+  var por = {};
+  rows.forEach(function(x){
+    if(!x.emissao) return;
+    var mk = x.emissao.slice(0,7);
+    if(!por[mk]) por[mk] = {};
+    var e = x.emitente || "—";
+    por[mk][e] = (por[mk][e]||0) + (Number(x.v_liquido)||0);
+  });
+  return por;
+}
+function mesRotulo(mk){
+  var meses=["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+  var p = mk.split("-");
+  return meses[parseInt(p[1],10)-1]+"/"+p[0].slice(2);
+}
+function gerConcentracaoCliente(rows, n){
+  var por = {};
+  rows.forEach(function(x){
+    if(!x.cliente_id) return; // e-commerce/consumidor final não vira "cliente" cadastrado
+    var k = x.cliente_id;
+    if(!por[k]) por[k] = { v:0, nome:x.cliente||"—" };
+    por[k].v += Number(x.v_liquido)||0;
+  });
+  return Object.keys(por).map(function(k){ return {id:k, nome:por[k].nome, v:por[k].v}; })
+    .sort(function(a,b){ return b.v-a.v; }).slice(0, n||10);
+}
+function gerEcommerce(rows){
+  var liq=0, notas={};
+  rows.forEach(function(x){
+    if(x.cliente_id) return;
+    liq += Number(x.v_liquido)||0; notas[x.nf_id]=1;
+  });
+  return { liq:liq, notas:Object.keys(notas).length };
+}
+function gerPorMarca(rows){
+  var por = {};
+  rows.forEach(function(x){
+    var k = x.marca || "— sem cadastro";
+    if(!por[k]) por[k] = {v:0,q:0};
+    por[k].v += Number(x.v_liquido)||0; por[k].q += Number(x.qtd)||0;
+  });
+  return Object.keys(por).map(function(k){ return {k:k, v:por[k].v, q:por[k].q}; })
+    .sort(function(a,b){ return b.v-a.v; });
+}
+function gerPorUf(rows){
+  var por = {};
+  rows.forEach(function(x){ if(x.uf) por[x.uf] = (por[x.uf]||0) + (Number(x.v_liquido)||0); });
+  return Object.keys(por).map(function(k){ return {k:k, v:por[k]}; })
+    .sort(function(a,b){ return b.v-a.v; }).slice(0,6);
+}
+function gerDeltaHtml(atual, anterior){
+  if(anterior === null) return "";
+  if(!anterior) return '<div class="delta">sem período anterior comparável</div>';
+  var pct = ((atual-anterior)/anterior)*100;
+  var cls = pct >= 0 ? "pos" : "neg";
+  var seta = pct >= 0 ? "▲" : "▼";
+  return '<div class="delta '+cls+'">'+seta+' '+Math.abs(pct).toFixed(1)+'% vs. período anterior</div>';
+}
+
+async function telaGerencial(){
+  gerEstadoPadrao();
+  pinta('<div class="vazio">Carregando faturamento…</div>');
   var r = await sb.from("v_faturamento").select("*");
   if(r.error) return pinta('<div class="card" style="--u:#C63A3A">Não consegui ler o faturamento: '+esc(r.error.message)+'</div>');
-  var L = r.data || [];
+  ST.cache.gerL = r.data || [];
 
-  var pend = await sb.from("nf_venda_item").select("v_liquido,qtd").is("produto_acabado_id", null);
-  var semSku = (pend.data||[]).reduce(function(a,x){ return a + (Number(x.v_liquido)||0); }, 0);
-  var semSkuN = (pend.data||[]).length;
+  var rCart = await sb.from("vendas_pedidos")
+    .select("pedido_numero,qtd,valor_unitario").eq("canal","Varejo").eq("status","aberto");
+  var pedidosSet = {}; var vAberto = 0;
+  (rCart.data||[]).forEach(function(x){
+    pedidosSet[x.pedido_numero]=1; vAberto += (Number(x.qtd)||0)*(Number(x.valor_unitario)||0);
+  });
+  ST.cache.gerCarteira = { pedidos: Object.keys(pedidosSet).length, valor: vAberto };
 
-  if(!L.length){
+  var pend = await sb.from("nf_venda_item").select("v_liquido").is("produto_acabado_id", null);
+  ST.cache.gerSemSku = {
+    n: (pend.data||[]).length,
+    v: (pend.data||[]).reduce(function(a,x){ return a+(Number(x.v_liquido)||0); }, 0)
+  };
+
+  if(!ST.cache.gerL.length){
     return pinta(
       '<div class="card" style="--u:#3E7C45"><h3>Comece pela importação</h3>'+
-      '<p>Envie os XMLs das notas fiscais e o faturamento aparece aqui, por produto, cliente e marca.</p>'+
+      '<p>Envie os XMLs das notas fiscais e o painel gerencial aparece aqui.</p>'+
       '<button class="b" style="margin-top:8px" onclick="ir(\'importar\')">Importar NF-e</button></div>');
   }
+  gerRender();
+}
 
-  var liq=0, un=0, cli={}, notas={}, porEmit={}, porMarca={}, porCliente={}, porSku={};
-  L.forEach(function(x){
-    var v = Number(x.v_liquido)||0, q = Number(x.qtd)||0;
-    liq += v; un += q;
-    if(x.cliente_id) cli[x.cliente_id]=1;
-    notas[x.nf_id]=1;
-    porEmit[x.emitente||"—"] = (porEmit[x.emitente||"—"]||0) + v;
-    porMarca[x.marca||"— sem cadastro"] = (porMarca[x.marca||"— sem cadastro"]||0) + v;
-    var nc = x.cliente||"—";
-    porCliente[nc] = (porCliente[nc]||0) + v;
-    var ns = x.sku || ("["+(x.codigo||"?")+"] "+(x.descricao||""));
-    if(!porSku[ns]) porSku[ns] = {v:0,q:0};
-    porSku[ns].v += v; porSku[ns].q += q;
+function gerSetPreset(p){ ST.ger.preset = p; gerRender(); }
+function gerSetEmitente(v){ ST.ger.emitente = v; gerRender(); }
+function gerSetMarca(v){ ST.ger.marca = v; gerRender(); }
+function gerSetDataManual(campo, v){
+  ST.ger.preset = "custom"; ST.ger[campo] = v || null; gerRender();
+}
+function gerClicarMes(mk){
+  ST.ger.preset = "custom"; ST.ger.desde = mk+"-01";
+  var hoje = gerHoje();
+  var fimMes = mk === hoje.slice(0,7) ? hoje : gerUltimoDiaMes(mk);
+  ST.ger.ate = fimMes;
+  gerRender();
+}
+function gerUltimoDiaMes(mk){
+  var p = mk.split("-"); var y=parseInt(p[0],10), m=parseInt(p[1],10);
+  var d = new Date(y, m, 0);
+  return gerIsoData(d);
+}
+function gerClicarMarca(k){ ST.ger.marca = (ST.ger.marca===k) ? "todos" : k; gerRender(); }
+async function gerAbrirCliente(id){
+  telaAtual = "ficha";
+  $("app").innerHTML = moldura('<div class="vazio">Carregando…</div>');
+  await telaFicha();
+  var sel = $("fiCliente");
+  if(sel){ sel.value = id; abrirFicha(); }
+}
+
+function gerRender(){
+  var L = ST.cache.gerL || [];
+  var per = gerPeriodo(ST.ger.preset, ST.ger.desde, ST.ger.ate);
+  var desde = per.desde, ate = per.ate;
+  var prev = gerPeriodoAnterior(desde, ate);
+
+  var rowsAtual = gerFiltrarL(L, desde, ate, ST.ger.emitente, ST.ger.marca);
+  var rowsAnterior = (prev.desde && prev.ate) ? gerFiltrarL(L, prev.desde, prev.ate, ST.ger.emitente, ST.ger.marca) : null;
+  var tAtual = gerTotais(rowsAtual);
+  var tAnterior = rowsAnterior ? gerTotais(rowsAnterior) : null;
+
+  // por emitente, sempre os dois lado a lado (ignora o filtro de emitente de propósito)
+  var rowsPeriodoTodosEmit = gerFiltrarL(L, desde, ate, "todos", ST.ger.marca);
+  var porEmitPeriodo = {};
+  rowsPeriodoTodosEmit.forEach(function(x){
+    var e = x.emitente||"—"; porEmitPeriodo[e] = (porEmitPeriodo[e]||0) + (Number(x.v_liquido)||0);
   });
-  var nNotas = Object.keys(notas).length;
-  var nCli = Object.keys(cli).length;
-  var ticket = nNotas ? liq/nNotas : 0;
+  var totalEmit = Object.keys(porEmitPeriodo).reduce(function(a,k){return a+porEmitPeriodo[k];},0);
 
-  function ranking(obj, valorDe, n){
-    return Object.keys(obj).map(function(k){ return {k:k, v:valorDe(obj[k])}; })
-      .sort(function(a,b){ return b.v-a.v; }).slice(0, n||8);
+  var marcas = {};
+  L.forEach(function(x){ marcas[x.marca||"— sem cadastro"]=1; });
+  var listaMarcas = Object.keys(marcas).sort();
+
+  var porMes = gerPorMes(L, ST.ger.emitente, ST.ger.marca);
+  var mesesOrdenados = Object.keys(porMes).sort();
+  var maiorMes = 0;
+  mesesOrdenados.forEach(function(mk){
+    var soma = Object.keys(porMes[mk]).reduce(function(a,e){return a+porMes[mk][e];},0);
+    if(soma > maiorMes) maiorMes = soma;
+  });
+
+  var topCli = gerConcentracaoCliente(rowsAtual, 10);
+  var maiorCli = topCli.length ? topCli[0].v : 0;
+  var ecom = gerEcommerce(rowsAtual);
+  var porMarca = gerPorMarca(rowsAtual);
+  var maiorMarca = porMarca.length ? porMarca[0].v : 0;
+  var porUf = gerPorUf(rowsAtual);
+  var maiorUf = porUf.length ? porUf[0].v : 0;
+
+  var semSku = ST.cache.gerSemSku || {n:0,v:0};
+  var cart = ST.cache.gerCarteira || {pedidos:0,valor:0};
+
+  var rotuloPeriodo = (desde && ate) ? (dataBR(desde)+" a "+dataBR(ate))
+    : (ate ? "até "+dataBR(ate) : "todo o histórico");
+
+  var h = "";
+
+  /* ---- filtros ---- */
+  h += '<div class="card" style="--u:#22303A">';
+  h += '<h3>Filtros</h3>';
+  h += '<div class="chips">'+
+    ["mes","3m","ano","tudo"].map(function(p){
+      var rot = {mes:"Mês atual", "3m":"Últimos 3 meses", ano:"Este ano", tudo:"Tudo"}[p];
+      var ativo = ST.ger.preset===p ? " ativo" : "";
+      return '<button class="chip'+ativo+'" onclick="gerSetPreset(\''+p+'\')">'+rot+'</button>';
+    }).join("")+
+    '<button class="chip'+(ST.ger.preset==="custom"?" ativo":"")+'" onclick="gerSetPreset(\'custom\')">Personalizado</button>'+
+  '</div>';
+  if(ST.ger.preset==="custom"){
+    h += '<div class="filtros2">'+
+      '<div><label>De</label><input type="date" value="'+esc(desde||"")+'" onchange="gerSetDataManual(\'desde\',this.value)"></div>'+
+      '<div><label>Até</label><input type="date" value="'+esc(ate||"")+'" onchange="gerSetDataManual(\'ate\',this.value)"></div>'+
+    '</div>';
   }
-  var topCli = ranking(porCliente, function(v){return v;}, 6);
-  var topSku = ranking(porSku, function(o){return o.v;}, 8);
-  var maior = topCli.length ? topCli[0].v : 0;
+  h += '<div class="filtros2">'+
+    '<div><label>Emitente</label><select onchange="gerSetEmitente(this.value)">'+
+      '<option value="todos"'+(ST.ger.emitente==="todos"?" selected":"")+'>Todos</option>'+
+      '<option value="Nutríssima"'+(ST.ger.emitente==="Nutríssima"?" selected":"")+'>Nutríssima (direto)</option>'+
+      '<option value="LBR"'+(ST.ger.emitente==="LBR"?" selected":"")+'>LBR (distribuidor)</option>'+
+    '</select></div>'+
+    '<div><label>Marca</label><select onchange="gerSetMarca(this.value)">'+
+      '<option value="todos"'+(ST.ger.marca==="todos"?" selected":"")+'>Todas</option>'+
+      listaMarcas.map(function(m){
+        return '<option value="'+esc(m)+'"'+(ST.ger.marca===m?" selected":"")+'>'+esc(m)+'</option>';
+      }).join("")+
+    '</select></div>'+
+  '</div>';
+  h += '<p class="sub" style="margin-top:8px">Período aplicado: '+rotuloPeriodo+'</p>';
+  h += '</div>';
 
-  var datas = L.map(function(x){ return x.emissao; }).filter(Boolean).sort();
-  var periodo = datas.length ? dataBR(datas[0])+" a "+dataBR(datas[datas.length-1]) : "—";
-
-  var h = '';
-
+  /* ---- KPIs ---- */
   h += '<div class="kpis">'+
-    '<div class="kpi bom"><div class="r">Faturamento líquido</div><div class="v">R$ '+brl(liq)+'</div>'+
-      '<div class="n">'+inte(nNotas)+' notas</div></div>'+
-    '<div class="kpi"><div class="r">Unidades</div><div class="v">'+inte(un)+'</div>'+
+    '<div class="kpi bom"><div class="r">Receita líquida</div><div class="v">R$ '+brl(tAtual.liq)+'</div>'+
+      gerDeltaHtml(tAtual.liq, tAnterior?tAnterior.liq:null)+'</div>'+
+    '<div class="kpi"><div class="r">Ticket por nota</div><div class="v">R$ '+brl(tAtual.ticket)+'</div>'+
+      '<div class="n">'+inte(tAtual.notas)+' notas</div></div>'+
+    '<div class="kpi"><div class="r">Unidades</div><div class="v">'+inte(tAtual.un)+'</div>'+
       '<div class="n">potes faturados</div></div>'+
-    '<div class="kpi"><div class="r">Clientes</div><div class="v">'+inte(nCli)+'</div>'+
-      '<div class="n">com compra no período</div></div>'+
-    '<div class="kpi"><div class="r">Ticket por nota</div><div class="v">R$ '+brl(ticket)+'</div>'+
-      '<div class="n">média do período</div></div>'+
-    (semSkuN ? '<div class="kpi ruim"><div class="r">Sem cadastro</div><div class="v">R$ '+brl(semSku)+'</div>'+
-      '<div class="n">'+inte(semSkuN)+' itens fora das análises</div></div>' : "")+
+    '<div class="kpi"><div class="r">Carteira em aberto</div><div class="v">R$ '+brl(cart.valor)+'</div>'+
+      '<div class="n">'+inte(cart.pedidos)+' pedidos (Varejo, hoje)</div></div>'+
   '</div>';
 
-  var emits = Object.keys(porEmit);
-  if(emits.length > 1){
-    h += '<div class="card" style="--u:#22303A"><h3>Por emitente</h3>'+
-      emits.map(function(e){
-        return '<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0">'+
-          '<span>'+esc(e)+'</span><b class="mono">R$ '+brl(porEmit[e])+'</b></div>';
-      }).join("")+'</div>';
-  }
+  /* ---- por emitente, sempre os dois ---- */
+  h += '<div class="card" style="--u:#22303A"><h3>Nutríssima × LBR — no período</h3>';
+  ["Nutríssima","LBR"].forEach(function(e){
+    var v = porEmitPeriodo[e]||0;
+    var pct = totalEmit ? (v/totalEmit*100) : 0;
+    h += '<div style="margin-bottom:9px">'+
+      '<div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px">'+
+        '<span>'+e+'</span><b class="mono">R$ '+brl(v)+' · '+pct.toFixed(1)+'%</b></div>'+
+      '<div class="bar"><i style="width:'+(totalEmit?(v/totalEmit*100):0)+'%;background:'+corEmit(e)+'"></i></div></div>';
+  });
+  h += '<p class="sub">Nutríssima = faturamento direto ao cliente/consumidor final. LBR = distribuidor revendendo pra loja final (sell-in da Nutríssima pra LBR não entra aqui).</p></div>';
 
-  h += '<div class="card" style="--u:#3E7C45"><h3>Concentração por cliente</h3>'+
-    topCli.map(function(c){
-      var pct = liq ? (c.v/liq*100) : 0;
-      return '<div style="margin-bottom:9px">'+
+  /* ---- evolução mensal ---- */
+  if(mesesOrdenados.length){
+    h += '<div class="card" style="--u:#3E7C45"><h3>Evolução mensal</h3>';
+    h += '<div class="legenda"><span><i style="background:'+corEmit("Nutríssima")+'"></i>Nutríssima</span>'+
+      '<span><i style="background:'+corEmit("LBR")+'"></i>LBR</span></div>';
+    mesesOrdenados.forEach(function(mk){
+      var linha = porMes[mk], soma = Object.keys(linha).reduce(function(a,e){return a+linha[e];},0);
+      var destaque = desde && ate && mk >= desde.slice(0,7) && mk <= ate.slice(0,7);
+      h += '<div class="linkavel" style="margin-bottom:9px'+(destaque?';opacity:1':';opacity:.55')+'" onclick="gerClicarMes(\''+mk+'\')">'+
         '<div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px">'+
-          '<span>'+esc(c.k)+'</span>'+
-          '<b class="mono">R$ '+brl(c.v)+' · '+pct.toFixed(1)+'%</b></div>'+
-        '<div class="bar"><i style="width:'+(maior? (c.v/maior*100):0)+'%"></i></div></div>';
-    }).join("")+'</div>';
-
-  h += '<h3 style="margin:18px 0 8px;font-size:15px">Mais vendidos</h3><div class="tw"><table>'+
-    '<thead><tr><th>Produto</th><th style="text-align:right">Un</th>'+
-    '<th style="text-align:right">Líquido</th><th style="text-align:right">Preço médio</th></tr></thead><tbody>'+
-    topSku.map(function(s){
-      var o = porSku[s.k];
-      return '<tr><td>'+esc(s.k)+'</td><td class="n">'+inte(o.q)+'</td>'+
-        '<td class="n">'+brl(o.v)+'</td><td class="n">'+(o.q? brl(o.v/o.q) : "—")+'</td></tr>';
-    }).join("")+'</tbody></table></div>';
-
-  if(semSkuN){
-    h += '<div class="card" style="--u:#D9772B;margin-top:16px"><h3>'+inte(semSkuN)+
-      ' itens ainda sem cadastro</h3>'+
-      '<p>Esse valor está no banco, mas fica fora das análises por produto e por marca.</p>'+
-      '<div class="conta"><span class="p">R$ '+brl(liq)+'</span> em análise '+
-      '&nbsp;+&nbsp; <span class="m">R$ '+brl(semSku)+'</span> sem cadastro '+
-      '&nbsp;=&nbsp; R$ '+brl(liq+semSku)+' faturado</div>'+
-      '<button class="s" onclick="ir(\'pendencias\')">Ver o que falta cadastrar</button></div>';
+          '<span>'+mesRotulo(mk)+'</span><b class="mono">R$ '+brl(soma)+'</b></div>'+
+        '<div class="bar2" style="width:'+(maiorMes?(soma/maiorMes*100):0)+'%">'+
+          Object.keys(linha).map(function(e){
+            var frac = soma ? (linha[e]/soma*100) : 0;
+            return '<i style="width:'+frac+'%;background:'+corEmit(e)+'"></i>';
+          }).join("")+
+        '</div></div>';
+    });
+    h += '<p class="sub">Toque num mês pra aplicar como período do filtro.</p></div>';
   }
+
+  /* ---- concentração cliente B2B ---- */
+  h += '<div class="card" style="--u:#3E7C45"><h3>Concentração de clientes (B2B)</h3>';
+  if(topCli.length){
+    topCli.forEach(function(c){
+      var pct = tAtual.liq ? (c.v/tAtual.liq*100) : 0;
+      h += '<div class="linkavel" style="margin-bottom:9px" onclick="gerAbrirCliente(\''+c.id+'\')">'+
+        '<div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px">'+
+          '<span>'+esc(c.nome)+'</span><b class="mono">R$ '+brl(c.v)+' · '+pct.toFixed(1)+'%</b></div>'+
+        '<div class="bar"><i style="width:'+(maiorCli?(c.v/maiorCli*100):0)+'%"></i></div></div>';
+    });
+    h += '<p class="sub">Toque num cliente pra abrir a ficha. Só clientes cadastrados (CNPJ/CPF casado) — e-commerce direto fica no card abaixo.</p>';
+  } else {
+    h += '<p class="sub">Nenhum cliente B2B cadastrado faturou neste período/filtro.</p>';
+  }
+  h += '</div>';
+
+  /* ---- e-commerce / consumidor final ---- */
+  if(ecom.notas > 0){
+    h += '<div class="card" style="--u:#D9772B"><h3>Venda direta ao consumidor final</h3>'+
+      '<div class="kpis" style="margin-bottom:0">'+
+        '<div class="kpi"><div class="r">Receita</div><div class="v">R$ '+brl(ecom.liq)+'</div></div>'+
+        '<div class="kpi"><div class="r">Notas</div><div class="v">'+inte(ecom.notas)+'</div></div>'+
+      '</div>'+
+      '<p class="sub" style="margin-top:10px">E-commerce/marketplace (ex.: TikTok Shop) — cada nota tem comprador pessoa física próprio, por isso não vira cadastro de cliente B2B. Não é dado faltando, é o desenho: individual demais pra virar CRM.</p></div>';
+  }
+
+  /* ---- por marca ---- */
+  if(porMarca.length){
+    h += '<div class="card" style="--u:#B8862B"><h3>Por marca</h3>';
+    porMarca.forEach(function(m){
+      var pct = tAtual.liq ? (m.v/tAtual.liq*100) : 0;
+      var ativo = ST.ger.marca===m.k;
+      h += '<div class="linkavel" style="margin-bottom:9px'+(ativo?';font-weight:800':'')+'" onclick="gerClicarMarca(\''+esc(m.k)+'\')">'+
+        '<div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px">'+
+          '<span>'+esc(m.k)+(ativo?' ✓':'')+'</span><b class="mono">R$ '+brl(m.v)+' · '+pct.toFixed(1)+'%</b></div>'+
+        '<div class="bar"><i style="width:'+(maiorMarca?(m.v/maiorMarca*100):0)+'%;background:var(--mel)"></i></div></div>';
+    });
+    h += '<p class="sub">Toque numa marca pra filtrar (toque de novo pra tirar o filtro).</p></div>';
+  }
+
+  /* ---- geografia ---- */
+  if(porUf.length){
+    h += '<div class="card" style="--u:#7A6A57"><h3>Por estado</h3>';
+    porUf.forEach(function(u){
+      var pct = tAtual.liq ? (u.v/tAtual.liq*100) : 0;
+      h += '<div style="margin-bottom:9px">'+
+        '<div style="display:flex;justify-content:space-between;gap:10px;font-size:13.5px">'+
+          '<span>'+esc(u.k)+'</span><b class="mono">R$ '+brl(u.v)+' · '+pct.toFixed(1)+'%</b></div>'+
+        '<div class="bar"><i style="width:'+(maiorUf?(u.v/maiorUf*100):0)+'%;background:var(--tinta2)"></i></div></div>';
+    });
+    h += '</div>';
+  }
+
+  /* ---- qualidade do dado ---- */
+  h += '<div class="card" style="--u:#C63A3A"><h3>Qualidade do dado</h3>';
+  if(semSku.n){
+    h += '<div class="conta"><span class="m">R$ '+brl(semSku.v)+'</span> em '+inte(semSku.n)+
+      ' itens sem produto/marca cadastrado — fora das análises por marca acima</div>'+
+      '<button class="s" style="margin-top:8px" onclick="ir(\'pendencias\')">Ver o que falta cadastrar</button>';
+  } else {
+    h += '<p class="sub">Nenhum item sem produto cadastrado no momento.</p>';
+  }
+  h += '<p class="sub" style="margin-top:10px">⚠️ Este painel usa as notas já importadas aqui no Comercial (<code>v_faturamento</code>). A apuração fiscal completa (série TikTok Shop + UpSeller, reconciliada XML a XML) é feita à parte na Controladoria e pode mostrar totais diferentes — não é o mesmo número de um DRE fechado.</p>';
+  h += '</div>';
+
   pinta(h);
 }
 
