@@ -52,6 +52,16 @@ main{padding:4px 16px}
 .card h3{margin:0 0 8px;font-size:16px;font-weight:900}
 
 /* KPIs */
+.cockpit{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.painel{display:block;background:#fff;border:1.5px solid var(--linha);border-left:7px solid var(--u,var(--linha));
+  border-radius:var(--raio);padding:14px;text-decoration:none;color:inherit;transition:transform .12s}
+.painel:hover{transform:translateY(-2px)}
+.painel-ic{font-size:20px;line-height:1}
+.painel-t{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--tinta2);margin-top:6px}
+.painel-v{font-size:19px;font-weight:900;margin-top:2px}
+.painel-s{font-size:12px;color:var(--tinta2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(min-width:600px){ .cockpit{grid-template-columns:repeat(3,1fr)} }
+@media(min-width:900px){ .cockpit{grid-template-columns:repeat(6,1fr)} }
 .kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
 .kpi{background:#fff;border:1.5px solid var(--linha);border-radius:var(--raio);padding:14px;text-align:center}
 .kpi .r{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--tinta2)}
@@ -1099,7 +1109,7 @@ var SEG_ROTULO = {
 };
 async function telaFicha(){
   var rc = await sb.from("clientes")
-    .select("id,razao_social,nome_fantasia,municipio,uf,documento,segmento,situacao,observacao")
+    .select("id,razao_social,nome_fantasia,municipio,uf,documento,segmento,situacao,observacao,classificacao_estrelas,site,condicao_pagamento")
     .order("razao_social");
   ST.cache.clientesSelect = rc.data || [];
 
@@ -1110,6 +1120,34 @@ async function telaFicha(){
     '<select id="fiCliente" onchange="abrirFicha()">'+opcoesCliente(ST.cache.clientesSelect)+'</select>'+
     '</div><div id="fiCorpo"><div class="vazio">Escolha um cliente para ver a ficha.</div></div>');
 }
+
+/* ---- helpers do cockpit ---- */
+function estrelasHtml(n){
+  n = Number(n)||0;
+  var s = '';
+  for(var i=1;i<=5;i++){ s += (i<=n?'★':'☆'); }
+  return s;
+}
+function mesAnoBR(chaveISO){ // "2026-06" -> "06/2026"
+  var p = chaveISO.split("-");
+  return p[1]+"/"+p[0];
+}
+function abrirWhatsApp(tel){
+  if(!tel){ msg("Este contato não tem telefone cadastrado.", true); return; }
+  var d = digitos(tel);
+  if(!d){ msg("Telefone inválido.", true); return; }
+  if(d.length <= 11) d = "55"+d; // assume BR quando não vem DDI
+  window.open("https://wa.me/"+d, "_blank");
+}
+function painelCockpit(id, cor, icone, titulo, valor, sub){
+  return '<a href="#'+id+'" class="painel" style="--u:'+cor+'">'+
+    '<div class="painel-ic">'+icone+'</div>'+
+    '<div class="painel-t">'+esc(titulo)+'</div>'+
+    '<div class="painel-v">'+valor+'</div>'+
+    (sub?'<div class="painel-s">'+esc(sub)+'</div>':'')+
+    '</a>';
+}
+
 async function abrirFicha(){
   var cid = $("fiCliente").value;
   var alvo = $("fiCorpo");
@@ -1119,6 +1157,7 @@ async function abrirFicha(){
 
   var c = (ST.cache.clientesSelect||[]).filter(function(x){ return x.id === cid; })[0];
   if(!c){ alvo.innerHTML = '<div class="vazio">Cliente não encontrado.</div>'; return; }
+  ST.cache.fichaClienteAtual = c;
 
   var rCart = await sb.from("vendas_pedidos")
     .select("pedido_numero,produto_nome,qtd,qtd_separada,valor_unitario,emissao,entrega,status")
@@ -1127,38 +1166,73 @@ async function abrirFicha(){
     .select("numero,emissao,v_prod,classificacao").eq("cliente_id", cid)
     .order("emissao", {ascending:false});
   var rCt = await sb.schema("crm").from("contatos")
-    .select("nome,cargo,telefone,email,decisor").eq("cliente_id", cid).eq("ativo", true);
+    .select("id,nome,cargo,telefone,email,decisor").eq("cliente_id", cid).eq("ativo", true);
   var rIn = await sb.schema("crm").from("interacoes")
-    .select("tipo,data_interacao,resumo,proximo_passo,data_proximo_passo,concluido")
+    .select("id,tipo,data_interacao,resumo,proximo_passo,data_proximo_passo,concluido,contato_id")
     .eq("cliente_id", cid).order("data_interacao", {ascending:false});
   var rOp = await sb.schema("crm").from("oportunidades")
     .select("titulo,etapa,valor_estimado,previsao_fechamento").eq("cliente_id", cid);
+  var rDoc = await sb.schema("crm").from("documentos_cliente")
+    .select("id,nome,storage_path,tipo,criado_em").eq("cliente_id", cid)
+    .order("criado_em", {ascending:false});
 
   var cart = rCart.data || [], nfs = rNf.data || [];
-  var cts = rCt.data || [], ints = rIn.data || [], ops = rOp.data || [];
+  var cts = rCt.data || [], ints = rIn.data || [], ops = rOp.data || [], docs = rDoc.data || [];
 
   function vl(x){ return (Number(x.qtd)||0) * (Number(x.valor_unitario)||0); }
   var abertos = cart.filter(function(x){ return x.status === 'aberto'; });
   var vAberto = abertos.reduce(function(a,x){ return a + vl(x); }, 0);
   var vTotal  = cart.reduce(function(a,x){ return a + vl(x); }, 0);
-  var faturado = nfs.filter(function(n){ return n.classificacao === 'venda'; })
-                    .reduce(function(a,n){ return a + (Number(n.v_prod)||0); }, 0);
+  var vendasNf = nfs.filter(function(n){ return n.classificacao === 'venda'; });
+  var faturado = vendasNf.reduce(function(a,n){ return a + (Number(n.v_prod)||0); }, 0);
   var ultimaNf = nfs.length ? nfs[0].emissao : null;
   var ultimoPed = cart.reduce(function(a,x){
     return (x.emissao && (!a || x.emissao > a)) ? x.emissao : a; }, null);
   var diasSemComprar = ultimoPed ? -diasAte(ultimoPed) : null;
 
+  /* histórico de compras mês a mês (últimos 6 meses com nota) */
+  var porMes = {};
+  vendasNf.forEach(function(n){
+    var chave = String(n.emissao).slice(0,7);
+    if(!porMes[chave]) porMes[chave] = { valor:0, n:0 };
+    porMes[chave].valor += Number(n.v_prod)||0;
+    porMes[chave].n += 1;
+  });
+  var mesesOrdenados = Object.keys(porMes).sort().reverse().slice(0,6);
+
+  /* próxima ação — pendências ordenadas pela data mais próxima */
+  var pendencias = ints.filter(function(x){ return x.proximo_passo && !x.concluido; })
+    .sort(function(a,b){
+      if(!a.data_proximo_passo) return 1;
+      if(!b.data_proximo_passo) return -1;
+      return a.data_proximo_passo < b.data_proximo_passo ? -1 : 1;
+    });
+  var notas = ints.filter(function(x){ return x.tipo === 'outro'; });
+
   var h = '';
-  /* cabeçalho do cliente */
-  h += '<div class="card" style="--u:#22303A"><h3>'+esc(c.razao_social)+'</h3>'+
-    '<div style="font-size:13.5px;color:var(--tinta2)">'+
-      (c.municipio ? esc(c.municipio)+(c.uf?'/'+esc(c.uf):'')+' · ' : '')+
-      (c.documento ? '<span class="mono">'+esc(c.documento)+'</span>'
-                   : '<span style="color:var(--lar)">sem CNPJ — ainda não faturado</span>')+
-      (c.segmento ? ' · <span class="tag" style="background:'+
-        (c.segmento==='varejo'?'#3E7C45':c.segmento==='marketplace'?'#D9772B':
-         c.segmento==='terceirizacao'?'#B8862B':'#7A6A57')+'">'+
-        esc(SEG_ROTULO[c.segmento]||c.segmento)+'</span>' : '')+
+
+  /* ---- cabeçalho ---- */
+  h += '<div class="card" style="--u:#22303A" id="fiCabecalho">'+
+    '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">'+
+      '<div><h3>'+esc(c.razao_social)+'</h3>'+
+      '<div style="font-size:13.5px;color:var(--tinta2);margin-top:2px">'+
+        (c.municipio ? esc(c.municipio)+(c.uf?'/'+esc(c.uf):'')+' · ' : '')+
+        (c.documento ? '<span class="mono">'+esc(c.documento)+'</span>'
+                     : '<span style="color:var(--lar)">sem CNPJ — ainda não faturado</span>')+
+        (c.segmento ? ' · <span class="tag" style="background:'+
+          (c.segmento==='varejo'?'#3E7C45':c.segmento==='marketplace'?'#D9772B':
+           c.segmento==='terceirizacao'?'#B8862B':'#7A6A57')+'">'+
+          esc(SEG_ROTULO[c.segmento]||c.segmento)+'</span>' : '')+
+      '</div></div>'+
+      '<button class="s" style="min-height:36px" onclick="editarCabecalho()">✏️ Editar</button>'+
+    '</div>'+
+    '<div id="fiCabecalhoExtra" style="margin-top:10px;font-size:14px;display:flex;gap:18px;flex-wrap:wrap">'+
+      '<div><b style="letter-spacing:.08em;text-transform:uppercase;font-size:11px;color:var(--tinta2)">Avaliação</b><br>'+
+        '<span style="font-size:17px;color:#B8862B">'+estrelasHtml(c.classificacao_estrelas)+'</span></div>'+
+      '<div><b style="letter-spacing:.08em;text-transform:uppercase;font-size:11px;color:var(--tinta2)">Site</b><br>'+
+        (c.site ? '<a href="'+esc(c.site)+'" target="_blank" rel="noopener">'+esc(c.site)+'</a>' : '<span class="vazio" style="padding:0">não informado</span>')+'</div>'+
+      '<div><b style="letter-spacing:.08em;text-transform:uppercase;font-size:11px;color:var(--tinta2)">Condição de pagamento</b><br>'+
+        (c.condicao_pagamento ? esc(c.condicao_pagamento) : '<span class="vazio" style="padding:0">não informada</span>')+'</div>'+
     '</div></div>';
 
   if(c.segmento === 'marketplace' || c.segmento === 'terceirizacao'){
@@ -1167,9 +1241,23 @@ async function abrirFicha(){
       'agregam vários compradores ou um contrato industrial.</div>';
   }
 
-  /* KPIs */
+  /* ---- cockpit: painéis clicáveis ---- */
+  var opAberta = ops.filter(function(x){ return x.etapa.indexOf('fechado') !== 0; });
+  var painelProxAcao = pendencias.length
+    ? dataBR(pendencias[0].data_proximo_passo)+' · '+esc(pendencias[0].proximo_passo)
+    : 'nada agendado';
+  h += '<div class="cockpit">'+
+    painelCockpit('secContatos', '#7A6A57', '👥', 'Contatos', inte(cts.length), cts.length?esc(cts[0].nome)+(cts.length>1?' +'+(cts.length-1):''):'nenhum') +
+    painelCockpit('secProxima', '#D9772B', '🗓️', 'Próxima ação', pendencias.length?dataBR(pendencias[0].data_proximo_passo):'—', painelProxAcao) +
+    painelCockpit('secOportunidades', '#B8862B', '🎯', 'Oportunidades', inte(opAberta.length), opAberta.length?'R$ '+brl(opAberta.reduce(function(a,x){return a+(Number(x.valor_estimado)||0);},0)):'nenhuma aberta') +
+    painelCockpit('secCompras', '#3E7C45', '📈', 'Faturado', 'R$ '+brl(faturado), inte(vendasNf.length)+' nota(s)') +
+    painelCockpit('secDocumentos', '#22303A', '📄', 'Documentos', inte(docs.length), docs.length?'ver arquivos':'nenhum') +
+    painelCockpit('secNotas', '#C63A3A', '📝', 'Notas', inte(notas.length), notas.length?'ver anotações':'nenhuma') +
+    '</div>';
+
+  /* ---- KPIs (como antes) ---- */
   h += '<div class="kpis">'+
-    '<div class="kpi'+(vAberto>0?'':'')+'"><div class="r">Em carteira</div><div class="v">R$ '+brl(vAberto)+'</div>'+
+    '<div class="kpi"><div class="r">Em carteira</div><div class="v">R$ '+brl(vAberto)+'</div>'+
       '<div class="n">'+inte(abertos.length)+' linha(s) em aberto</div></div>'+
     '<div class="kpi bom"><div class="r">Já faturado</div><div class="v">R$ '+brl(faturado)+'</div>'+
       '<div class="n">'+inte(nfs.length)+' nota(s)</div></div>'+
@@ -1185,18 +1273,39 @@ async function abrirFicha(){
        '<span class="p">R$ '+brl(vTotal - vAberto)+'</span> já baixado &nbsp;=&nbsp; '+
        '<b>R$ '+brl(vAberto)+' em aberto</b></div>';
 
-  /* contatos */
-  h += secaoFicha('Contatos', cts.length, cts.map(function(x){
+  /* ---- contatos (com botão WhatsApp) ---- */
+  h += secaoFicha('secContatos', 'Contatos', cts.length, cts.map(function(x){
     return '<div class="card" style="--u:'+(x.decisor?'#B8862B':'#DCD2C4')+'">'+
-      '<b>'+esc(x.nome)+'</b>'+(x.decisor?' <span class="tag" style="background:#B8862B">decisor</span>':'')+
-      '<div style="font-size:13.5px;color:var(--tinta2);margin-top:4px">'+
-        (x.cargo?esc(x.cargo)+' · ':'')+
-        (x.telefone?'<span class="mono">'+esc(x.telefone)+'</span> · ':'')+
-        esc(x.email||'')+'</div></div>';
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">'+
+        '<div><b>'+esc(x.nome)+'</b>'+(x.decisor?' <span class="tag" style="background:#B8862B">decisor</span>':'')+
+        '<div style="font-size:13.5px;color:var(--tinta2);margin-top:4px">'+
+          (x.cargo?esc(x.cargo)+' · ':'')+
+          (x.telefone?'<span class="mono">'+esc(x.telefone)+'</span> · ':'')+
+          esc(x.email||'')+'</div></div>'+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+          '<button class="s" style="min-height:32px;padding:5px 11px;font-size:12px" onclick="abrirWhatsApp(\''+esc(x.telefone||'')+'\')">💬 WhatsApp</button>'+
+          (x.email?'<button class="s" style="min-height:32px;padding:5px 11px;font-size:12px" onclick="window.location.href=\'mailto:'+esc(x.email)+'\'">✉️ E-mail</button>':'')+
+        '</div></div></div>';
   }).join(""), 'Nenhum contato cadastrado.');
 
-  /* carteira em aberto */
-  h += secaoFicha('Em carteira', abertos.length,
+  /* ---- próxima ação ---- */
+  h += secaoFicha('secProxima', 'Próxima ação', pendencias.length,
+    pendencias.map(function(x){
+      return '<div class="card" style="--u:#D9772B">'+
+        '<b>'+dataBR(x.data_proximo_passo)+'</b> · '+esc(x.proximo_passo)+
+        '<div style="font-size:13px;color:var(--tinta2);margin-top:3px">canal: '+esc(TIPO_ROTULO[x.tipo]||x.tipo)+'</div></div>';
+    }).join(""), 'Nada agendado.');
+  h += '<div class="card" style="--u:#D9772B"><h3 style="font-size:15px">Agendar nova ação</h3>'+
+    '<label for="paCanal">Canal</label><select id="paCanal">'+
+      '<option value="whatsapp">WhatsApp</option><option value="ligacao">Ligação</option>'+
+      '<option value="email">E-mail</option><option value="visita">Visita</option>'+
+      '<option value="reuniao">Reunião</option><option value="outro">Outro</option></select>'+
+    '<label for="paData">Data</label><input id="paData" type="date">'+
+    '<label for="paTexto">O que fazer</label><input id="paTexto" placeholder="Ex.: Enviar catálogo novo">'+
+    '<button class="b" style="margin-top:12px" onclick="salvarProximaAcao(\''+cid+'\')">Agendar</button></div>';
+
+  /* ---- carteira em aberto ---- */
+  h += secaoFicha(null, 'Em carteira', abertos.length,
     abertos.length ? '<div class="tw"><table class="cards"><thead><tr>'+
       '<th>Pedido</th><th>Produto</th><th style="text-align:right">Qtd</th>'+
       '<th style="text-align:right">Valor</th><th>Entrega</th></tr></thead><tbody>'+
@@ -1212,8 +1321,8 @@ async function abrirFicha(){
             dataBR(x.entrega)+(atras?' ⚠':'')+'</td></tr>';
       }).join("")+'</tbody></table></div>' : '', 'Nada em aberto.');
 
-  /* oportunidades */
-  h += secaoFicha('Oportunidades', ops.length, ops.map(function(x){
+  /* ---- oportunidades ---- */
+  h += secaoFicha('secOportunidades', 'Oportunidades', ops.length, ops.map(function(x){
     var fechada = x.etapa.indexOf('fechado') === 0;
     return '<div class="card" style="--u:'+(x.etapa==='fechado_ganho'?'#3E7C45':
             x.etapa==='fechado_perdido'?'#C63A3A':'#B8862B')+'">'+
@@ -1225,21 +1334,55 @@ async function abrirFicha(){
       '</div></div>';
   }).join(""), 'Nenhuma oportunidade.');
 
-  /* histórico de interações */
-  h += secaoFicha('Histórico de contato', ints.length, ints.slice(0,15).map(function(x){
+  /* ---- compras mês a mês ---- */
+  h += secaoFicha('secCompras', 'Compras (mês a mês)', mesesOrdenados.length,
+    mesesOrdenados.length ? '<div class="tw"><table class="cards"><thead><tr>'+
+      '<th>Mês</th><th style="text-align:right">Valor</th><th style="text-align:right">Notas</th>'+
+      '</tr></thead><tbody>'+
+      mesesOrdenados.map(function(chave){
+        var m = porMes[chave];
+        return '<tr><td class="mono">'+mesAnoBR(chave)+'</td>'+
+          '<td data-r="Valor" class="n">R$ '+brl(m.valor)+'</td>'+
+          '<td data-r="Notas" class="n">'+inte(m.n)+'</td></tr>';
+      }).join("")+'</tbody></table></div>' : '', 'Sem notas de venda ainda.');
+
+  /* ---- histórico de contato (exclui as notas, que ganham seção própria) ---- */
+  var historico = ints.filter(function(x){ return x.tipo !== 'outro'; });
+  h += secaoFicha(null, 'Histórico de contato', historico.length, historico.slice(0,15).map(function(x){
     var pend = x.proximo_passo && !x.concluido;
     return '<div class="card" style="--u:'+(pend?'#D9772B':'#DCD2C4')+'">'+
       '<div style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--tinta2);font-weight:700">'+
-        esc(x.tipo)+' · '+dataBR(x.data_interacao)+'</div>'+
+        esc(TIPO_ROTULO[x.tipo]||x.tipo)+' · '+dataBR(x.data_interacao)+'</div>'+
       '<div style="margin-top:4px">'+esc(x.resumo)+'</div>'+
       (pend?'<div class="conta"><b>Pendente:</b> '+esc(x.proximo_passo)+
             (x.data_proximo_passo?' · '+dataBR(x.data_proximo_passo):'')+'</div>':'')+
       '</div>';
   }).join(""), 'Nenhuma interação registrada.');
 
-  /* notas fiscais */
+  /* ---- documentos ---- */
+  h += secaoFicha('secDocumentos', 'Documentos', docs.length, docs.map(function(x){
+    return '<div class="card" style="--u:#22303A;display:flex;justify-content:space-between;align-items:center;gap:8px">'+
+      '<div><b>'+esc(x.nome)+'</b><div style="font-size:12.5px;color:var(--tinta2)">'+dataBR(x.criado_em)+'</div></div>'+
+      '<button class="s" style="min-height:32px;padding:5px 11px;font-size:12px" onclick="baixarDocumento(\''+esc(x.storage_path)+'\')">Abrir</button>'+
+      '</div>';
+  }).join(""), 'Nenhum documento anexado.');
+  h += '<div class="card" style="--u:#22303A"><h3 style="font-size:15px">Anexar documento</h3>'+
+    '<input type="file" id="docArquivo" style="margin-top:6px">'+
+    '<button class="b" style="margin-top:12px" onclick="enviarDocumento(\''+cid+'\')">Anexar</button></div>';
+
+  /* ---- notas ---- */
+  h += secaoFicha('secNotas', 'Notas', notas.length, notas.map(function(x){
+    return '<div class="card" style="--u:#C63A3A">'+
+      '<div style="font-size:12px;color:var(--tinta2)">'+dataBR(x.data_interacao)+'</div>'+
+      '<div style="margin-top:3px">'+esc(x.resumo)+'</div></div>';
+  }).join(""), 'Nenhuma nota ainda.');
+  h += '<div class="card" style="--u:#C63A3A"><h3 style="font-size:15px">Nova nota</h3>'+
+    '<label for="notaTexto">Anotação</label><input id="notaTexto" placeholder="Ex.: prefere ser contatado à tarde">'+
+    '<button class="b" style="margin-top:12px" onclick="salvarNota(\''+cid+'\')">Salvar nota</button></div>';
+
+  /* ---- notas fiscais ---- */
   if(nfs.length){
-    h += secaoFicha('Notas fiscais', nfs.length,
+    h += secaoFicha(null, 'Notas fiscais', nfs.length,
       '<div class="tw"><table class="cards"><thead><tr>'+
       '<th>Número</th><th>Emissão</th><th style="text-align:right">Valor</th><th>Tipo</th>'+
       '</tr></thead><tbody>'+
@@ -1255,15 +1398,107 @@ async function abrirFicha(){
     '<b>Como ler:</b> "Em carteira" = pedido lançado e ainda não baixado (fonte: carteira LBR). '+
     '"Já faturado" = soma do valor da mercadoria das NF-e de venda — exclui sell-in e bonificação. '+
     '"Último pedido" conta os dias desde a emissão mais recente; fica vermelho acima de 60 dias. '+
-    'Clientes sem CNPJ vieram da carteira e ainda não foram faturados.</div>';
+    'Clientes sem CNPJ vieram da carteira e ainda não foram faturados. '+
+    'O botão WhatsApp abre a conversa direto no WhatsApp Web/app — o envio automático pelo '+
+    'sistema (histórico gravado aqui) é um módulo à parte, ainda não conectado.</div>';
 
   alvo.innerHTML = h;
 }
-function secaoFicha(titulo, n, conteudo, vazio){
-  return '<h3 style="margin:22px 0 8px;font-size:14px;text-transform:uppercase;'+
-    'letter-spacing:.09em;color:var(--tinta2)">'+esc(titulo)+' · '+inte(n)+'</h3>'+
+
+/* ---- edição do cabeçalho (estrelas, site, condição de pagamento) ---- */
+function editarCabecalho(){
+  var c = ST.cache.fichaClienteAtual;
+  if(!c) return;
+  var alvo = $("fiCabecalhoExtra");
+  if(!alvo) return;
+  alvo.outerHTML = '<div id="fiCabecalhoExtra" style="margin-top:10px">'+
+    '<label for="ceEstrelas">Avaliação (1 a 5)</label>'+
+    '<select id="ceEstrelas">'+
+      '<option value="">— sem avaliação —</option>'+
+      [1,2,3,4,5].map(function(n){
+        return '<option value="'+n+'"'+(c.classificacao_estrelas===n?' selected':'')+'>'+estrelasHtml(n)+'</option>';
+      }).join("")+
+    '</select>'+
+    '<label for="ceSite">Site</label><input id="ceSite" placeholder="https://..." value="'+esc(c.site||"")+'">'+
+    '<label for="ceCondicao">Condição de pagamento</label><input id="ceCondicao" placeholder="Ex.: 30/60/90" value="'+esc(c.condicao_pagamento||"")+'">'+
+    '<div style="display:flex;gap:8px;margin-top:12px">'+
+      '<button class="b" onclick="salvarCabecalho()">Salvar</button>'+
+      '<button class="s" onclick="abrirFicha()">Cancelar</button>'+
+    '</div></div>';
+}
+async function salvarCabecalho(){
+  var c = ST.cache.fichaClienteAtual;
+  if(!c) return;
+  var estrelasVal = $("ceEstrelas").value;
+  var r = await sb.from("clientes").update({
+    classificacao_estrelas: estrelasVal === "" ? null : Number(estrelasVal),
+    site: $("ceSite").value.trim() || null,
+    condicao_pagamento: $("ceCondicao").value.trim() || null
+  }).eq("id", c.id);
+  if(r.error){ msg("Não consegui salvar: "+r.error.message, true); return; }
+  msg("Ficha atualizada.");
+  await telaFicha();
+  $("fiCliente").value = c.id;
+  abrirFicha();
+}
+
+/* ---- próxima ação ---- */
+async function salvarProximaAcao(cid){
+  var canal = $("paCanal").value, data = $("paData").value, texto = $("paTexto").value.trim();
+  if(!data || !texto){ msg("Preencha a data e o que precisa ser feito.", true); return; }
+  var r = await sb.schema("crm").from("interacoes").insert({
+    cliente_id: cid, tipo: canal, resumo: texto,
+    proximo_passo: texto, data_proximo_passo: data,
+    criado_por: ST.email
+  });
+  if(r.error){ msg("Não consegui agendar: "+r.error.message, true); return; }
+  msg("Ação agendada.");
+  abrirFicha();
+}
+
+/* ---- notas ---- */
+async function salvarNota(cid){
+  var texto = $("notaTexto").value.trim();
+  if(!texto){ msg("Escreva a nota antes de salvar.", true); return; }
+  var r = await sb.schema("crm").from("interacoes").insert({
+    cliente_id: cid, tipo: "outro", resumo: texto, criado_por: ST.email
+  });
+  if(r.error){ msg("Não consegui salvar a nota: "+r.error.message, true); return; }
+  msg("Nota salva.");
+  abrirFicha();
+}
+
+/* ---- documentos ---- */
+async function enviarDocumento(cid){
+  var input = $("docArquivo");
+  var arq = input && input.files && input.files[0];
+  if(!arq){ msg("Escolha um arquivo antes de anexar.", true); return; }
+  var caminho = cid+"/"+Date.now()+"_"+arq.name;
+  var up = await sb.storage.from("documentos-clientes").upload(caminho, arq);
+  if(up.error){ msg("Não consegui enviar o arquivo: "+up.error.message, true); return; }
+  var r = await sb.schema("crm").from("documentos_cliente").insert({
+    cliente_id: cid, nome: arq.name, storage_path: caminho,
+    tipo: arq.type || null, tamanho_bytes: arq.size || null, criado_por: ST.email
+  });
+  if(r.error){ msg("Arquivo enviado, mas não consegui registrar: "+r.error.message, true); return; }
+  msg("Documento anexado.");
+  abrirFicha();
+}
+async function baixarDocumento(caminho){
+  var r = await sb.storage.from("documentos-clientes").createSignedUrl(caminho, 300);
+  if(r.error || !r.data){ msg("Não consegui abrir o documento.", true); return; }
+  window.open(r.data.signedUrl, "_blank");
+}
+
+function secaoFicha(id, titulo, n, conteudo, vazio){
+  return '<h3 id="'+(id||"")+'" style="margin:22px 0 8px;font-size:14px;text-transform:uppercase;'+
+    'letter-spacing:.09em;color:var(--tinta2);scroll-margin-top:80px">'+esc(titulo)+' · '+inte(n)+'</h3>'+
     (n ? conteudo : '<div class="vazio" style="padding:18px">'+esc(vazio)+'</div>');
 }
+var TIPO_ROTULO = {
+  visita:"Visita", ligacao:"Ligação", mensagem:"Mensagem", whatsapp:"WhatsApp",
+  email:"E-mail", reuniao:"Reunião", outro:"Outro"
+};
 
 /* ================= CRM: seletor de cliente com busca ================= */
 /* Reaproveitado por Contatos, Agenda e Oportunidades. Mesmos critérios da
