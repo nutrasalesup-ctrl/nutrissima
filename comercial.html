@@ -455,7 +455,20 @@ var MENU = [
   ["precificacao", "🏷️","#EAF3EA",""]
 ];
 async function telaInicio(){
-  if(!ST.papel.comercial){ return ir("controladoria"); }
+  if(!ST.papel.comercial){
+    // login só de controladoria: não tem menu comercial, mas precisa escolher
+    // entre Controladoria e Precificação — antes caía direto na Controladoria
+    // e a Precificação ficava inalcançável.
+    var itens = [["controladoria","🧮","#EFE0D8"]];
+    if(ST.papel.controladoria) itens.push(["precificacao","🏷️","#EAF3EA"]);
+    return pinta('<p class="pergunta">O que você vai fazer agora?</p><div class="acoes">'+
+      itens.map(function(m){
+        var t = TELAS[m[0]];
+        return '<button onclick="ir(\''+m[0]+'\')">'+
+          '<span class="ico" style="background:'+m[2]+'">'+m[1]+'</span>'+
+          '<span><b>'+esc(t.rotulo)+'</b><small>'+esc(t.sub)+'</small></span></button>';
+      }).join("")+'</div>');
+  }
   var alerta = "";
   try{
     var r = await sb.schema("crm").from("interacoes")
