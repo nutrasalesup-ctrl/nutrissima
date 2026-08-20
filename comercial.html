@@ -1163,7 +1163,7 @@ async function abrirFicha(){
     .select("pedido_numero,produto_nome,qtd,qtd_separada,valor_unitario,emissao,entrega,status")
     .eq("cliente_id", cid).order("entrega", {ascending:true, nullsFirst:false});
   var rNf = await sb.from("nf_venda")
-    .select("numero,emissao,v_prod,classificacao").eq("cliente_id", cid)
+    .select("id,numero,emissao,v_prod,classificacao").eq("cliente_id", cid)
     .order("emissao", {ascending:false});
   var rCt = await sb.schema("crm").from("contatos")
     .select("id,nome,cargo,telefone,email,decisor").eq("cliente_id", cid).eq("ativo", true);
@@ -1179,6 +1179,17 @@ async function abrirFicha(){
   var cart = rCart.data || [], nfs = rNf.data || [];
   var cts = rCt.data || [], ints = rIn.data || [], ops = rOp.data || [], docs = rDoc.data || [];
 
+  var itensPorNf = {};
+  if(nfs.length){
+    var rItens = await sb.from("nf_venda_item")
+      .select("nf_id,descricao,qtd,v_un,v_liquido")
+      .in("nf_id", nfs.map(function(n){ return n.id; }));
+    (rItens.data||[]).forEach(function(it){
+      if(!itensPorNf[it.nf_id]) itensPorNf[it.nf_id] = [];
+      itensPorNf[it.nf_id].push(it);
+    });
+  }
+
   function vl(x){ return (Number(x.qtd)||0) * (Number(x.valor_unitario)||0); }
   var abertos = cart.filter(function(x){ return x.status === 'aberto'; });
   var vAberto = abertos.reduce(function(a,x){ return a + vl(x); }, 0);
@@ -1190,14 +1201,22 @@ async function abrirFicha(){
     return (x.emissao && (!a || x.emissao > a)) ? x.emissao : a; }, null);
   var diasSemComprar = ultimoPed ? -diasAte(ultimoPed) : null;
 
-  /* histórico de compras mês a mês (últimos 6 meses com nota) */
+  /* histórico de compras mês a mês (últimos 6 meses com nota), com produtos por mês */
   var porMes = {};
   vendasNf.forEach(function(n){
     var chave = String(n.emissao).slice(0,7);
-    if(!porMes[chave]) porMes[chave] = { valor:0, n:0 };
+    if(!porMes[chave]) porMes[chave] = { valor:0, n:0, produtos:{} };
     porMes[chave].valor += Number(n.v_prod)||0;
     porMes[chave].n += 1;
+    (itensPorNf[n.id]||[]).forEach(function(it){
+      var nome = it.descricao || "—";
+      if(!porMes[chave].produtos[nome]) porMes[chave].produtos[nome] = 0;
+      porMes[chave].produtos[nome] += Number(it.v_liquido)||0;
+    });
   });
+  function topProdutos(mapa, n){
+    return Object.keys(mapa).sort(function(a,b){ return mapa[b]-mapa[a]; }).slice(0,n);
+  }
   var mesesOrdenados = Object.keys(porMes).sort().reverse().slice(0,6);
 
   /* próxima ação — pendências ordenadas pela data mais próxima */
@@ -1337,13 +1356,21 @@ async function abrirFicha(){
   /* ---- compras mês a mês ---- */
   h += secaoFicha('secCompras', 'Compras (mês a mês)', mesesOrdenados.length,
     mesesOrdenados.length ? '<div class="tw"><table class="cards"><thead><tr>'+
-      '<th>Mês</th><th style="text-align:right">Valor</th><th style="text-align:right">Notas</th>'+
+      '<th>Mês</th><th style="text-align:right">Valor</th><th style="text-align:right">Notas</th><th>Principais produtos</th>'+
       '</tr></thead><tbody>'+
       mesesOrdenados.map(function(chave){
         var m = porMes[chave];
+        var top = topProdutos(m.produtos, 3);
+        var extra = Object.keys(m.produtos).length - top.length;
         return '<tr><td class="mono">'+mesAnoBR(chave)+'</td>'+
           '<td data-r="Valor" class="n">R$ '+brl(m.valor)+'</td>'+
-          '<td data-r="Notas" class="n">'+inte(m.n)+'</td></tr>';
+          '<td data-r="Notas" class="n">'+inte(m.n)+'</td>'+
+          '<td data-r="Produtos">'+
+            (top.length ? top.map(function(p){
+              return '<span class="tag" style="background:#DCD2C4;color:#33200F;margin:2px 4px 2px 0">'+esc(p)+'</span>';
+            }).join("") + (extra>0?' <span style="font-size:12px;color:var(--tinta2)">+'+extra+'</span>':'')
+            : '<span style="color:var(--tinta2);font-size:12.5px">sem item detalhado</span>')+
+          '</td></tr>';
       }).join("")+'</tbody></table></div>' : '', 'Sem notas de venda ainda.');
 
   /* ---- histórico de contato (exclui as notas, que ganham seção própria) ---- */
@@ -1380,18 +1407,34 @@ async function abrirFicha(){
     '<label for="notaTexto">Anotação</label><input id="notaTexto" placeholder="Ex.: prefere ser contatado à tarde">'+
     '<button class="b" style="margin-top:12px" onclick="salvarNota(\''+cid+'\')">Salvar nota</button></div>';
 
-  /* ---- notas fiscais ---- */
+  /* ---- notas fiscais (clicável — expande os itens da nota) ---- */
   if(nfs.length){
     h += secaoFicha(null, 'Notas fiscais', nfs.length,
-      '<div class="tw"><table class="cards"><thead><tr>'+
-      '<th>Número</th><th>Emissão</th><th style="text-align:right">Valor</th><th>Tipo</th>'+
-      '</tr></thead><tbody>'+
       nfs.map(function(n){
-        return '<tr><td class="mono">'+esc(n.numero)+'</td>'+
-          '<td data-r="Emissão" class="mono">'+dataBR(n.emissao)+'</td>'+
-          '<td data-r="Valor" class="n">'+brl(n.v_prod)+'</td>'+
-          '<td data-r="Tipo">'+esc(n.classificacao)+'</td></tr>';
-      }).join("")+'</tbody></table></div>', '');
+        var itens = itensPorNf[n.id] || [];
+        return '<div class="card" style="--u:#DCD2C4;padding:0;overflow:hidden">'+
+          '<div onclick="toggleNotaFiscal(\''+n.id+'\')" style="cursor:pointer;padding:13px 16px;'+
+            'display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">'+
+            '<span class="mono">'+esc(n.numero)+'</span>'+
+            '<span class="mono">'+dataBR(n.emissao)+'</span>'+
+            '<span class="mono">R$ '+brl(n.v_prod)+'</span>'+
+            '<span class="tag" style="background:#7A6A57">'+esc(n.classificacao)+'</span>'+
+            '<span id="nfSeta_'+n.id+'" style="font-size:13px;color:var(--tinta2)">▾</span>'+
+          '</div>'+
+          '<div id="nfItens_'+n.id+'" style="display:none;padding:0 16px 14px;background:#FBF9F4">'+
+            (itens.length ? '<table class="cards"><thead><tr>'+
+              '<th>Produto</th><th style="text-align:right">Qtd</th>'+
+              '<th style="text-align:right">V. unit.</th><th style="text-align:right">Total</th></tr></thead><tbody>'+
+              itens.map(function(it){
+                var vUn = Number(it.v_un)||0, tot = Number(it.v_liquido)||0;
+                return '<tr><td data-r="Produto">'+esc(it.descricao||'—')+'</td>'+
+                  '<td data-r="Qtd" class="n">'+inte(it.qtd)+'</td>'+
+                  '<td data-r="V. unit." class="n">R$ '+brl(vUn)+'</td>'+
+                  '<td data-r="Total" class="n">R$ '+brl(tot)+'</td></tr>';
+              }).join("")+'</tbody></table>'
+              : '<div class="vazio" style="padding:12px 0">Sem itens detalhados pra esta nota.</div>')+
+          '</div></div>';
+      }).join(""), '');
   }
 
   h += '<div class="conta" style="margin-top:18px;white-space:normal">'+
@@ -1490,6 +1533,13 @@ async function baixarDocumento(caminho){
   window.open(r.data.signedUrl, "_blank");
 }
 
+function toggleNotaFiscal(id){
+  var bloco = $("nfItens_"+id), seta = $("nfSeta_"+id);
+  if(!bloco) return;
+  var aberto = bloco.style.display !== "none";
+  bloco.style.display = aberto ? "none" : "block";
+  if(seta) seta.textContent = aberto ? "▾" : "▴";
+}
 function secaoFicha(id, titulo, n, conteudo, vazio){
   return '<h3 id="'+(id||"")+'" style="margin:22px 0 8px;font-size:14px;text-transform:uppercase;'+
     'letter-spacing:.09em;color:var(--tinta2);scroll-margin-top:80px">'+esc(titulo)+' · '+inte(n)+'</h3>'+
