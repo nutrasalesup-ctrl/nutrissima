@@ -407,7 +407,8 @@ var TELAS = {
   representantes:{ rotulo:"Representantes", sub:"Cadastro básico", fn:telaRepres, etapa:"Clientes" },
   importar:    { rotulo:"Importar NF-e",  sub:"Ler XML e alimentar o faturamento", fn:telaImportar, etapa:"Pedido" },
   pendencias:  { rotulo:"Pendências",     sub:"Códigos de NF sem produto cadastrado", fn:telaPendencias, etapa:"Pedido" },
-  controladoria:{ rotulo:"Controladoria", sub:"DRE e apuração fiscal (e-commerce)", fn:telaControladoria, etapa:"" }
+  controladoria:{ rotulo:"Controladoria", sub:"DRE e apuração fiscal (e-commerce)", fn:telaControladoria, etapa:"" },
+  precificacao:{ rotulo:"Precificação",  sub:"Custo por fórmula, preço de insumo e simulação", fn:telaPrecificacao, etapa:"" }
 };
 var telaAtual = "inicio";
 
@@ -450,7 +451,8 @@ var MENU = [
   ["representantes","🤝","#F3EAD8",""],
   ["importar",     "📥","#E7F0E4",""],
   ["pendencias",   "⚠️","#FBEAEA",""],
-  ["controladoria","🧮","#EFE0D8",""]
+  ["controladoria","🧮","#EFE0D8",""],
+  ["precificacao", "🏷️","#EAF3EA",""]
 ];
 async function telaInicio(){
   if(!ST.papel.comercial){ return ir("controladoria"); }
@@ -2197,6 +2199,186 @@ async function telaControladoria(){
     '<b>Cobertura:</b> só o que já foi importado aqui aparece; XMLs ainda não subidos não entram na conta.</p>';
 
   pinta(h);
+}
+
+/* ================= Precificação ================= */
+var PREC = { produtos:[], insumos:[], sel:null, detalhe:null, resumo:null, sim:{} };
+
+async function telaPrecificacao(){
+  pinta('<div class="vazio">Carregando…</div>');
+
+  var rp = await sb.from("produtos").select("id,nome").order("nome");
+  if(rp.error) return pinta('<div class="card" style="--u:#C63A3A">'+esc(rp.error.message)+'</div>');
+
+  var rr = await sb.from("receita_itens").select("produto_id");
+  if(rr.error) return pinta('<div class="card" style="--u:#C63A3A">'+esc(rr.error.message)+'</div>');
+  var comReceita = {};
+  (rr.data||[]).forEach(function(x){ comReceita[x.produto_id] = true; });
+  PREC.produtos = (rp.data||[]).filter(function(p){ return comReceita[p.id]; });
+
+  var ri = await sb.from("itens").select("id,nome,unidade,preco_ref_kg,preco_ref_origem,preco_ref_atualizado_em")
+    .eq("categoria","materia_prima").order("nome");
+  if(ri.error) return pinta('<div class="card" style="--u:#C63A3A">'+esc(ri.error.message)+'</div>');
+  PREC.insumos = ri.data || [];
+
+  desenharPrecificacao();
+}
+
+function desenharPrecificacao(){
+  var comPreco = PREC.insumos.filter(function(i){ return i.preco_ref_kg != null; }).length;
+  var total = PREC.insumos.length;
+  var pct = total ? Math.round(100*comPreco/total) : 0;
+  var corPct = pct >= 90 ? "#3E7C45" : (pct >= 60 ? "#B8862B" : "#C63A3A");
+
+  var h = '<div class="card" style="--u:'+corPct+'"><h3>Preços de insumo cadastrados</h3>'+
+    '<p class="r">INSUMOS COM PREÇO DE REFERÊNCIA</p>'+
+    '<p class="v">'+comPreco+' de '+total+'</p>'+
+    '<div class="conta">'+comPreco+' com preço &nbsp;+&nbsp; '+(total-comPreco)+' sem preço &nbsp;=&nbsp; <b>'+total+' insumos</b> &nbsp;·&nbsp; '+pct+'% cobertos</div>'+
+    '<p style="font-size:13px;color:#7A6A57;margin-top:8px">Insumo sem preço entra na fórmula com custo zero — o custo do produto sai <b>subestimado</b> até você preencher.</p></div>';
+
+  h += '<div class="card" style="--u:#22303A"><h3>Escolha o produto</h3>'+
+    '<select id="selProd" onchange="carregarCustoProduto(this.value)" style="width:100%;min-height:44px;font-size:15px;padding:8px;border:1.5px solid #DCD2C4;border-radius:10px;margin-top:8px">'+
+    '<option value="">— selecione uma fórmula —</option>'+
+    PREC.produtos.map(function(p){
+      return '<option value="'+esc(p.id)+'"'+(PREC.sel===p.id?" selected":"")+'>'+esc(p.nome)+'</option>';
+    }).join("")+'</select>'+
+    '<p style="font-size:12.5px;color:#7A6A57;margin-top:6px">'+PREC.produtos.length+' produto(s) com fórmula cadastrada. Produto sem fórmula não aparece aqui — não há como custear.</p>'+
+    '</div><div id="boxCusto"></div>';
+
+  h += '<div class="card" style="--u:#B8862B"><h3>Preço dos insumos — editar</h3>'+
+    '<p style="font-size:13px;color:#7A6A57">Origem <b>compra</b> = veio das notas fiscais importadas. <b>manual</b> = você digitou. Editar aqui recalcula todas as fórmulas que usam o insumo.</p>'+
+    '<div class="tw" style="margin-top:10px"><table><thead><tr><th>Insumo</th><th style="text-align:right">R$/kg</th><th>Origem</th><th></th></tr></thead><tbody>'+
+    PREC.insumos.map(function(i){
+      var val = i.preco_ref_kg != null ? Number(i.preco_ref_kg).toFixed(2) : "";
+      var org = i.preco_ref_origem || "—";
+      var corOrg = org === "compra" ? "#3E7C45" : (org === "manual" ? "#B8862B" : "#C63A3A");
+      return '<tr><td>'+esc(i.nome)+'</td>'+
+        '<td class="n"><input id="pr_'+esc(i.id)+'" type="number" step="0.01" min="0" value="'+val+'" placeholder="—" '+
+          'style="width:100px;text-align:right;font-family:ui-monospace,monospace;min-height:36px;padding:4px 8px;border:1.5px solid #DCD2C4;border-radius:8px"></td>'+
+        '<td><span style="font-size:12px;font-weight:700;color:'+corOrg+'">'+esc(org)+'</span></td>'+
+        '<td><button class="s" style="min-height:36px;padding:5px 12px;font-size:13px" onclick="salvarPreco(\''+esc(i.id)+'\')">Salvar</button></td></tr>';
+    }).join("")+'</tbody></table></div>'+
+    '<div id="resPreco" style="margin-top:10px"></div></div>';
+
+  h += '<p style="font-size:12.5px;color:#7A6A57;margin-top:14px"><b>Como ler:</b> "Custo/kg" = soma de (quantidade do insumo na fórmula × preço de referência dele), '+
+    'explodindo receitas aninhadas até o insumo bruto. "% precificado" = quanto do peso da fórmula tem preço cadastrado — abaixo de 100%, o custo mostrado é piso, não o custo real.<br>'+
+    '<b>Não inclui:</b> embalagem (pote, tampa, rótulo, caixa), mão de obra, energia e frete — é custo de fórmula, não custo total do produto acabado.</p>';
+
+  pinta(h);
+}
+
+async function carregarCustoProduto(id){
+  PREC.sel = id || null;
+  PREC.sim = {};
+  if(!id){ $("boxCusto").innerHTML = ""; return; }
+  $("boxCusto").innerHTML = '<div class="vazio">Calculando…</div>';
+
+  var rd = await sb.rpc("fn_custo_produto_detalhe", { p_produto:id, p_kg:100 });
+  if(rd.error){ $("boxCusto").innerHTML = '<div class="card" style="--u:#C63A3A">'+esc(rd.error.message)+'</div>'; return; }
+  var rs = await sb.rpc("fn_custo_produto_resumo", { p_produto:id, p_kg:100 });
+  if(rs.error){ $("boxCusto").innerHTML = '<div class="card" style="--u:#C63A3A">'+esc(rs.error.message)+'</div>'; return; }
+
+  PREC.detalhe = (rd.data||[]).filter(function(l){ return l.item_id; });
+  PREC.resumo = rs.data;
+  desenharCusto();
+}
+
+function custoSimulado(){
+  var total = 0;
+  PREC.detalhe.forEach(function(l){
+    var p = (PREC.sim[l.item_id] != null) ? PREC.sim[l.item_id] : (l.preco_kg != null ? Number(l.preco_kg) : 0);
+    total += Number(l.kg) * p;
+  });
+  return total;
+}
+
+function desenharCusto(){
+  var R = PREC.resumo;
+  if(!R) return;
+  var prod = PREC.produtos.filter(function(p){ return p.id === PREC.sel; })[0];
+  var pct = R.pct_kg_precificado != null ? Number(R.pct_kg_precificado) : 0;
+  var cor = pct >= 100 ? "#3E7C45" : (pct >= 80 ? "#B8862B" : "#C63A3A");
+  var custoBase = Number(R.custo_total)||0;
+  var custoSim = custoSimulado();
+  var mudou = Math.abs(custoSim - custoBase) > 0.005;
+
+  var h = '<div class="card" style="--u:'+cor+'"><h3>'+esc(prod ? prod.nome : "Produto")+' — custo da fórmula</h3>'+
+    '<p class="r">CUSTO POR KG'+(mudou?" (SIMULADO)":"")+'</p>'+
+    '<p class="v">R$ '+brl(mudou ? custoSim/100 : Number(R.custo_por_kg)||0)+'</p>'+
+    '<div class="conta">Base 100 kg &nbsp;·&nbsp; custo total R$ '+brl(mudou?custoSim:custoBase)+' &nbsp;÷&nbsp; 100 kg &nbsp;=&nbsp; <b>R$ '+brl((mudou?custoSim:custoBase)/100)+'/kg</b></div>';
+
+  if(mudou){
+    var dif = custoSim - custoBase;
+    var sinal = dif >= 0 ? "+" : "−";
+    h += '<div class="conta" style="margin-top:8px">Preço gravado: R$ '+brl(custoBase/100)+'/kg &nbsp;'+sinal+'&nbsp; R$ '+brl(Math.abs(dif)/100)+' &nbsp;=&nbsp; <b>R$ '+brl(custoSim/100)+'/kg simulado</b>'+
+      ' <button class="s" style="margin-left:10px;min-height:32px;padding:4px 10px;font-size:12.5px" onclick="limparSimulacao()">Limpar simulação</button></div>';
+  }
+
+  h += '<p style="font-size:13px;color:#7A6A57;margin-top:8px"><b>'+pct.toFixed(1)+'%</b> do peso da fórmula tem preço cadastrado';
+  if(R.insumos_sem_preco && R.insumos_sem_preco.length){
+    h += ' — faltam: '+R.insumos_sem_preco.map(function(x){ return esc(x.item_nome); }).join(", ");
+  }
+  h += '</p></div>';
+
+  h += '<div class="card" style="--u:#22303A"><h3>Formulação — 100 kg</h3>'+
+    '<p style="font-size:13px;color:#7A6A57">Edite o "R$/kg simulado" pra testar cenário sem gravar nada no sistema.</p>'+
+    '<div class="tw" style="margin-top:10px"><table><thead><tr><th>Insumo</th><th style="text-align:right">kg/100kg</th>'+
+    '<th style="text-align:right">R$/kg</th><th style="text-align:right">Simular R$/kg</th><th style="text-align:right">Custo</th></tr></thead><tbody>'+
+    PREC.detalhe.slice().sort(function(a,b){ return Number(b.kg)-Number(a.kg); }).map(function(l){
+      var pAtual = l.preco_kg != null ? Number(l.preco_kg) : null;
+      var pUsar = (PREC.sim[l.item_id] != null) ? PREC.sim[l.item_id] : (pAtual != null ? pAtual : 0);
+      var custo = Number(l.kg) * pUsar;
+      var semPreco = pAtual == null;
+      return '<tr'+(semPreco?' style="background:#FBEAEA"':'')+'>'+
+        '<td>'+esc(l.item_nome)+(semPreco?' <span style="color:#C63A3A;font-size:11.5px;font-weight:700">sem preço</span>':'')+'</td>'+
+        '<td class="n">'+Number(l.kg).toFixed(3)+'</td>'+
+        '<td class="n">'+(pAtual != null ? "R$ "+brl(pAtual) : "—")+'</td>'+
+        '<td class="n"><input type="number" step="0.01" min="0" placeholder="—" value="'+(PREC.sim[l.item_id] != null ? PREC.sim[l.item_id] : "")+'" '+
+          'oninput="simular(\''+esc(l.item_id)+'\', this.value)" '+
+          'style="width:90px;text-align:right;font-family:ui-monospace,monospace;min-height:34px;padding:4px 6px;border:1.5px solid #DCD2C4;border-radius:8px"></td>'+
+        '<td class="n">R$ '+brl(custo)+'</td></tr>';
+    }).join("")+'</tbody></table></div></div>';
+
+  $("boxCusto").innerHTML = h;
+}
+
+function simular(itemId, v){
+  if(v === "" || v == null){ delete PREC.sim[itemId]; }
+  else {
+    var n = Number(v);
+    if(isNaN(n) || n < 0) return;
+    PREC.sim[itemId] = n;
+  }
+  desenharCusto();
+}
+
+function limparSimulacao(){ PREC.sim = {}; desenharCusto(); }
+
+async function salvarPreco(itemId){
+  var el = $("pr_"+itemId);
+  if(!el) return;
+  var v = el.value;
+  var box = $("resPreco");
+  if(v === "" || v == null){
+    box.innerHTML = '<span style="color:#C63A3A;font-size:13px">Digite um preço antes de salvar.</span>';
+    return;
+  }
+  var n = Number(v);
+  if(isNaN(n) || n < 0){
+    box.innerHTML = '<span style="color:#C63A3A;font-size:13px">Preço inválido.</span>';
+    return;
+  }
+  box.innerHTML = '<span style="color:#7A6A57;font-size:13px">Salvando…</span>';
+  var r = await sb.rpc("atualizar_preco_ref", { p_item_id:itemId, p_preco:n, p_responsavel:ST.email||"controladoria", p_origem:"manual" });
+  if(r.error){
+    box.innerHTML = '<span style="color:#C63A3A;font-size:13px">'+esc(r.error.message)+'</span>';
+    return;
+  }
+  box.innerHTML = '<span style="color:#3E7C45;font-size:13px">✓ '+esc(r.data && r.data.nome ? r.data.nome : "Preço")+' atualizado para R$ '+brl(n)+'/kg.</span>';
+  PREC.insumos.forEach(function(i){
+    if(i.id === itemId){ i.preco_ref_kg = n; i.preco_ref_origem = "manual"; }
+  });
+  if(PREC.sel) await carregarCustoProduto(PREC.sel);
 }
 
 /* ================= partida ================= */
