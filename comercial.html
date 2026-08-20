@@ -466,7 +466,10 @@ async function telaInicio(){
     if(atras || hoje) alerta = (atras?atras+" atrasado(s)":"")+(atras&&hoje?" · ":"")+(hoje?hoje+" para hoje":"");
   }catch(e){}
   var h = '<p class="pergunta">O que você vai fazer agora?</p><div class="acoes">'+
-    MENU.map(function(m){
+    MENU.filter(function(m){
+      if(m[0]==="precificacao" && !ST.papel.controladoria) return false;
+      return true;
+    }).map(function(m){
       var t = TELAS[m[0]];
       var sub = (m[0]==="agenda" && alerta) ? alerta : t.sub;
       return '<button onclick="ir(\''+m[0]+'\')">'+
@@ -2205,6 +2208,11 @@ async function telaControladoria(){
 var PREC = { produtos:[], insumos:[], sel:null, detalhe:null, resumo:null, sim:{} };
 
 async function telaPrecificacao(){
+  if(!ST.papel.controladoria){
+    return pinta('<div class="card" style="--u:#C63A3A"><h3>Acesso restrito</h3>'+
+      '<p style="font-size:14px;color:#7A6A57">Preço de custo e formulação valorizada são visíveis só para a controladoria. '+
+      'Seu login não tem esse papel.</p></div>');
+  }
   pinta('<div class="vazio">Carregando…</div>');
 
   var rp = await sb.from("produtos").select("id,nome").order("nome");
@@ -2216,10 +2224,21 @@ async function telaPrecificacao(){
   (rr.data||[]).forEach(function(x){ comReceita[x.produto_id] = true; });
   PREC.produtos = (rp.data||[]).filter(function(p){ return comReceita[p.id]; });
 
-  var ri = await sb.from("itens").select("id,nome,unidade,preco_ref_kg,preco_ref_origem,preco_ref_atualizado_em")
-    .eq("categoria","materia_prima").order("nome");
+  var ri = await sb.from("itens").select("id,nome,unidade").eq("categoria","materia_prima").order("nome");
   if(ri.error) return pinta('<div class="card" style="--u:#C63A3A">'+esc(ri.error.message)+'</div>');
-  PREC.insumos = ri.data || [];
+
+  var rc = await sb.from("item_custo").select("item_id,preco_kg,origem,atualizado_em");
+  if(rc.error) return pinta('<div class="card" style="--u:#C63A3A">'+esc(rc.error.message)+'</div>');
+  var custos = {};
+  (rc.data||[]).forEach(function(c){ custos[c.item_id] = c; });
+
+  PREC.insumos = (ri.data||[]).map(function(i){
+    var c = custos[i.id];
+    return { id:i.id, nome:i.nome, unidade:i.unidade,
+             preco_ref_kg: c ? c.preco_kg : null,
+             preco_ref_origem: c ? c.origem : null,
+             preco_ref_atualizado_em: c ? c.atualizado_em : null };
+  });
 
   desenharPrecificacao();
 }
