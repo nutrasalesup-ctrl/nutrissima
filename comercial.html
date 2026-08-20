@@ -2205,7 +2205,7 @@ async function telaControladoria(){
 }
 
 /* ================= Precificação ================= */
-var PREC = { produtos:[], insumos:[], sel:null, detalhe:null, resumo:null, sim:{}, liberado:false };
+var PREC = { produtos:[], insumos:[], skus:[], sel:null, detalhe:null, resumo:null, sim:{}, liberado:false };
 
 function telaPrecPin(erro){
   pinta('<div class="card" style="--u:#B8862B"><h3>🔒 Precificação</h3>'+
@@ -2252,7 +2252,8 @@ async function telaPrecificacao(){
   (rr.data||[]).forEach(function(x){ comReceita[x.produto_id] = true; });
   PREC.produtos = (rp.data||[]).filter(function(p){ return comReceita[p.id]; });
 
-  var ri = await sb.from("itens").select("id,nome,unidade").eq("categoria","materia_prima").order("nome");
+  var ri = await sb.from("itens").select("id,nome,unidade,categoria")
+    .in("categoria",["materia_prima","embalagem"]).order("categoria").order("nome");
   if(ri.error) return pinta('<div class="card" style="--u:#C63A3A">'+esc(ri.error.message)+'</div>');
 
   var rc = await sb.from("item_custo").select("item_id,preco_kg,origem,atualizado_em");
@@ -2262,11 +2263,15 @@ async function telaPrecificacao(){
 
   PREC.insumos = (ri.data||[]).map(function(i){
     var c = custos[i.id];
-    return { id:i.id, nome:i.nome, unidade:i.unidade,
+    return { id:i.id, nome:i.nome, unidade:i.unidade, categoria:i.categoria,
              preco_ref_kg: c ? c.preco_kg : null,
              preco_ref_origem: c ? c.origem : null,
              preco_ref_atualizado_em: c ? c.atualizado_em : null };
   });
+
+  var rs = await sb.from("produto_acabado").select("id,nome,linha,embalagem,peso_pote_kg,produto_id")
+    .eq("ativo", true).not("produto_id","is",null).order("nome");
+  PREC.skus = (rs.error ? [] : (rs.data||[]));
 
   desenharPrecificacao();
 }
@@ -2292,10 +2297,34 @@ function desenharPrecificacao(){
     '<p style="font-size:12.5px;color:#7A6A57;margin-top:6px">'+PREC.produtos.length+' produto(s) com fórmula cadastrada. Produto sem fórmula não aparece aqui — não há como custear.</p>'+
     '</div><div id="boxCusto"></div>';
 
-  h += '<div class="card" style="--u:#B8862B"><h3>Preço dos insumos — editar</h3>'+
-    '<p style="font-size:13px;color:#7A6A57">Origem <b>compra</b> = veio das notas fiscais importadas. <b>manual</b> = você digitou. Editar aqui recalcula todas as fórmulas que usam o insumo.</p>'+
-    '<div class="tw" style="margin-top:10px"><table><thead><tr><th>Insumo</th><th style="text-align:right">R$/kg</th><th>Origem</th><th></th></tr></thead><tbody>'+
-    PREC.insumos.map(function(i){
+  h += '<div class="card" style="--u:#3E7C45"><h3>Custo do pote pronto (fórmula + embalagem)</h3>'+
+    '<select id="selSku" onchange="carregarCustoPote(this.value)" style="width:100%;min-height:44px;font-size:15px;padding:8px;border:1.5px solid #DCD2C4;border-radius:10px;margin-top:8px">'+
+    '<option value="">— selecione um SKU —</option>'+
+    PREC.skus.map(function(s){
+      return '<option value="'+esc(s.id)+'">'+esc(s.nome)+(s.linha?' · '+esc(s.linha):'')+'</option>';
+    }).join("")+'</select>'+
+    '<p style="font-size:12.5px;color:#7A6A57;margin-top:6px">'+PREC.skus.length+' SKU(s) com fórmula. Custo do pote = (custo/kg da fórmula × peso do pote) + embalagem.</p>'+
+    '<div id="boxPote" style="margin-top:10px"></div></div>';
+
+  var mp = PREC.insumos.filter(function(i){ return i.categoria==="materia_prima"; });
+  var emb = PREC.insumos.filter(function(i){ return i.categoria==="embalagem"; });
+
+  h += tabelaPrecos("Preço de matéria-prima — R$/kg", mp, "#B8862B");
+  h += tabelaPrecos("Preço de embalagem — R$/unidade", emb, "#D9772B");
+
+  h += '<p style="font-size:12.5px;color:#7A6A57;margin-top:14px"><b>Como ler:</b> "Custo/kg" = soma de (quantidade do insumo na fórmula × preço), '+
+    'descendo por receitas aninhadas e por baldes intermediários até o insumo bruto. "% precificado" = quanto do peso da fórmula tem preço cadastrado — abaixo de 100%, o custo é piso, não o custo real.<br>'+
+    '<b>Não inclui:</b> mão de obra, energia, frete de despacho e depreciação — é custo de material, não custo industrial completo.</p>';
+
+  pinta(h);
+}
+
+function tabelaPrecos(titulo, lista, cor){
+  if(!lista.length) return "";
+  return '<div class="card" style="--u:'+cor+'"><h3>'+esc(titulo)+'</h3>'+
+    '<p style="font-size:13px;color:#7A6A57">Origem <b>compra</b> = veio das notas fiscais. <b>manual</b> = você digitou. Editar recalcula tudo que usa o item.</p>'+
+    '<div class="tw" style="margin-top:10px"><table><thead><tr><th>Item</th><th style="text-align:right">Preço</th><th>Origem</th><th></th></tr></thead><tbody>'+
+    lista.map(function(i){
       var val = i.preco_ref_kg != null ? Number(i.preco_ref_kg).toFixed(2) : "";
       var org = i.preco_ref_origem || "—";
       var corOrg = org === "compra" ? "#3E7C45" : (org === "manual" ? "#B8862B" : "#C63A3A");
@@ -2305,13 +2334,44 @@ function desenharPrecificacao(){
         '<td><span style="font-size:12px;font-weight:700;color:'+corOrg+'">'+esc(org)+'</span></td>'+
         '<td><button class="s" style="min-height:36px;padding:5px 12px;font-size:13px" onclick="salvarPreco(\''+esc(i.id)+'\')">Salvar</button></td></tr>';
     }).join("")+'</tbody></table></div>'+
-    '<div id="resPreco" style="margin-top:10px"></div></div>';
+    '<div id="resPreco_'+esc(cor.replace("#",""))+'" class="resPreco" style="margin-top:10px"></div></div>';
+}
 
-  h += '<p style="font-size:12.5px;color:#7A6A57;margin-top:14px"><b>Como ler:</b> "Custo/kg" = soma de (quantidade do insumo na fórmula × preço de referência dele), '+
-    'explodindo receitas aninhadas até o insumo bruto. "% precificado" = quanto do peso da fórmula tem preço cadastrado — abaixo de 100%, o custo mostrado é piso, não o custo real.<br>'+
-    '<b>Não inclui:</b> embalagem (pote, tampa, rótulo, caixa), mão de obra, energia e frete — é custo de fórmula, não custo total do produto acabado.</p>';
+async function carregarCustoPote(id){
+  if(!id){ $("boxPote").innerHTML = ""; return; }
+  $("boxPote").innerHTML = '<div class="vazio">Calculando…</div>';
+  var r = await sb.rpc("fn_custo_pote", { p_pa:id });
+  if(r.error){ $("boxPote").innerHTML = '<div style="color:#C63A3A;font-size:13.5px">'+esc(r.error.message)+'</div>'; return; }
+  var d = r.data || {};
+  if(d.erro){ $("boxPote").innerHTML = '<div style="color:#C63A3A;font-size:13.5px">⚠️ '+esc(d.erro)+'</div>'; return; }
 
-  pinta(h);
+  var pct = d.pct_kg_precificado != null ? Number(d.pct_kg_precificado) : 0;
+  var semPrecoEmb = Number(d.embalagem_itens_sem_preco||0);
+  var completo = pct >= 100 && semPrecoEmb === 0;
+
+  var h = '<p class="r">CUSTO TOTAL POR POTE'+(completo?"":" (INCOMPLETO)")+'</p>'+
+    '<p class="v">R$ '+brl(Number(d.custo_total_pote)||0)+'</p>'+
+    '<div class="conta">R$ '+brl(Number(d.custo_formula_pote)||0)+' fórmula ('+Number(d.peso_pote_kg).toFixed(3)+' kg) &nbsp;+&nbsp; '+
+      'R$ '+brl(Number(d.custo_embalagem_pote)||0)+' embalagem &nbsp;=&nbsp; <b>R$ '+brl(Number(d.custo_total_pote)||0)+' por pote</b></div>';
+
+  if(!completo){
+    h += '<p style="font-size:13px;color:#C63A3A;margin-top:8px">⚠️ Piso, não custo real: '+
+      pct.toFixed(1)+'% do peso da fórmula precificado'+
+      (semPrecoEmb ? ' · '+semPrecoEmb+' item(ns) de embalagem sem preço' : '')+'.</p>';
+  }
+
+  var det = (d.embalagem && d.embalagem.detalhe) || [];
+  if(det.length){
+    h += '<div class="tw" style="margin-top:10px"><table><thead><tr><th>Embalagem</th><th style="text-align:right">Qtd</th>'+
+      '<th style="text-align:right">R$/un</th><th style="text-align:right">Custo</th></tr></thead><tbody>'+
+      det.map(function(x){
+        return '<tr'+(x.tem_preco?'':' style="background:#FBEAEA"')+'><td>'+esc(x.item_nome)+'</td>'+
+          '<td class="n">'+Number(x.qtd_por_pote)+'</td>'+
+          '<td class="n">'+(x.preco_un!=null?'R$ '+brl(x.preco_un):'—')+'</td>'+
+          '<td class="n">R$ '+brl(x.custo)+'</td></tr>';
+      }).join("")+'</tbody></table></div>';
+  }
+  $("boxPote").innerHTML = h;
 }
 
 async function carregarCustoProduto(id){
@@ -2404,28 +2464,24 @@ function limparSimulacao(){ PREC.sim = {}; desenharCusto(); }
 async function salvarPreco(itemId){
   var el = $("pr_"+itemId);
   if(!el) return;
+  var boxes = document.querySelectorAll(".resPreco");
+  function aviso(html){ Array.prototype.forEach.call(boxes, function(b){ b.innerHTML = html; }); }
   var v = el.value;
-  var box = $("resPreco");
-  if(v === "" || v == null){
-    box.innerHTML = '<span style="color:#C63A3A;font-size:13px">Digite um preço antes de salvar.</span>';
-    return;
-  }
+  if(v === "" || v == null) return aviso('<span style="color:#C63A3A;font-size:13px">Digite um preço antes de salvar.</span>');
   var n = Number(v);
-  if(isNaN(n) || n < 0){
-    box.innerHTML = '<span style="color:#C63A3A;font-size:13px">Preço inválido.</span>';
-    return;
-  }
-  box.innerHTML = '<span style="color:#7A6A57;font-size:13px">Salvando…</span>';
+  if(isNaN(n) || n < 0) return aviso('<span style="color:#C63A3A;font-size:13px">Preço inválido.</span>');
+
+  aviso('<span style="color:#7A6A57;font-size:13px">Salvando…</span>');
   var r = await sb.rpc("atualizar_preco_ref", { p_item_id:itemId, p_preco:n, p_responsavel:ST.email||"controladoria", p_origem:"manual" });
-  if(r.error){
-    box.innerHTML = '<span style="color:#C63A3A;font-size:13px">'+esc(r.error.message)+'</span>';
-    return;
-  }
-  box.innerHTML = '<span style="color:#3E7C45;font-size:13px">✓ '+esc(r.data && r.data.nome ? r.data.nome : "Preço")+' atualizado para R$ '+brl(n)+'/kg.</span>';
+  if(r.error) return aviso('<span style="color:#C63A3A;font-size:13px">'+esc(r.error.message)+'</span>');
+
+  aviso('<span style="color:#3E7C45;font-size:13px">✓ '+esc(r.data && r.data.nome ? r.data.nome : "Preço")+' atualizado para R$ '+brl(n)+'.</span>');
   PREC.insumos.forEach(function(i){
     if(i.id === itemId){ i.preco_ref_kg = n; i.preco_ref_origem = "manual"; }
   });
   if(PREC.sel) await carregarCustoProduto(PREC.sel);
+  var sku = $("selSku");
+  if(sku && sku.value) await carregarCustoPote(sku.value);
 }
 
 /* ================= partida ================= */
