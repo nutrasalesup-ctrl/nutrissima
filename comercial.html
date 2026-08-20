@@ -2205,7 +2205,34 @@ async function telaControladoria(){
 }
 
 /* ================= Precificação ================= */
-var PREC = { produtos:[], insumos:[], sel:null, detalhe:null, resumo:null, sim:{} };
+var PREC = { produtos:[], insumos:[], sel:null, detalhe:null, resumo:null, sim:{}, liberado:false };
+
+function telaPrecPin(erro){
+  pinta('<div class="card" style="--u:#B8862B"><h3>🔒 Precificação</h3>'+
+    '<p style="font-size:14px;color:#7A6A57">Esta área mostra custo de insumo e formulação valorizada. '+
+    'Digite o PIN do gestor para abrir.</p>'+
+    '<input id="pinPrec" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" '+
+      'onkeydown="if(event.key===\'Enter\')validarPinPrec()" '+
+      'style="width:140px;font-size:20px;letter-spacing:.3em;text-align:center;min-height:48px;padding:8px;'+
+      'border:1.5px solid #DCD2C4;border-radius:10px;margin-top:12px;font-family:ui-monospace,monospace">'+
+    '<div style="margin-top:12px"><button onclick="validarPinPrec()">Abrir</button></div>'+
+    (erro ? '<p style="color:#C63A3A;font-size:13.5px;margin-top:10px">'+esc(erro)+'</p>' : '')+
+    '<p style="font-size:12.5px;color:#7A6A57;margin-top:14px">O PIN protege de olhar de terceiro num aparelho aberto. '+
+    'Quem não tem o papel de controladoria não acessa esses dados nem com o PIN certo.</p></div>');
+  var el = $("pinPrec"); if(el) el.focus();
+}
+
+async function validarPinPrec(){
+  var el = $("pinPrec");
+  if(!el) return;
+  var v = (el.value||"").trim();
+  if(!v) return telaPrecPin("Digite o PIN.");
+  var r = await sb.rpc("verificar_pin", { p_nome:"Gestor", p_pin:v });
+  if(r.error) return telaPrecPin(r.error.message);
+  if(!r.data) return telaPrecPin("PIN incorreto.");
+  PREC.liberado = true;
+  telaPrecificacao();
+}
 
 async function telaPrecificacao(){
   if(!ST.papel.controladoria){
@@ -2213,6 +2240,7 @@ async function telaPrecificacao(){
       '<p style="font-size:14px;color:#7A6A57">Preço de custo e formulação valorizada são visíveis só para a controladoria. '+
       'Seu login não tem esse papel.</p></div>');
   }
+  if(!PREC.liberado){ return telaPrecPin(""); }
   pinta('<div class="vazio">Carregando…</div>');
 
   var rp = await sb.from("produtos").select("id,nome").order("nome");
