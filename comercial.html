@@ -232,6 +232,8 @@ button:focus-visible{outline:2px solid var(--pist);outline-offset:2px}
 <div id="app"><div class="vazio">Carregando…</div></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <script>
 "use strict";
 
@@ -1171,10 +1173,31 @@ async function abrirFicha(){
     .select("id,tipo,data_interacao,resumo,proximo_passo,data_proximo_passo,concluido,contato_id")
     .eq("cliente_id", cid).order("data_interacao", {ascending:false});
   var rOp = await sb.schema("crm").from("oportunidades")
-    .select("titulo,etapa,valor_estimado,previsao_fechamento").eq("cliente_id", cid);
+    .select("id,titulo,etapa,valor_estimado,previsao_fechamento").eq("cliente_id", cid);
   var rDoc = await sb.schema("crm").from("documentos_cliente")
     .select("id,nome,storage_path,tipo,criado_em").eq("cliente_id", cid)
     .order("criado_em", {ascending:false});
+  var rCot = await sb.schema("crm").from("cotacoes")
+    .select("id,numero,oportunidade_id,contato_id,data_cotacao,validade,condicao_pagamento,frete,status,valor_total,observacoes")
+    .eq("cliente_id", cid).order("numero", {ascending:false});
+  var rProd = await sb.from("produto_acabado")
+    .select("id,nome,linha").eq("ativo", true).order("nome");
+  var rPreco = await sb.schema("crm").from("preco_padrao").select("produto_acabado_id,preco");
+
+  var cotacoes = rCot.data || [], produtos = rProd.data || [];
+  var precoPadrao = {};
+  (rPreco.data||[]).forEach(function(p){ precoPadrao[p.produto_acabado_id] = Number(p.preco)||0; });
+
+  var itensPorCotacao = {};
+  if(cotacoes.length){
+    var rCotItens = await sb.schema("crm").from("cotacao_itens")
+      .select("cotacao_id,produto_acabado_id,descricao,qtd,valor_unitario,desconto_pct,valor_total")
+      .in("cotacao_id", cotacoes.map(function(c){ return c.id; }));
+    (rCotItens.data||[]).forEach(function(it){
+      if(!itensPorCotacao[it.cotacao_id]) itensPorCotacao[it.cotacao_id] = [];
+      itensPorCotacao[it.cotacao_id].push(it);
+    });
+  }
 
   var cart = rCart.data || [], nfs = rNf.data || [];
   var cts = rCt.data || [], ints = rIn.data || [], ops = rOp.data || [], docs = rDoc.data || [];
@@ -1260,16 +1283,26 @@ async function abrirFicha(){
       'agregam vários compradores ou um contrato industrial.</div>';
   }
 
+  ST.cache.fichaProdutos = produtos;
+  ST.cache.fichaPrecoPadrao = precoPadrao;
+  ST.cache.fichaContatos = cts;
+  ST.cache.fichaOportunidades = ops;
+  ST.cache.fichaCotacoes = cotacoes;
+  ST.cache.fichaItensPorCotacao = itensPorCotacao;
+  ST.cache.fichaItensPropostaAtual = [];
+
   /* ---- cockpit: painéis clicáveis ---- */
   var opAberta = ops.filter(function(x){ return x.etapa.indexOf('fechado') !== 0; });
   var painelProxAcao = pendencias.length
     ? dataBR(pendencias[0].data_proximo_passo)+' · '+esc(pendencias[0].proximo_passo)
     : 'nada agendado';
+  var propAberta = cotacoes.filter(function(x){ return x.status !== 'recusada' && x.status !== 'expirada'; });
   h += '<div class="cockpit">'+
     painelCockpit('secContatos', '#7A6A57', '👥', 'Contatos', inte(cts.length), cts.length?esc(cts[0].nome)+(cts.length>1?' +'+(cts.length-1):''):'nenhum') +
     painelCockpit('secProxima', '#D9772B', '🗓️', 'Próxima ação', pendencias.length?dataBR(pendencias[0].data_proximo_passo):'—', painelProxAcao) +
     painelCockpit('secOportunidades', '#B8862B', '🎯', 'Oportunidades', inte(opAberta.length), opAberta.length?'R$ '+brl(opAberta.reduce(function(a,x){return a+(Number(x.valor_estimado)||0);},0)):'nenhuma aberta') +
-    painelCockpit('secCompras', '#3E7C45', '📈', 'Faturado', 'R$ '+brl(faturado), inte(vendasNf.length)+' nota(s)') +
+    painelCockpit('secPropostas', '#3E7C45', '📋', 'Propostas', inte(cotacoes.length), propAberta.length?inte(propAberta.length)+' em aberto':'nenhuma') +
+    painelCockpit('secCompras', '#B8862B', '📈', 'Faturado', 'R$ '+brl(faturado), inte(vendasNf.length)+' nota(s)') +
     painelCockpit('secDocumentos', '#22303A', '📄', 'Documentos', inte(docs.length), docs.length?'ver arquivos':'nenhum') +
     painelCockpit('secNotas', '#C63A3A', '📝', 'Notas', inte(notas.length), notas.length?'ver anotações':'nenhuma') +
     '</div>';
@@ -1352,6 +1385,47 @@ async function abrirFicha(){
         (x.previsao_fechamento&&!fechada?' · previsão '+dataBR(x.previsao_fechamento):'')+
       '</div></div>';
   }).join(""), 'Nenhuma oportunidade.');
+
+  /* ---- propostas ---- */
+  var STATUS_ROTULO = {rascunho:'Rascunho', enviada:'Enviada', aceita:'Aceita', recusada:'Recusada', expirada:'Expirada'};
+  var STATUS_COR = {rascunho:'#7A6A57', enviada:'#B8862B', aceita:'#3E7C45', recusada:'#C63A3A', expirada:'#C63A3A'};
+  h += secaoFicha('secPropostas', 'Propostas', cotacoes.length, cotacoes.map(function(x){
+    var itens = itensPorCotacao[x.id] || [];
+    var contato = cts.filter(function(c){ return c.id === x.contato_id; })[0];
+    return '<div class="card" style="--u:'+(STATUS_COR[x.status]||'#DCD2C4')+'">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">'+
+        '<div><b>Proposta #'+inte(x.numero)+'</b> · '+dataBR(x.data_cotacao)+
+          '<span class="tag" style="background:'+(STATUS_COR[x.status]||'#7A6A57')+';margin-left:6px">'+esc(STATUS_ROTULO[x.status]||x.status)+'</span></div>'+
+        '<div style="font-weight:800;font-family:var(--mono,monospace)">R$ '+brl(x.valor_total)+'</div>'+
+      '</div>'+
+      '<div style="font-size:12.5px;color:var(--tinta2);margin-top:4px">'+
+        (contato?'pra '+esc(contato.nome)+' · ':'')+
+        (x.validade?'válida até '+dataBR(x.validade)+' · ':'')+
+        inte(itens.length)+' item(ns)'+
+      '</div>'+
+      '<div style="margin-top:8px">'+
+        '<button class="s" style="min-height:32px;padding:5px 11px;font-size:12px" onclick="baixarPdfProposta(\''+x.id+'\')">📄 Baixar PDF</button>'+
+      '</div></div>';
+  }).join(""), 'Nenhuma proposta ainda.');
+
+  h += '<div class="card" style="--u:#3E7C45"><h3 style="font-size:15px">Nova proposta</h3>'+
+    '<label for="prContato">Contato (opcional)</label><select id="prContato">'+
+      '<option value="">— sem contato específico —</option>'+
+      cts.map(function(c){ return '<option value="'+c.id+'">'+esc(c.nome)+(c.cargo?' · '+esc(c.cargo):'')+'</option>'; }).join("")+
+    '</select>'+
+    '<label for="prOportunidade">Oportunidade (opcional)</label><select id="prOportunidade">'+
+      '<option value="">— sem oportunidade vinculada —</option>'+
+      ops.map(function(o){ return '<option value="'+o.id+'">'+esc(o.titulo)+'</option>'; }).join("")+
+    '</select>'+
+    '<label for="prValidade">Válida até</label><input id="prValidade" type="date">'+
+    '<label for="prCondicao">Condição de pagamento</label><input id="prCondicao" value="'+esc(c.condicao_pagamento||"")+'">'+
+    '<label for="prFrete">Frete</label><input id="prFrete" placeholder="Ex.: CIF, por conta do cliente...">'+
+    '<label for="prObs">Observações</label><input id="prObs" placeholder="Opcional">'+
+    '<div style="margin-top:14px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--tinta2)">Itens</div>'+
+    '<div id="prItens" style="margin-top:8px"></div>'+
+    '<button class="s" style="margin-top:8px" onclick="adicionarItemProposta()">+ Adicionar item</button>'+
+    '<div class="conta" style="margin-top:12px">Total: <b id="prTotal">R$ 0,00</b></div>'+
+    '<button class="b" style="margin-top:12px" onclick="salvarProposta(\''+cid+'\')">Salvar proposta</button></div>';
 
   /* ---- compras mês a mês ---- */
   h += secaoFicha('secCompras', 'Compras (mês a mês)', mesesOrdenados.length,
@@ -1531,6 +1605,125 @@ async function baixarDocumento(caminho){
   var r = await sb.storage.from("documentos-clientes").createSignedUrl(caminho, 300);
   if(r.error || !r.data){ msg("Não consegui abrir o documento.", true); return; }
   window.open(r.data.signedUrl, "_blank");
+}
+
+/* ---- propostas: itens dinâmicos ---- */
+function adicionarItemProposta(){
+  ST.cache.fichaItensPropostaAtual.push({ produto_acabado_id:"", descricao:"", qtd:1, valor_unitario:0, desconto_pct:0 });
+  renderItensProposta();
+}
+function removerItemProposta(idx){
+  ST.cache.fichaItensPropostaAtual.splice(idx, 1);
+  renderItensProposta();
+}
+function selecionarProdutoItem(idx, produtoId){
+  var item = ST.cache.fichaItensPropostaAtual[idx];
+  if(!item) return;
+  item.produto_acabado_id = produtoId;
+  var prod = (ST.cache.fichaProdutos||[]).filter(function(p){ return p.id === produtoId; })[0];
+  item.descricao = prod ? prod.nome : "";
+  if(ST.cache.fichaPrecoPadrao && ST.cache.fichaPrecoPadrao[produtoId] != null){
+    item.valor_unitario = ST.cache.fichaPrecoPadrao[produtoId];
+  }
+  renderItensProposta();
+}
+function atualizarItemProposta(idx, campo, valor){
+  var item = ST.cache.fichaItensPropostaAtual[idx];
+  if(!item) return;
+  item[campo] = valor;
+  recalcularTotalProposta();
+}
+function totalItemProposta(item){
+  var qtd = Number(item.qtd)||0, vu = Number(item.valor_unitario)||0, desc = Number(item.desconto_pct)||0;
+  return qtd * vu * (1 - desc/100);
+}
+function recalcularTotalProposta(){
+  var total = ST.cache.fichaItensPropostaAtual.reduce(function(a,it){ return a + totalItemProposta(it); }, 0);
+  var alvo = $("prTotal");
+  if(alvo) alvo.textContent = "R$ " + brl(total);
+}
+function renderItensProposta(){
+  var alvo = $("prItens");
+  if(!alvo) return;
+  var itens = ST.cache.fichaItensPropostaAtual;
+  var opcoesProduto = '<option value="">Escolha o SKU…</option>' +
+    (ST.cache.fichaProdutos||[]).map(function(p){ return '<option value="'+p.id+'">'+esc(p.nome)+'</option>'; }).join("");
+  alvo.innerHTML = itens.length ? itens.map(function(it, idx){
+    return '<div class="card" style="--u:#DCD2C4;margin-bottom:8px">'+
+      '<div style="display:grid;grid-template-columns:2fr 1fr;gap:8px">'+
+        '<div><label>Produto</label><select onchange="selecionarProdutoItem('+idx+', this.value)">'+
+          opcoesProduto.replace('value="'+it.produto_acabado_id+'"', 'value="'+it.produto_acabado_id+'" selected')+
+        '</select></div>'+
+        '<div><label>Qtd</label><input type="number" min="1" value="'+it.qtd+'" oninput="atualizarItemProposta('+idx+',\'qtd\',this.value)"></div>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">'+
+        '<div><label>Valor unitário</label><input type="number" step="0.01" value="'+it.valor_unitario+'" oninput="atualizarItemProposta('+idx+',\'valor_unitario\',this.value)"></div>'+
+        '<div><label>Desconto %</label><input type="number" step="0.1" min="0" max="100" value="'+it.desconto_pct+'" oninput="atualizarItemProposta('+idx+',\'desconto_pct\',this.value)"></div>'+
+      '</div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">'+
+        '<span style="font-size:13px;color:var(--tinta2)">Subtotal: <b>R$ '+brl(totalItemProposta(it))+'</b></span>'+
+        '<button class="s" style="min-height:30px;padding:4px 10px;font-size:12px" onclick="removerItemProposta('+idx+')">Remover</button>'+
+      '</div></div>';
+  }).join("") : '<div class="vazio" style="padding:14px">Nenhum item ainda — clique em "Adicionar item".</div>';
+  recalcularTotalProposta();
+}
+async function salvarProposta(cid){
+  var itens = ST.cache.fichaItensPropostaAtual;
+  if(!itens.length){ msg("Adicione ao menos um item antes de salvar.", true); return; }
+  for(var i=0;i<itens.length;i++){
+    if(!itens[i].produto_acabado_id){ msg("Escolha o produto de todos os itens.", true); return; }
+  }
+  var total = itens.reduce(function(a,it){ return a + totalItemProposta(it); }, 0);
+  var rC = await sb.schema("crm").from("cotacoes").insert({
+    cliente_id: cid,
+    contato_id: $("prContato").value || null,
+    oportunidade_id: $("prOportunidade").value || null,
+    validade: $("prValidade").value || null,
+    condicao_pagamento: $("prCondicao").value.trim() || null,
+    frete: $("prFrete").value.trim() || null,
+    observacoes: $("prObs").value.trim() || null,
+    valor_total: total,
+    status: "rascunho"
+  }).select("id").single();
+  if(rC.error){ msg("Não consegui salvar a proposta: "+rC.error.message, true); return; }
+  var cotacaoId = rC.data.id;
+  var linhas = itens.map(function(it){
+    return {
+      cotacao_id: cotacaoId, produto_acabado_id: it.produto_acabado_id, descricao: it.descricao,
+      qtd: Number(it.qtd)||0, valor_unitario: Number(it.valor_unitario)||0, desconto_pct: Number(it.desconto_pct)||0
+    };
+  });
+  var rI = await sb.schema("crm").from("cotacao_itens").insert(linhas);
+  if(rI.error){ msg("Proposta criada, mas os itens falharam: "+rI.error.message, true); return; }
+  msg("Proposta salva como rascunho.");
+  abrirFicha();
+}
+function baixarPdfProposta(cotacaoId){
+  var cot = (ST.cache.fichaCotacoes||[]).filter(function(x){ return x.id === cotacaoId; })[0];
+  var itens = (ST.cache.fichaItensPorCotacao||{})[cotacaoId] || [];
+  var cliente = ST.cache.fichaClienteAtual;
+  if(!cot || !cliente || typeof window.jspdf === "undefined"){ msg("Não consegui gerar o PDF.", true); return; }
+  var doc = new window.jspdf.jsPDF();
+  doc.setFontSize(16); doc.text("Proposta comercial #"+cot.numero, 14, 18);
+  doc.setFontSize(10);
+  doc.text("Cliente: "+cliente.razao_social, 14, 28);
+  doc.text("Data: "+dataBR(cot.data_cotacao)+(cot.validade?"   Válida até: "+dataBR(cot.validade):""), 14, 34);
+  if(cot.condicao_pagamento) doc.text("Condição de pagamento: "+cot.condicao_pagamento, 14, 40);
+  if(cot.frete) doc.text("Frete: "+cot.frete, 14, 46);
+  var linhas = itens.map(function(it){
+    var vu = Number(it.valor_unitario)||0, qtd = Number(it.qtd)||0, desc = Number(it.desconto_pct)||0;
+    var tot = qtd*vu*(1-desc/100);
+    return [it.descricao||"—", String(qtd), "R$ "+brl(vu), (desc||0)+"%", "R$ "+brl(tot)];
+  });
+  doc.autoTable({
+    startY: 54, head: [["Produto","Qtd","V. unit.","Desc.","Total"]], body: linhas,
+    styles: { fontSize: 9 }, headStyles: { fillColor: [34,48,58] }
+  });
+  var y = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 60) + 10;
+  doc.setFontSize(12);
+  doc.text("Total: R$ "+brl(cot.valor_total), 14, y);
+  if(cot.observacoes){ doc.setFontSize(10); doc.text("Obs.: "+cot.observacoes, 14, y+8); }
+  doc.save("proposta-"+cot.numero+"-"+(cliente.razao_social||"cliente").replace(/[^a-zA-Z0-9]+/g,"-")+".pdf");
 }
 
 function toggleNotaFiscal(id){
