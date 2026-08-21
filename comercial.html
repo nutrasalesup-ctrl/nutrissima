@@ -81,6 +81,26 @@ main{padding:4px 16px}
 .kpi.ruim .v{color:var(--mor)}
 .kpi.bom .v{color:var(--pist)}
 
+/* quadro do dia (agenda) — grade de notas coloridas por tipo de interação */
+.quadro-dia{margin-bottom:18px}
+.quadro-titulo{font-size:14px;font-weight:900;margin-bottom:10px;display:flex;align-items:baseline;gap:8px}
+.quadro-titulo .n{font-size:11.5px;font-weight:700;color:var(--tinta2)}
+.quadro-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:380px){ .quadro-grid{grid-template-columns:1fr} }
+.nota{border-radius:12px;padding:12px 13px;box-shadow:0 1px 4px rgba(51,32,15,.08);min-height:96px;
+      display:flex;flex-direction:column;gap:6px}
+.nota .tipo{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;
+            display:flex;align-items:center;gap:5px;opacity:.75}
+.nota .cliente{font-size:14px;font-weight:900;line-height:1.2}
+.nota .passo{font-size:12.5px;color:var(--cacau);line-height:1.3;flex:1}
+.nota .contato{font-size:11px;color:var(--tinta2)}
+.nota .acoes{display:flex;gap:6px;margin-top:2px;flex-wrap:wrap}
+.nota .acoes button{border:none;background:rgba(255,255,255,.6);border-radius:8px;padding:5px 9px;
+                     font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--cacau)}
+.nota .acoes button:active{background:rgba(255,255,255,.9)}
+.quadro-ver-tudo{display:inline-block;margin-top:10px;font-size:12.5px;font-weight:700;
+                  color:var(--tinta2);text-decoration:none;border-bottom:1.5px dotted var(--tinta2)}
+
 /* conta aberta */
 .conta{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums;
        background:#F6F1E8;border:1.5px solid var(--linha);border-radius:var(--raio);
@@ -1914,7 +1934,7 @@ function diasAte(dataISO){
 async function telaAgenda(){
   var rc = await sb.from("clientes").select("id,razao_social,municipio,uf,documento").order("razao_social");
   ST.cache.clientesSelect = rc.data || [];
-  var rk = await sb.schema("crm").from("contatos").select("id,cliente_id,nome").eq("ativo", true).order("nome");
+  var rk = await sb.schema("crm").from("contatos").select("id,cliente_id,nome,telefone,email").eq("ativo", true).order("nome");
   ST.cache.contatosTodos = rk.data || [];
 
   var opcoes = opcoesCliente(ST.cache.clientesSelect);
@@ -1942,6 +1962,28 @@ function agContatosDoCliente(){
   $("agContato").innerHTML = '<option value="">—</option>' +
     L.map(function(x){ return '<option value="'+x.id+'">'+esc(x.nome)+'</option>'; }).join("");
 }
+var TIPO_COR_QUADRO = {
+  visita:  {tarja:"#3E7C45", fundo:"#E4EFE5", ic:"🚶"},
+  ligacao: {tarja:"#22303A", fundo:"#E1E6E9", ic:"📞"},
+  mensagem:{tarja:"#B8862B", fundo:"#F5EAD4", ic:"💬"},
+  email:   {tarja:"#D9772B", fundo:"#FBE4D2", ic:"✉️"},
+  reuniao: {tarja:"#C63A3A", fundo:"#F7DEDE", ic:"🗓️"},
+  outro:   {tarja:"#7A6A57", fundo:"#EFE9E1", ic:"📝"}
+};
+function notaQuadroDia(x, nomeCliente, contatoObj){
+  var cor = TIPO_COR_QUADRO[x.tipo] || TIPO_COR_QUADRO.outro;
+  var ct = x.contato_id ? contatoObj[x.contato_id] : null;
+  var acoes = '<button onclick="concluirInteracao(\''+x.id+'\')">✓ Feito</button>';
+  if(ct && ct.telefone) acoes += '<button onclick="abrirWhatsApp(\''+esc(ct.telefone)+'\')">💬 WhatsApp</button>';
+  if(ct && ct.email) acoes += '<button onclick="window.location.href=\'mailto:'+esc(ct.email)+'\'">✉️ E-mail</button>';
+  return '<div class="nota" style="background:'+cor.fundo+';border-left:5px solid '+cor.tarja+'">'+
+    '<div class="tipo">'+cor.ic+' '+esc(TIPO_ROTULO[x.tipo]||x.tipo)+'</div>'+
+    '<div class="cliente">'+esc(nomeCliente[x.cliente_id]||"—")+'</div>'+
+    '<div class="passo">'+esc(x.proximo_passo)+'</div>'+
+    (ct ? '<div class="contato">'+esc(ct.nome)+'</div>' : '')+
+    '<div class="acoes">'+acoes+'</div>'+
+    '</div>';
+}
 async function carregarAgenda(){
   var r = await sb.schema("crm").from("interacoes")
     .select("id,cliente_id,contato_id,tipo,data_interacao,resumo,proximo_passo,data_proximo_passo,concluido")
@@ -1952,17 +1994,17 @@ async function carregarAgenda(){
     lista.innerHTML = '<div class="card" style="--u:#C63A3A">Não consegui ler a agenda: '+esc(r.error.message)+'</div>';
     return;
   }
-  var nomeCliente = {}, nomeContato = {};
+  var nomeCliente = {}, nomeContato = {}, contatoObj = {};
   (ST.cache.clientesSelect||[]).forEach(function(c){ nomeCliente[c.id] = c.razao_social; });
-  (ST.cache.contatosTodos||[]).forEach(function(c){ nomeContato[c.id] = c.nome; });
+  (ST.cache.contatosTodos||[]).forEach(function(c){ nomeContato[c.id] = c.nome; contatoObj[c.id] = c; });
 
   var todas = r.data || [];
   var pendentes = todas.filter(function(x){ return x.proximo_passo && !x.concluido; });
 
   // agrupamento pela decisão: o que precisa de ação, por urgência do retorno
+  // "Hoje" sai daqui — vira o Quadro do dia, renderizado à parte, em grade colorida
   var grupos = [
     { t:"Atrasado",        cor:"#C63A3A", f:function(d){ return d !== null && d < 0; } },
-    { t:"Hoje",            cor:"#D9772B", f:function(d){ return d === 0; } },
     { t:"Próximos 7 dias", cor:"#B8862B", f:function(d){ return d !== null && d >= 1 && d <= 7; } },
     { t:"Mais adiante",    cor:"#3E7C45", f:function(d){ return d !== null && d > 7; } },
     { t:"Sem data marcada",cor:"#7A6A57", f:function(d){ return d === null; } }
@@ -1984,6 +2026,22 @@ async function carregarAgenda(){
   h += '<div class="conta">'+inte(todas.length)+' interações &nbsp;−&nbsp; '+
     inte(todas.length - pendentes.length)+' já resolvidas &nbsp;=&nbsp; '+
     '<b>'+inte(pendentes.length)+' aguardando retorno</b></div>';
+
+  // ---- Quadro do dia: só os pendentes com retorno marcado para hoje ----
+  var hojeItens = pendentes.filter(function(x){ return diasAte(x.data_proximo_passo) === 0; })
+    .sort(function(a,b){ return String(a.data_proximo_passo).localeCompare(String(b.data_proximo_passo)); });
+  var restam = pendentes.length - hojeItens.length;
+
+  h += '<div class="quadro-dia">'+
+    '<div class="quadro-titulo">📌 Quadro do dia · '+dataBR(hojeISO())+
+      '<span class="n">'+inte(hojeItens.length)+' pendente(s) hoje</span></div>'+
+    (hojeItens.length
+      ? '<div class="quadro-grid">'+hojeItens.map(function(x){ return notaQuadroDia(x, nomeCliente, contatoObj); }).join("")+'</div>'
+      : '<div class="vazio" style="padding:16px">Nada marcado para hoje.</div>')+
+    (restam ? '<a href="#agRestante" class="quadro-ver-tudo">Ver agenda completa ↓</a>' : '')+
+    '</div>';
+
+  h += '<div id="agRestante" style="scroll-margin-top:80px"></div>';
 
   grupos.forEach(function(g){
     var L = pendentes.filter(function(x){ return g.f(diasAte(x.data_proximo_passo)); })
