@@ -462,7 +462,8 @@ var TELAS = {
   resumo:      { rotulo:"Gerencial",      sub:"Visão comercial completa, com filtros", fn:telaGerencial, etapa:"Pedido" },
   faturamento: { rotulo:"Faturamento",    sub:"O que já saiu em nota fiscal", fn:telaFaturamento, etapa:"Pedido" },
   clientes:    { rotulo:"Clientes",       sub:"Cadastro e quanto cada um comprou", fn:telaClientes, etapa:"Clientes" },
-  representantes:{ rotulo:"Representantes", sub:"Cadastro básico", fn:telaRepres, etapa:"Clientes" },
+  representantes:{ rotulo:"Representantes", sub:"Cadastro, comissão e ficha", fn:telaRepres, etapa:"Clientes" },
+  liquidacao:  { rotulo:"Liquidação",     sub:"Baixa de recebimento por NF", fn:telaLiquidacao, etapa:"Pedido" },
   importar:    { rotulo:"Importar NF-e",  sub:"Ler XML e alimentar o faturamento", fn:telaImportar, etapa:"Pedido" },
   pendencias:  { rotulo:"Pendências",     sub:"Códigos de NF sem produto cadastrado", fn:telaPendencias, etapa:"Pedido" },
   controladoria:{ rotulo:"Controladoria", sub:"DRE e apuração fiscal (e-commerce)", fn:telaControladoria, etapa:"" },
@@ -507,6 +508,7 @@ var MENU = [
   ["faturamento",  "📊","#E4EDF2",""],
   ["clientes",     "🏢","#EAF3EA",""],
   ["representantes","🤝","#F3EAD8",""],
+  ["liquidacao",   "💰","#E7F0E4",""],
   ["importar",     "📥","#E7F0E4",""],
   ["pendencias",   "⚠️","#FBEAEA",""],
   ["controladoria","🧮","#EFE0D8",""],
@@ -3004,6 +3006,213 @@ async function abrirFichaRepresentante(id){
     }).join("")+'</tbody></table></div>' : '<div class="vazio">Nenhum cliente vinculado ainda.</div>';
 
   alvo.innerHTML = h;
+}
+
+/* ================= liquidação (baixa de NF por parcela) ================= */
+var LIQ_STATUS_ROTULO = {
+  pendentes:"Precisa de atenção (aberta/atrasada/parcial)", atrasada:"Atrasada", parcial:"Parcial",
+  aberta:"Aberta (a vencer)", liquidada:"Liquidada", sem_controle:"Sem controle (sem parcela)", todas:"Todas"
+};
+var LIQ_STATUS_COR = { atrasada:"#C63A3A", parcial:"#D9772B", aberta:"#B8862B", liquidada:"#3E7C45", sem_controle:"#7A6A57" };
+
+async function telaLiquidacao(){
+  ST.cache.liqFiltro = ST.cache.liqFiltro || { status:"pendentes", busca:"" };
+  pinta(formFiltroLiquidacao()+'<div id="liqLista" style="margin-top:12px"></div>'+'<div id="liqDetalhe" style="margin-top:14px"></div>');
+  buscarLiquidacao();
+}
+function formFiltroLiquidacao(){
+  var f = ST.cache.liqFiltro;
+  return '<div class="card" style="--u:#22303A"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">'+
+    '<div style="flex:1;min-width:180px"><label for="liqBusca">Buscar (nº da NF ou cliente)</label>'+
+      '<input id="liqBusca" value="'+esc(f.busca)+'" onkeydown="if(event.key===\'Enter\')buscarLiquidacaoDoForm()"></div>'+
+    '<div><label for="liqStatus">Situação</label><select id="liqStatus" onchange="buscarLiquidacaoDoForm()">'+
+      ["pendentes","atrasada","parcial","aberta","liquidada","sem_controle","todas"].map(function(k){
+        return '<option value="'+k+'"'+(f.status===k?' selected':'')+'>'+LIQ_STATUS_ROTULO[k]+'</option>';
+      }).join("")+
+    '</select></div>'+
+    '<button class="b" onclick="buscarLiquidacaoDoForm()">Buscar</button>'+
+  '</div></div>';
+}
+function buscarLiquidacaoDoForm(){
+  ST.cache.liqFiltro.busca = $("liqBusca").value.trim();
+  ST.cache.liqFiltro.status = $("liqStatus").value;
+  buscarLiquidacao();
+}
+async function buscarLiquidacao(){
+  var alvo = $("liqLista");
+  if(!alvo) return;
+  alvo.innerHTML = '<div class="vazio">Buscando…</div>';
+  var f = ST.cache.liqFiltro;
+  var campos = "nf_id,numero,emissao,cliente_id,v_prod,qtd_parcelas,valor_parcelado,valor_pago,status_liquidacao";
+
+  function aplicaStatus(q){
+    if(f.status === "pendentes") return q.in("status_liquidacao", ["aberta","atrasada","parcial"]);
+    if(f.status !== "todas") return q.eq("status_liquidacao", f.status);
+    return q;
+  }
+
+  var linhas = [];
+  if(f.busca){
+    var q1 = aplicaStatus(sb.from("vw_nf_venda_liquidacao").select(campos).ilike("numero","%"+f.busca+"%"))
+      .order("emissao",{ascending:false}).limit(80);
+    linhas = (await q1).data || [];
+    if(!linhas.length){
+      var rCli = await sb.from("clientes").select("id").ilike("razao_social","%"+f.busca+"%");
+      var ids = (rCli.data||[]).map(function(c){return c.id;});
+      if(ids.length){
+        var q2 = aplicaStatus(sb.from("vw_nf_venda_liquidacao").select(campos).in("cliente_id", ids))
+          .order("emissao",{ascending:false}).limit(80);
+        linhas = (await q2).data || [];
+      }
+    }
+  } else {
+    var q0 = aplicaStatus(sb.from("vw_nf_venda_liquidacao").select(campos)).order("emissao",{ascending:false}).limit(80);
+    linhas = (await q0).data || [];
+  }
+
+  if(!linhas.length){ alvo.innerHTML = '<div class="vazio">Nenhuma NF encontrada com esse filtro.</div>'; return; }
+
+  var clienteIds = Array.from(new Set(linhas.map(function(l){return l.cliente_id;}).filter(Boolean)));
+  var nomeCliente = {};
+  if(clienteIds.length){
+    var rC = await sb.from("clientes").select("id,razao_social").in("id", clienteIds);
+    (rC.data||[]).forEach(function(c){ nomeCliente[c.id] = c.razao_social; });
+  }
+  ST.cache.liqNomeCliente = nomeCliente;
+
+  alvo.innerHTML = '<div class="tw"><table><thead><tr><th>NF</th><th>Cliente</th><th>Emissão</th>'+
+    '<th style="text-align:right">Valor</th><th style="text-align:right">Pago</th><th>Situação</th></tr></thead><tbody>'+
+    linhas.map(function(l){
+      return '<tr style="cursor:pointer" onclick="abrirDetalheLiquidacao(\''+l.nf_id+'\')">'+
+        '<td class="mono">'+esc(l.numero)+'</td><td>'+esc(nomeCliente[l.cliente_id]||"—")+'</td>'+
+        '<td class="mono">'+dataBR(l.emissao)+'</td>'+
+        '<td class="n mono">R$ '+brl(l.v_prod)+'</td><td class="n mono">R$ '+brl(l.valor_pago)+'</td>'+
+        '<td><span class="tag" style="background:'+(LIQ_STATUS_COR[l.status_liquidacao]||'#7A6A57')+'">'+
+          (LIQ_STATUS_ROTULO[l.status_liquidacao]||l.status_liquidacao)+'</span></td></tr>';
+    }).join("")+'</tbody></table></div>';
+}
+async function abrirDetalheLiquidacao(nfId){
+  var alvo = $("liqDetalhe");
+  if(!alvo) return;
+  alvo.innerHTML = '<div class="vazio">Carregando…</div>';
+  alvo.scrollIntoView({behavior:"smooth", block:"start"});
+
+  var rNf = await sb.from("nf_venda").select("id,numero,emissao,v_prod,cliente_id").eq("id", nfId).single();
+  var rP = await sb.from("nf_venda_parcela").select("*").eq("nf_id", nfId).order("numero_parcela");
+  if(rNf.error || !rNf.data){ alvo.innerHTML = '<div class="card" style="--u:#C63A3A">Não consegui abrir a NF.</div>'; return; }
+  var nf = rNf.data, parcelas = rP.data || [];
+  var nomeCli = ST.cache.liqNomeCliente ? ST.cache.liqNomeCliente[nf.cliente_id] : null;
+
+  ST.cache.liqNfAtual = nf;
+  ST.cache.liqParcelasAtual = parcelas;
+  ST.cache.liqNovoPlano = parcelas.length ? [] : [{numero:1, valor:Number(nf.v_prod)||0, vencimento:""}];
+
+  var h = '<div class="ficha-card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">'+
+    '<div><div style="font-size:15px;font-weight:700">NF '+esc(nf.numero)+' · '+esc(nomeCli||"cliente")+'</div>'+
+    '<div class="mono" style="font-size:11px;color:var(--tinta2)">Emitida '+dataBR(nf.emissao)+' · R$ '+brl(nf.v_prod)+'</div></div>'+
+    '<button class="s mini" onclick="$(\'liqDetalhe\').innerHTML=\'\'">✕ Fechar</button></div></div>';
+
+  h += '<div style="margin-top:10px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--tinta2)">Parcelas</div>';
+  h += '<div id="liqParcelasLista" style="margin-top:6px"></div>';
+
+  h += '<div class="card" style="--u:#3E7C45;margin-top:10px"><h3 style="font-size:15px">'+
+    (parcelas.length ? "Adicionar parcela" : "Gerar plano de parcelas")+'</h3>'+
+    '<div id="liqPlanoContainer"></div>'+
+    '<button class="s" style="margin-top:8px" onclick="adicionarLinhaPlano()">+ Adicionar parcela</button>'+
+    '<button class="b" style="margin-top:12px" onclick="salvarPlanoParcelas()">Salvar parcelas</button>'+
+    '</div>';
+
+  alvo.innerHTML = h;
+  renderParcelasLista();
+  renderPlanoParcelas();
+}
+function renderParcelasLista(){
+  var alvo = $("liqParcelasLista");
+  if(!alvo) return;
+  var parcelas = ST.cache.liqParcelasAtual || [];
+  if(!parcelas.length){ alvo.innerHTML = '<div class="vazio">Nenhuma parcela cadastrada ainda.</div>'; return; }
+  var hoje = new Date().toISOString().slice(0,10);
+  alvo.innerHTML = parcelas.map(function(p){
+    var atrasada = p.status === "aberta" && p.vencimento < hoje;
+    var cor = p.status==="paga" ? "#3E7C45" : p.status==="cancelada" ? "#7A6A57" : atrasada ? "#C63A3A" : "#B8862B";
+    var rotuloSit = p.status==="paga" ? "paga" : p.status==="cancelada" ? "cancelada" : atrasada ? "atrasada" : "aberta";
+    return '<div class="card" style="--u:'+cor+';margin-bottom:6px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">'+
+        '<div><b>Parcela '+p.numero_parcela+'</b> · vence '+dataBR(p.vencimento)+
+          '<span class="tag" style="background:'+cor+';margin-left:6px">'+rotuloSit+'</span></div>'+
+        '<div class="mono">R$ '+brl(p.valor)+'</div></div>'+
+      (p.status==="paga" ? '<div style="font-size:12px;color:var(--tinta2);margin-top:4px">baixada em '+dataBR(p.pago_em)+
+         (p.forma_pagamento?' · '+esc(p.forma_pagamento):'')+'</div>'
+       : p.status==="aberta" ? '<div style="margin-top:8px"><button class="s mini" onclick="abrirBaixaParcela(\''+p.id+'\')">💰 Baixar</button></div>' : '')+
+      '<div id="baixaForm_'+p.id+'"></div></div>';
+  }).join("");
+}
+function abrirBaixaParcela(parcelaId){
+  var alvo = $("baixaForm_"+parcelaId);
+  if(!alvo) return;
+  alvo.innerHTML = '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--linha)">'+
+    '<label>Data do pagamento</label><input type="date" id="bxData_'+parcelaId+'" value="'+new Date().toISOString().slice(0,10)+'">'+
+    '<label>Valor pago</label><input type="number" step="0.01" id="bxValor_'+parcelaId+'">'+
+    '<label>Forma de pagamento</label><select id="bxForma_'+parcelaId+'">'+
+      ["boleto","pix","cartao","dinheiro","outro"].map(function(f){return '<option value="'+f+'">'+f+'</option>';}).join("")+
+    '</select>'+
+    '<button class="b mini" style="margin-top:8px" onclick="confirmarBaixaParcela(\''+parcelaId+'\')">Confirmar baixa</button></div>';
+}
+async function confirmarBaixaParcela(parcelaId){
+  var data = $("bxData_"+parcelaId).value;
+  var valor = Number($("bxValor_"+parcelaId).value);
+  var forma = $("bxForma_"+parcelaId).value;
+  if(!data || !valor){ msg("Preencha data e valor.", true); return; }
+  var r = await sb.rpc("baixar_parcela", {
+    p_parcela_id: parcelaId, p_data_pagamento: data, p_valor_pago: valor,
+    p_forma_pagamento: forma, p_responsavel: ST.email
+  });
+  if(r.error){ msg("Não deu para baixar: "+r.error.message, true); return; }
+  msg("Parcela baixada.");
+  abrirDetalheLiquidacao(ST.cache.liqNfAtual.id);
+  buscarLiquidacao();
+}
+function adicionarLinhaPlano(){
+  var plano = ST.cache.liqNovoPlano || [];
+  var proxNum = (ST.cache.liqParcelasAtual||[]).length + plano.length + 1;
+  plano.push({numero: proxNum, valor: 0, vencimento: ""});
+  ST.cache.liqNovoPlano = plano;
+  renderPlanoParcelas();
+}
+function atualizarLinhaPlano(idx, campo, valor){
+  ST.cache.liqNovoPlano[idx][campo] = valor;
+}
+function removerLinhaPlano(idx){
+  ST.cache.liqNovoPlano.splice(idx,1);
+  renderPlanoParcelas();
+}
+function renderPlanoParcelas(){
+  var alvo = $("liqPlanoContainer");
+  if(!alvo) return;
+  var plano = ST.cache.liqNovoPlano || [];
+  alvo.innerHTML = plano.length ? plano.map(function(p, idx){
+    return '<div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;align-items:end;margin-top:8px">'+
+      '<div><label>Nº</label><input type="number" min="1" value="'+p.numero+'" oninput="atualizarLinhaPlano('+idx+',\'numero\',Number(this.value))"></div>'+
+      '<div><label>Valor</label><input type="number" step="0.01" value="'+p.valor+'" oninput="atualizarLinhaPlano('+idx+',\'valor\',Number(this.value))"></div>'+
+      '<div><label>Vencimento</label><input type="date" value="'+p.vencimento+'" oninput="atualizarLinhaPlano('+idx+',\'vencimento\',this.value)"></div>'+
+      '<button class="s mini" onclick="removerLinhaPlano('+idx+')">Remover</button></div>';
+  }).join("") : '<div class="vazio">Nenhuma parcela nova — clique em "Adicionar parcela".</div>';
+}
+async function salvarPlanoParcelas(){
+  var plano = ST.cache.liqNovoPlano || [];
+  if(!plano.length){ msg("Adicione ao menos uma parcela.", true); return; }
+  for(var i=0;i<plano.length;i++){
+    if(!plano[i].vencimento || !plano[i].valor){ msg("Preencha valor e vencimento de todas as parcelas.", true); return; }
+  }
+  var r = await sb.rpc("gerar_parcelas_nf", {
+    p_nf_id: ST.cache.liqNfAtual.id,
+    p_parcelas: plano.map(function(p){ return {numero:p.numero, valor:p.valor, vencimento:p.vencimento}; }),
+    p_responsavel: ST.email
+  });
+  if(r.error){ msg("Não deu para gravar: "+r.error.message, true); return; }
+  msg("Parcelas gravadas.");
+  abrirDetalheLiquidacao(ST.cache.liqNfAtual.id);
+  buscarLiquidacao();
 }
 
 /* ================= importar ================= */
