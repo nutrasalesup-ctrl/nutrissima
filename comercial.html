@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="app-version" content="2026-08-21T09:30Z">
+<meta name="app-version" content="2026-08-21T10:05Z">
 <title>Nutríssima — Comercial</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -1941,23 +1941,7 @@ async function telaAgenda(){
   var rk = await sb.schema("crm").from("contatos").select("id,cliente_id,nome,telefone,email").eq("ativo", true).order("nome");
   ST.cache.contatosTodos = rk.data || [];
 
-  var opcoes = opcoesCliente(ST.cache.clientesSelect);
-
-  pinta(
-    '<div class="card" style="--u:#3E7C45"><h3>Registrar interação</h3>'+
-    campoBuscaCliente("agBuscaCli","agCliente")+
-    '<label for="agCliente">Cliente</label><select id="agCliente" onchange="agContatosDoCliente()">'+opcoes+'</select>'+
-    '<label for="agContato">Contato (opcional)</label><select id="agContato"><option value="">—</option></select>'+
-    '<label for="agTipo">Tipo</label><select id="agTipo">'+
-      '<option value="visita">Visita</option><option value="ligacao">Ligação</option>'+
-      '<option value="mensagem">Mensagem</option><option value="email">E-mail</option>'+
-      '<option value="reuniao">Reunião</option><option value="outro">Outro</option></select>'+
-    '<label for="agData">Data da interação</label><input id="agData" type="date" value="'+hojeISO()+'">'+
-    '<label for="agResumo">O que foi conversado</label><input id="agResumo" placeholder="Resumo da conversa">'+
-    '<label for="agPasso">Próximo passo (opcional)</label><input id="agPasso" placeholder="Ex.: enviar tabela de preços">'+
-    '<label for="agPassoData">Quando</label><input id="agPassoData" type="date">'+
-    '<button class="b" style="margin-top:14px" onclick="salvarInteracao()">Registrar</button></div>'+
-    '<div id="agLista"></div>');
+  pinta('<div id="agLista"><div class="vazio">Carregando…</div></div>');
   carregarAgenda();
 }
 function agContatosDoCliente(){
@@ -1988,6 +1972,23 @@ function notaQuadroDia(x, nomeCliente, contatoObj){
     '<div class="acoes">'+acoes+'</div>'+
     '</div>';
 }
+function cardInteracaoPendente(x, cor, nomeCliente, nomeContato){
+  var d = diasAte(x.data_proximo_passo);
+  var quando = x.data_proximo_passo
+    ? dataBR(x.data_proximo_passo) + (d < 0 ? ' · '+Math.abs(d)+' dia(s) atrás'
+                                    : d === 0 ? ' · hoje' : ' · em '+d+' dia(s)')
+    : "sem data";
+  return '<div class="card" style="--u:'+cor+'">'+
+    '<h3>'+esc(nomeCliente[x.cliente_id] || "—")+'</h3>'+
+    '<div style="font-size:13.5px;color:var(--tinta2);margin-bottom:6px">'+
+      esc(TIPO_ROTULO[x.tipo]||x.tipo)+' em '+dataBR(x.data_interacao)+
+      (x.contato_id && nomeContato[x.contato_id] ? ' · '+esc(nomeContato[x.contato_id]) : '')+
+    '</div>'+
+    '<div style="margin-bottom:8px">'+esc(x.resumo)+'</div>'+
+    '<div class="conta"><b>Próximo passo:</b> '+esc(x.proximo_passo)+' &nbsp;·&nbsp; '+esc(quando)+'</div>'+
+    '<button class="s" style="margin-top:8px" onclick="concluirInteracao(\''+x.id+'\')">Marcar como feito</button>'+
+    '</div>';
+}
 async function carregarAgenda(){
   var r = await sb.schema("crm").from("interacoes")
     .select("id,cliente_id,contato_id,tipo,data_interacao,resumo,proximo_passo,data_proximo_passo,concluido")
@@ -2004,91 +2005,83 @@ async function carregarAgenda(){
 
   var todas = r.data || [];
   var pendentes = todas.filter(function(x){ return x.proximo_passo && !x.concluido; });
+  var semPasso = todas.filter(function(x){ return !x.proximo_passo || x.concluido; });
 
-  // agrupamento pela decisão: o que precisa de ação, por urgência do retorno
-  // "Hoje" sai daqui — vira o Quadro do dia, renderizado à parte, em grade colorida
-  var grupos = [
-    { t:"Atrasado",        cor:"#C63A3A", f:function(d){ return d !== null && d < 0; } },
+  // três baldes pela decisão de quando agir — hoje / atrasado / o resto em aberto
+  var hojeItens = pendentes.filter(function(x){ return diasAte(x.data_proximo_passo) === 0; })
+    .sort(function(a,b){ return String(a.data_proximo_passo).localeCompare(String(b.data_proximo_passo)); });
+  var atrasados = pendentes.filter(function(x){ var d=diasAte(x.data_proximo_passo); return d!==null && d<0; })
+    .sort(function(a,b){ return String(a.data_proximo_passo||"9999").localeCompare(String(b.data_proximo_passo||"9999")); });
+  var restantes = pendentes.filter(function(x){ var d=diasAte(x.data_proximo_passo); return d===null || d>0; });
+
+  var subgrupos = [
     { t:"Próximos 7 dias", cor:"#B8862B", f:function(d){ return d !== null && d >= 1 && d <= 7; } },
     { t:"Mais adiante",    cor:"#3E7C45", f:function(d){ return d !== null && d > 7; } },
     { t:"Sem data marcada",cor:"#7A6A57", f:function(d){ return d === null; } }
   ];
+  var restanteHtml = subgrupos.map(function(g){
+    var L = restantes.filter(function(x){ return g.f(diasAte(x.data_proximo_passo)); })
+                      .sort(function(a,b){ return String(a.data_proximo_passo||"9999").localeCompare(String(b.data_proximo_passo||"9999")); });
+    if(!L.length) return '';
+    return '<h4 style="margin:14px 0 8px;font-size:12.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--tinta2)">'+
+      esc(g.t)+' · '+inte(L.length)+'</h4>'+
+      L.map(function(x){ return cardInteracaoPendente(x, g.cor, nomeCliente, nomeContato); }).join("");
+  }).join("");
+
+  var histHtml = semPasso.length ? '<div class="tw"><table class="cards"><thead><tr>'+
+    '<th>Cliente</th><th>Tipo</th><th>Data</th><th>Resumo</th></tr></thead><tbody>'+
+    semPasso.slice(0,40).map(function(x){
+      return '<tr><td>'+esc(nomeCliente[x.cliente_id]||"—")+'</td>'+
+        '<td data-r="Tipo">'+esc(TIPO_ROTULO[x.tipo]||x.tipo)+'</td>'+
+        '<td data-r="Data" class="mono">'+dataBR(x.data_interacao)+'</td>'+
+        '<td data-r="Resumo">'+esc(x.resumo)+'</td></tr>';
+    }).join("")+'</tbody></table></div>' : '';
 
   var h = "";
-  var atrasados = pendentes.filter(function(x){ var d=diasAte(x.data_proximo_passo); return d!==null && d<0; }).length;
-  var deHoje = pendentes.filter(function(x){ return diasAte(x.data_proximo_passo) === 0; }).length;
 
-  h += '<div class="kpis">'+
-    '<div class="kpi'+(atrasados?' ruim':'')+'"><div class="r">Atrasado</div><div class="v">'+inte(atrasados)+'</div>'+
-      '<div class="n">retorno vencido</div></div>'+
-    '<div class="kpi"><div class="r">Para hoje</div><div class="v">'+inte(deHoje)+'</div>'+
-      '<div class="n">próximo passo marcado</div></div>'+
-    '<div class="kpi"><div class="r">Em aberto</div><div class="v">'+inte(pendentes.length)+'</div>'+
-      '<div class="n">de '+inte(todas.length)+' interações</div></div>'+
+  /* ---- grade de painéis clicáveis, igual Ficha do cliente — isto é o que ---- */
+  /* ---- precisa estar em destaque; o resto vira seção, alcançada por aqui ---- */
+  h += '<div class="cockpit">'+
+    painelCockpit('secQuadro', '#D9772B', '📌', 'Quadro do dia', inte(hojeItens.length), hojeItens.length?'pendente(s) hoje':'nada hoje') +
+    painelCockpit('secAtrasado', '#C63A3A', '⚠️', 'Atrasado', inte(atrasados.length), atrasados.length?'retorno vencido':'em dia') +
+    painelCockpit('secRestante', '#7A6A57', '🗓️', 'Em aberto', inte(restantes.length), 'demais pendências') +
+    painelCockpit('secHistorico', '#22303A', '📜', 'Histórico', inte(semPasso.length), 'já resolvidas') +
+    painelCockpit('secNova', '#3E7C45', '➕', 'Nova interação', 'Registrar', 'cliente e retorno') +
     '</div>';
 
   h += '<div class="conta">'+inte(todas.length)+' interações &nbsp;−&nbsp; '+
     inte(todas.length - pendentes.length)+' já resolvidas &nbsp;=&nbsp; '+
     '<b>'+inte(pendentes.length)+' aguardando retorno</b></div>';
 
-  // ---- Quadro do dia: só os pendentes com retorno marcado para hoje ----
-  var hojeItens = pendentes.filter(function(x){ return diasAte(x.data_proximo_passo) === 0; })
-    .sort(function(a,b){ return String(a.data_proximo_passo).localeCompare(String(b.data_proximo_passo)); });
-  var restam = pendentes.length - hojeItens.length;
+  h += secaoFicha('secQuadro', 'Quadro do dia · '+dataBR(hojeISO()), hojeItens.length,
+    '<div class="quadro-grid">'+hojeItens.map(function(x){ return notaQuadroDia(x, nomeCliente, contatoObj); }).join("")+'</div>',
+    'Nada marcado para hoje.');
 
-  h += '<div class="quadro-dia">'+
-    '<div class="quadro-titulo">📌 Quadro do dia · '+dataBR(hojeISO())+
-      '<span class="n">'+inte(hojeItens.length)+' pendente(s) hoje</span></div>'+
-    (hojeItens.length
-      ? '<div class="quadro-grid">'+hojeItens.map(function(x){ return notaQuadroDia(x, nomeCliente, contatoObj); }).join("")+'</div>'
-      : '<div class="vazio" style="padding:16px">Nada marcado para hoje.</div>')+
-    (restam ? '<a href="#agRestante" class="quadro-ver-tudo">Ver agenda completa ↓</a>' : '')+
-    '</div>';
+  h += secaoFicha('secAtrasado', 'Atrasado', atrasados.length,
+    atrasados.map(function(x){ return cardInteracaoPendente(x, '#C63A3A', nomeCliente, nomeContato); }).join(""),
+    'Nenhum retorno atrasado.');
 
-  h += '<div id="agRestante" style="scroll-margin-top:80px"></div>';
+  h += secaoFicha('secRestante', 'Em aberto', restantes.length, restanteHtml, 'Nada mais em aberto.');
 
-  grupos.forEach(function(g){
-    var L = pendentes.filter(function(x){ return g.f(diasAte(x.data_proximo_passo)); })
-                     .sort(function(a,b){
-                       return String(a.data_proximo_passo||"9999").localeCompare(String(b.data_proximo_passo||"9999"));
-                     });
-    if(!L.length) return;
-    h += '<h3 style="margin:20px 0 8px;font-size:14px;text-transform:uppercase;letter-spacing:.09em;color:var(--tinta2)">'+
-         esc(g.t)+' · '+inte(L.length)+'</h3>';
-    L.forEach(function(x){
-      var d = diasAte(x.data_proximo_passo);
-      var quando = x.data_proximo_passo
-        ? dataBR(x.data_proximo_passo) + (d < 0 ? ' · '+Math.abs(d)+' dia(s) atrás'
-                                        : d === 0 ? ' · hoje' : ' · em '+d+' dia(s)')
-        : "sem data";
-      h += '<div class="card" style="--u:'+g.cor+'">'+
-        '<h3>'+esc(nomeCliente[x.cliente_id] || "—")+'</h3>'+
-        '<div style="font-size:13.5px;color:var(--tinta2);margin-bottom:6px">'+
-          esc(x.tipo)+' em '+dataBR(x.data_interacao)+
-          (x.contato_id && nomeContato[x.contato_id] ? ' · '+esc(nomeContato[x.contato_id]) : '')+
-        '</div>'+
-        '<div style="margin-bottom:8px">'+esc(x.resumo)+'</div>'+
-        '<div class="conta"><b>Próximo passo:</b> '+esc(x.proximo_passo)+' &nbsp;·&nbsp; '+esc(quando)+'</div>'+
-        '<button class="s" style="margin-top:8px" onclick="concluirInteracao(\''+x.id+'\')">Marcar como feito</button>'+
-        '</div>';
-    });
-  });
+  h += secaoFicha('secHistorico', 'Histórico', semPasso.length, histHtml, 'Nenhuma interação resolvida ainda.');
 
-  var semPasso = todas.filter(function(x){ return !x.proximo_passo || x.concluido; });
-  if(semPasso.length){
-    h += '<h3 style="margin:24px 0 8px;font-size:14px;text-transform:uppercase;letter-spacing:.09em;color:var(--tinta2)">'+
-         'Histórico · '+inte(semPasso.length)+'</h3>'+
-         '<div class="tw"><table class="cards"><thead><tr>'+
-         '<th>Cliente</th><th>Tipo</th><th>Data</th><th>Resumo</th></tr></thead><tbody>'+
-      semPasso.slice(0,40).map(function(x){
-        return '<tr><td>'+esc(nomeCliente[x.cliente_id]||"—")+'</td>'+
-          '<td data-r="Tipo">'+esc(x.tipo)+'</td>'+
-          '<td data-r="Data" class="mono">'+dataBR(x.data_interacao)+'</td>'+
-          '<td data-r="Resumo">'+esc(x.resumo)+'</td></tr>';
-      }).join("")+'</tbody></table></div>';
-  }
+  /* ---- registrar interação: virou seção no fim, não mais o topo da tela ---- */
+  h += '<h3 id="secNova" style="margin:22px 0 8px;font-size:14px;text-transform:uppercase;'+
+    'letter-spacing:.09em;color:var(--tinta2);scroll-margin-top:80px">Nova interação</h3>'+
+    '<div class="card" style="--u:#3E7C45">'+
+    campoBuscaCliente("agBuscaCli","agCliente")+
+    '<label for="agCliente">Cliente</label><select id="agCliente" onchange="agContatosDoCliente()">'+opcoesCliente(ST.cache.clientesSelect)+'</select>'+
+    '<label for="agContato">Contato (opcional)</label><select id="agContato"><option value="">—</option></select>'+
+    '<label for="agTipo">Tipo</label><select id="agTipo">'+
+      '<option value="visita">Visita</option><option value="ligacao">Ligação</option>'+
+      '<option value="mensagem">Mensagem</option><option value="email">E-mail</option>'+
+      '<option value="reuniao">Reunião</option><option value="outro">Outro</option></select>'+
+    '<label for="agData">Data da interação</label><input id="agData" type="date" value="'+hojeISO()+'">'+
+    '<label for="agResumo">O que foi conversado</label><input id="agResumo" placeholder="Resumo da conversa">'+
+    '<label for="agPasso">Próximo passo (opcional)</label><input id="agPasso" placeholder="Ex.: enviar tabela de preços">'+
+    '<label for="agPassoData">Quando</label><input id="agPassoData" type="date">'+
+    '<button class="b" style="margin-top:14px" onclick="salvarInteracao()">Registrar</button></div>';
 
-  if(!todas.length) h = '<div class="vazio">Nenhuma interação registrada ainda.</div>';
   lista.innerHTML = h;
 }
 async function salvarInteracao(){
