@@ -52,16 +52,24 @@ main{padding:4px 16px}
 .card h3{margin:0 0 8px;font-size:16px;font-weight:900}
 
 /* KPIs */
-.cockpit{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
-.painel{display:block;background:#fff;border:1.5px solid var(--linha);border-left:7px solid var(--u,var(--linha));
-  border-radius:var(--raio);padding:14px;text-decoration:none;color:inherit;transition:transform .12s}
+.cockpit{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.painel{display:block;background:#fff;border:1px solid var(--linha);border-left:5px solid var(--u,var(--linha));
+  box-shadow:0 1px 4px rgba(51,32,15,.05);
+  border-radius:10px;padding:10px;text-decoration:none;color:inherit;transition:transform .12s}
 .painel:hover{transform:translateY(-2px)}
-.painel-ic{font-size:20px;line-height:1}
-.painel-t{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--tinta2);margin-top:6px}
-.painel-v{font-size:19px;font-weight:900;margin-top:2px}
-.painel-s{font-size:12px;color:var(--tinta2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-@media(min-width:600px){ .cockpit{grid-template-columns:repeat(3,1fr)} }
-@media(min-width:900px){ .cockpit{grid-template-columns:repeat(6,1fr)} }
+.painel-ic{font-size:15px;line-height:1}
+.painel-t{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--tinta2);margin-top:5px}
+.painel-v{font-size:15px;font-weight:900;margin-top:1px}
+.painel-s{font-size:10.5px;color:var(--tinta2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(min-width:600px){ .cockpit{grid-template-columns:repeat(4,1fr)} }
+@media(min-width:900px){ .cockpit{grid-template-columns:repeat(7,1fr)} }
+.ficha-cols{display:flex;flex-direction:column;gap:8px}
+@media(min-width:900px){ .ficha-cols{display:grid;grid-template-columns:1.35fr 1fr;align-items:start;gap:12px} }
+.mini{min-height:26px!important;padding:3px 9px!important;font-size:11px!important;border-radius:7px!important;
+  font-weight:700!important;line-height:1.3}
+.mini i{font-size:12px;vertical-align:-1px}
+.ficha-card{background:#fff;border:1px solid var(--linha);box-shadow:0 1px 5px rgba(51,32,15,.05);
+  border-radius:12px;padding:11px 13px}
 .kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
 .kpi{background:#fff;border:1.5px solid var(--linha);border-radius:var(--raio);padding:14px;text-align:center}
 .kpi .r{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--tinta2)}
@@ -217,6 +225,8 @@ button:focus-visible{outline:2px solid var(--pist);outline-offset:2px}
   .card{padding:18px 20px}
   .kpis{grid-template-columns:repeat(4,1fr)}
   button.b{max-width:340px}
+  button.b{min-height:40px;font-size:14px;border-radius:10px}
+  button.s{min-height:32px;font-size:12.5px;padding:6px 13px;border-radius:9px}
 }
 @media(min-width:1200px){
   #app{max-width:1040px}
@@ -1116,11 +1126,18 @@ async function telaFicha(){
   ST.cache.clientesSelect = rc.data || [];
 
   pinta(
-    '<div class="card" style="--u:#22303A">'+
-    campoBuscaCliente("fiBuscaCli","fiCliente")+
-    '<label for="fiCliente">Cliente</label>'+
-    '<select id="fiCliente" onchange="abrirFicha()">'+opcoesCliente(ST.cache.clientesSelect)+'</select>'+
-    '</div><div id="fiCorpo"><div class="vazio">Escolha um cliente para ver a ficha.</div></div>');
+    '<div style="display:flex;justify-content:flex-end;margin-bottom:10px">'+
+      '<div style="max-width:280px;width:100%">'+
+        '<input id="fiBuscaCli" placeholder="Nome, cidade ou CNPJ" '+
+          'style="padding:7px 11px;font-size:13px;border-radius:9px" '+
+          'oninput="filtraSelectCliente(\'fiBuscaCli\',\'fiCliente\')">'+
+        '<select id="fiCliente" onchange="abrirFicha()" '+
+          'style="padding:7px 11px;font-size:13px;border-radius:9px;margin-top:5px">'+
+          opcoesCliente(ST.cache.clientesSelect)+
+        '</select>'+
+      '</div>'+
+    '</div>'+
+    '<div id="fiCorpo"><div class="vazio">Escolha um cliente para ver a ficha.</div></div>');
 }
 
 /* ---- helpers do cockpit ---- */
@@ -1254,27 +1271,35 @@ async function abrirFicha(){
   var h = '';
 
   /* ---- cabeçalho ---- */
-  h += '<div class="card" style="--u:#22303A" id="fiCabecalho">'+
-    '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">'+
-      '<div><h3>'+esc(c.razao_social)+'</h3>'+
-      '<div style="font-size:13.5px;color:var(--tinta2);margin-top:2px">'+
-        (c.municipio ? esc(c.municipio)+(c.uf?'/'+esc(c.uf):'')+' · ' : '')+
-        (c.documento ? '<span class="mono">'+esc(c.documento)+'</span>'
-                     : '<span style="color:var(--lar)">sem CNPJ — ainda não faturado</span>')+
-        (c.segmento ? ' · <span class="tag" style="background:'+
-          (c.segmento==='varejo'?'#3E7C45':c.segmento==='marketplace'?'#D9772B':
-           c.segmento==='terceirizacao'?'#B8862B':'#7A6A57')+'">'+
-          esc(SEG_ROTULO[c.segmento]||c.segmento)+'</span>' : '')+
-      '</div></div>'+
-      '<button class="s" style="min-height:36px" onclick="editarCabecalho()">✏️ Editar</button>'+
+  var iniciais = (c.razao_social||"??").trim().split(/\s+/).slice(0,2).map(function(w){return w[0]||"";}).join("").toUpperCase();
+  h += '<div class="ficha-card" id="fiCabecalho" style="margin-bottom:10px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">'+
+      '<div style="display:flex;align-items:center;gap:10px;min-width:0">'+
+        '<div style="width:34px;height:34px;flex:none;border-radius:50%;background:#EAF3EA;'+
+          'box-shadow:0 0 0 2px #DCEEDD;display:flex;align-items:center;justify-content:center;'+
+          'font-size:12.5px;font-weight:800;color:#3E7C45">'+esc(iniciais)+'</div>'+
+        '<div style="min-width:0">'+
+          '<div style="font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+
+            esc(c.razao_social)+
+            (c.segmento ? ' <span class="tag" style="background:'+
+              (c.segmento==='varejo'?'#DCEEDD;color:#2E5E33':c.segmento==='marketplace'?'#FBE9DA;color:#A05A1E':
+               c.segmento==='terceirizacao'?'#F6EFDB;color:#8A6B1E':'#F1ECE3;color:#5F5E58')+
+              ';font-size:9.5px;padding:2px 8px;margin-left:4px">'+
+              esc(SEG_ROTULO[c.segmento]||c.segmento)+'</span>' : '')+
+          '</div>'+
+          '<div class="mono" style="font-size:10.5px;color:var(--tinta2);margin-top:1px">'+
+            (c.municipio ? esc(c.municipio)+(c.uf?'/'+esc(c.uf):'')+' · ' : '')+
+            (c.documento ? esc(c.documento) : 'sem CNPJ — ainda não faturado')+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+      '<button class="s mini" onclick="editarCabecalho()">✏️ Editar</button>'+
     '</div>'+
-    '<div id="fiCabecalhoExtra" style="margin-top:10px;font-size:14px;display:flex;gap:18px;flex-wrap:wrap">'+
-      '<div><b style="letter-spacing:.08em;text-transform:uppercase;font-size:11px;color:var(--tinta2)">Avaliação</b><br>'+
-        '<span style="font-size:17px;color:#B8862B">'+estrelasHtml(c.classificacao_estrelas)+'</span></div>'+
-      '<div><b style="letter-spacing:.08em;text-transform:uppercase;font-size:11px;color:var(--tinta2)">Site</b><br>'+
-        (c.site ? '<a href="'+esc(c.site)+'" target="_blank" rel="noopener">'+esc(c.site)+'</a>' : '<span class="vazio" style="padding:0">não informado</span>')+'</div>'+
-      '<div><b style="letter-spacing:.08em;text-transform:uppercase;font-size:11px;color:var(--tinta2)">Condição de pagamento</b><br>'+
-        (c.condicao_pagamento ? esc(c.condicao_pagamento) : '<span class="vazio" style="padding:0">não informada</span>')+'</div>'+
+    '<div id="fiCabecalhoExtra" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--linha);'+
+      'font-size:12px;display:flex;gap:16px;flex-wrap:wrap;color:var(--tinta2)">'+
+      '<span style="color:#B8862B">'+estrelasHtml(c.classificacao_estrelas)+'</span>'+
+      '<span>'+(c.site ? '<a href="'+esc(c.site)+'" target="_blank" rel="noopener">'+esc(c.site)+'</a>' : 'site não informado')+'</span>'+
+      '<span>'+(c.condicao_pagamento ? esc(c.condicao_pagamento) : 'condição não informada')+'</span>'+
     '</div></div>';
 
   if(c.segmento === 'marketplace' || c.segmento === 'terceirizacao'){
@@ -1326,7 +1351,8 @@ async function abrirFicha(){
        '<b>R$ '+brl(vAberto)+' em aberto</b></div>';
 
   /* ---- contatos (com botão WhatsApp) ---- */
-  h += secaoFicha('secContatos', 'Contatos', cts.length, cts.map(function(x){
+  var hE = '', hD = '';
+  hD += secaoFicha('secContatos', 'Contatos', cts.length, cts.map(function(x){
     return '<div class="card" style="--u:'+(x.decisor?'#B8862B':'#DCD2C4')+'">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">'+
         '<div><b>'+esc(x.nome)+'</b>'+(x.decisor?' <span class="tag" style="background:#B8862B">decisor</span>':'')+
@@ -1335,19 +1361,19 @@ async function abrirFicha(){
           (x.telefone?'<span class="mono">'+esc(x.telefone)+'</span> · ':'')+
           esc(x.email||'')+'</div></div>'+
         '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
-          '<button class="s" style="min-height:32px;padding:5px 11px;font-size:12px" onclick="abrirWhatsApp(\''+esc(x.telefone||'')+'\')">💬 WhatsApp</button>'+
-          (x.email?'<button class="s" style="min-height:32px;padding:5px 11px;font-size:12px" onclick="window.location.href=\'mailto:'+esc(x.email)+'\'">✉️ E-mail</button>':'')+
+          '<button class="s mini" onclick="abrirWhatsApp(\''+esc(x.telefone||'')+'\')">💬 WhatsApp</button>'+
+          (x.email?'<button class="s mini" onclick="window.location.href=\'mailto:'+esc(x.email)+'\'">✉️ E-mail</button>':'')+
         '</div></div></div>';
   }).join(""), 'Nenhum contato cadastrado.');
 
   /* ---- próxima ação ---- */
-  h += secaoFicha('secProxima', 'Próxima ação', pendencias.length,
+  hD += secaoFicha('secProxima', 'Próxima ação', pendencias.length,
     pendencias.map(function(x){
       return '<div class="card" style="--u:#D9772B">'+
         '<b>'+dataBR(x.data_proximo_passo)+'</b> · '+esc(x.proximo_passo)+
         '<div style="font-size:13px;color:var(--tinta2);margin-top:3px">canal: '+esc(TIPO_ROTULO[x.tipo]||x.tipo)+'</div></div>';
     }).join(""), 'Nada agendado.');
-  h += '<div class="card" style="--u:#D9772B"><h3 style="font-size:15px">Agendar nova ação</h3>'+
+  hD += '<div class="card" style="--u:#D9772B"><h3 style="font-size:15px">Agendar nova ação</h3>'+
     '<label for="paCanal">Canal</label><select id="paCanal">'+
       '<option value="whatsapp">WhatsApp</option><option value="ligacao">Ligação</option>'+
       '<option value="email">E-mail</option><option value="visita">Visita</option>'+
@@ -1357,7 +1383,7 @@ async function abrirFicha(){
     '<button class="b" style="margin-top:12px" onclick="salvarProximaAcao(\''+cid+'\')">Agendar</button></div>';
 
   /* ---- carteira em aberto ---- */
-  h += secaoFicha(null, 'Em carteira', abertos.length,
+  hE += secaoFicha(null, 'Em carteira', abertos.length,
     abertos.length ? '<div class="tw"><table class="cards"><thead><tr>'+
       '<th>Pedido</th><th>Produto</th><th style="text-align:right">Qtd</th>'+
       '<th style="text-align:right">Valor</th><th>Entrega</th></tr></thead><tbody>'+
@@ -1374,7 +1400,7 @@ async function abrirFicha(){
       }).join("")+'</tbody></table></div>' : '', 'Nada em aberto.');
 
   /* ---- oportunidades ---- */
-  h += secaoFicha('secOportunidades', 'Oportunidades', ops.length, ops.map(function(x){
+  hE += secaoFicha('secOportunidades', 'Oportunidades', ops.length, ops.map(function(x){
     var fechada = x.etapa.indexOf('fechado') === 0;
     return '<div class="card" style="--u:'+(x.etapa==='fechado_ganho'?'#3E7C45':
             x.etapa==='fechado_perdido'?'#C63A3A':'#B8862B')+'">'+
@@ -1389,7 +1415,7 @@ async function abrirFicha(){
   /* ---- propostas ---- */
   var STATUS_ROTULO = {rascunho:'Rascunho', enviada:'Enviada', aceita:'Aceita', recusada:'Recusada', expirada:'Expirada'};
   var STATUS_COR = {rascunho:'#7A6A57', enviada:'#B8862B', aceita:'#3E7C45', recusada:'#C63A3A', expirada:'#C63A3A'};
-  h += secaoFicha('secPropostas', 'Propostas', cotacoes.length, cotacoes.map(function(x){
+  hE += secaoFicha('secPropostas', 'Propostas', cotacoes.length, cotacoes.map(function(x){
     var itens = itensPorCotacao[x.id] || [];
     var contato = cts.filter(function(c){ return c.id === x.contato_id; })[0];
     return '<div class="card" style="--u:'+(STATUS_COR[x.status]||'#DCD2C4')+'">'+
@@ -1404,11 +1430,11 @@ async function abrirFicha(){
         inte(itens.length)+' item(ns)'+
       '</div>'+
       '<div style="margin-top:8px">'+
-        '<button class="s" style="min-height:32px;padding:5px 11px;font-size:12px" onclick="baixarPdfProposta(\''+x.id+'\')">📄 Baixar PDF</button>'+
+        '<button class="s mini" onclick="baixarPdfProposta(\''+x.id+'\')">📄 Baixar PDF</button>'+
       '</div></div>';
   }).join(""), 'Nenhuma proposta ainda.');
 
-  h += '<div class="card" style="--u:#3E7C45"><h3 style="font-size:15px">Nova proposta</h3>'+
+  hE += '<div class="card" style="--u:#3E7C45"><h3 style="font-size:15px">Nova proposta</h3>'+
     '<label for="prContato">Contato (opcional)</label><select id="prContato">'+
       '<option value="">— sem contato específico —</option>'+
       cts.map(function(c){ return '<option value="'+c.id+'">'+esc(c.nome)+(c.cargo?' · '+esc(c.cargo):'')+'</option>'; }).join("")+
@@ -1428,7 +1454,7 @@ async function abrirFicha(){
     '<button class="b" style="margin-top:12px" onclick="salvarProposta(\''+cid+'\')">Salvar proposta</button></div>';
 
   /* ---- compras mês a mês ---- */
-  h += secaoFicha('secCompras', 'Compras (mês a mês)', mesesOrdenados.length,
+  hE += secaoFicha('secCompras', 'Compras (mês a mês)', mesesOrdenados.length,
     mesesOrdenados.length ? '<div class="tw"><table class="cards"><thead><tr>'+
       '<th>Mês</th><th style="text-align:right">Valor</th><th style="text-align:right">Notas</th><th>Principais produtos</th>'+
       '</tr></thead><tbody>'+
@@ -1449,7 +1475,7 @@ async function abrirFicha(){
 
   /* ---- histórico de contato (exclui as notas, que ganham seção própria) ---- */
   var historico = ints.filter(function(x){ return x.tipo !== 'outro'; });
-  h += secaoFicha(null, 'Histórico de contato', historico.length, historico.slice(0,15).map(function(x){
+  hE += secaoFicha(null, 'Histórico de contato', historico.length, historico.slice(0,15).map(function(x){
     var pend = x.proximo_passo && !x.concluido;
     return '<div class="card" style="--u:'+(pend?'#D9772B':'#DCD2C4')+'">'+
       '<div style="font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--tinta2);font-weight:700">'+
@@ -1461,29 +1487,29 @@ async function abrirFicha(){
   }).join(""), 'Nenhuma interação registrada.');
 
   /* ---- documentos ---- */
-  h += secaoFicha('secDocumentos', 'Documentos', docs.length, docs.map(function(x){
+  hD += secaoFicha('secDocumentos', 'Documentos', docs.length, docs.map(function(x){
     return '<div class="card" style="--u:#22303A;display:flex;justify-content:space-between;align-items:center;gap:8px">'+
       '<div><b>'+esc(x.nome)+'</b><div style="font-size:12.5px;color:var(--tinta2)">'+dataBR(x.criado_em)+'</div></div>'+
-      '<button class="s" style="min-height:32px;padding:5px 11px;font-size:12px" onclick="baixarDocumento(\''+esc(x.storage_path)+'\')">Abrir</button>'+
+      '<button class="s mini" onclick="baixarDocumento(\''+esc(x.storage_path)+'\')">Abrir</button>'+
       '</div>';
   }).join(""), 'Nenhum documento anexado.');
-  h += '<div class="card" style="--u:#22303A"><h3 style="font-size:15px">Anexar documento</h3>'+
+  hD += '<div class="card" style="--u:#22303A"><h3 style="font-size:15px">Anexar documento</h3>'+
     '<input type="file" id="docArquivo" style="margin-top:6px">'+
     '<button class="b" style="margin-top:12px" onclick="enviarDocumento(\''+cid+'\')">Anexar</button></div>';
 
   /* ---- notas ---- */
-  h += secaoFicha('secNotas', 'Notas', notas.length, notas.map(function(x){
+  hD += secaoFicha('secNotas', 'Notas', notas.length, notas.map(function(x){
     return '<div class="card" style="--u:#C63A3A">'+
       '<div style="font-size:12px;color:var(--tinta2)">'+dataBR(x.data_interacao)+'</div>'+
       '<div style="margin-top:3px">'+esc(x.resumo)+'</div></div>';
   }).join(""), 'Nenhuma nota ainda.');
-  h += '<div class="card" style="--u:#C63A3A"><h3 style="font-size:15px">Nova nota</h3>'+
+  hD += '<div class="card" style="--u:#C63A3A"><h3 style="font-size:15px">Nova nota</h3>'+
     '<label for="notaTexto">Anotação</label><input id="notaTexto" placeholder="Ex.: prefere ser contatado à tarde">'+
     '<button class="b" style="margin-top:12px" onclick="salvarNota(\''+cid+'\')">Salvar nota</button></div>';
 
   /* ---- notas fiscais (clicável — expande os itens da nota) ---- */
   if(nfs.length){
-    h += secaoFicha(null, 'Notas fiscais', nfs.length,
+    hE += secaoFicha(null, 'Notas fiscais', nfs.length,
       nfs.map(function(n){
         var itens = itensPorNf[n.id] || [];
         return '<div class="card" style="--u:#DCD2C4;padding:0;overflow:hidden">'+
@@ -1510,6 +1536,8 @@ async function abrirFicha(){
           '</div></div>';
       }).join(""), '');
   }
+
+  h += '<div class="ficha-cols"><div>'+hE+'</div><div>'+hD+'</div></div>';
 
   h += '<div class="conta" style="margin-top:18px;white-space:normal">'+
     '<b>Como ler:</b> "Em carteira" = pedido lançado e ainda não baixado (fonte: carteira LBR). '+
@@ -1662,7 +1690,7 @@ function renderItensProposta(){
       '</div>'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">'+
         '<span style="font-size:13px;color:var(--tinta2)">Subtotal: <b>R$ '+brl(totalItemProposta(it))+'</b></span>'+
-        '<button class="s" style="min-height:30px;padding:4px 10px;font-size:12px" onclick="removerItemProposta('+idx+')">Remover</button>'+
+        '<button class="s mini" onclick="removerItemProposta('+idx+')">Remover</button>'+
       '</div></div>';
   }).join("") : '<div class="vazio" style="padding:14px">Nenhum item ainda — clique em "Adicionar item".</div>';
   recalcularTotalProposta();
