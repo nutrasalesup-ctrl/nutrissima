@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="app-version" content="2026-08-21T11:23Z">
+<meta name="app-version" content="2026-08-21T13:42Z">
 <title>Nutríssima — Comercial</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -1461,21 +1461,21 @@ async function abrirFicha(){
        '<span class="p">R$ '+brl(vTotal - vAberto)+'</span> já baixado &nbsp;=&nbsp; '+
        '<b>R$ '+brl(vAberto)+' em aberto</b></div>';
 
-  /* ---- contatos (com botão WhatsApp) ---- */
+  /* ---- contatos (inserir e editar direto na ficha, além de WhatsApp/E-mail) ---- */
   var hE = '', hD = '';
-  hD += secaoFicha('secContatos', 'Contatos', cts.length, cts.map(function(x){
-    return '<div class="card" style="--u:'+(x.decisor?'#B8862B':'#DCD2C4')+'">'+
-      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">'+
-        '<div><b>'+esc(x.nome)+'</b>'+(x.decisor?' <span class="tag" style="background:#B8862B">decisor</span>':'')+
-        '<div style="font-size:13.5px;color:var(--tinta2);margin-top:4px">'+
-          (x.cargo?esc(x.cargo)+' · ':'')+
-          (x.telefone?'<span class="mono">'+esc(x.telefone)+'</span> · ':'')+
-          esc(x.email||'')+'</div></div>'+
-        '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
-          '<button class="s mini" onclick="abrirWhatsApp(\''+esc(x.telefone||'')+'\')">💬 WhatsApp</button>'+
-          (x.email?'<button class="s mini" onclick="window.location.href=\'mailto:'+esc(x.email)+'\'">✉️ E-mail</button>':'')+
-        '</div></div></div>';
-  }).join(""), 'Nenhum contato cadastrado.');
+  hD += secaoFicha('secContatos', 'Contatos', cts.length,
+    cts.map(function(x){ return notaContatoFicha(x); }).join(""), 'Nenhum contato cadastrado.');
+  hD += '<div class="card" style="--u:#7A6A57"><h3 style="font-size:15px">Novo contato</h3>'+
+    '<label for="ncNome">Nome</label><input id="ncNome" placeholder="Nome do contato">'+
+    '<div style="display:flex;gap:8px">'+
+      '<div style="flex:1"><label for="ncCargo">Cargo (opcional)</label><input id="ncCargo" placeholder="Ex.: Comprador"></div>'+
+      '<div style="flex:1"><label for="ncTelefone">Telefone (opcional)</label><input id="ncTelefone" placeholder="(00) 00000-0000"></div>'+
+    '</div>'+
+    '<label for="ncEmail">E-mail (opcional)</label><input id="ncEmail" type="email">'+
+    '<label style="display:flex;align-items:center;gap:8px;margin-top:14px;text-transform:none;letter-spacing:0;font-size:14px;font-weight:500">'+
+      '<input type="checkbox" id="ncDecisor" style="width:auto"> É decisor de compra'+
+    '</label>'+
+    '<button class="b" style="margin-top:12px" onclick="salvarNovoContatoFicha(\''+cid+'\')">Cadastrar</button></div>';
 
   /* ---- próxima ação ---- */
   hD += secaoFicha('secProxima', 'Próxima ação', pendencias.length,
@@ -1721,6 +1721,78 @@ async function salvarNota(cid){
   });
   if(r.error){ msg("Não consegui salvar a nota: "+r.error.message, true); return; }
   msg("Nota salva.");
+  abrirFicha();
+}
+
+/* ---- contatos: inserir e editar direto na ficha (mesmas ações de Clientes) ---- */
+function notaContatoFicha(x){
+  return '<div class="card" id="fiContato_'+x.id+'" style="--u:'+(x.decisor?'#B8862B':'#DCD2C4')+'">'+
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">'+
+      '<div><b>'+esc(x.nome)+'</b>'+(x.decisor?' <span class="tag" style="background:#B8862B">decisor</span>':'')+
+      '<div style="font-size:13.5px;color:var(--tinta2);margin-top:4px">'+
+        (x.cargo?esc(x.cargo)+' · ':'')+
+        (x.telefone?'<span class="mono">'+esc(x.telefone)+'</span> · ':'')+
+        esc(x.email||'')+'</div></div>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+        '<button class="s mini" onclick="abrirWhatsApp(\''+esc(x.telefone||'')+'\')">💬 WhatsApp</button>'+
+        (x.email?'<button class="s mini" onclick="window.location.href=\'mailto:'+esc(x.email)+'\'">✉️ E-mail</button>':'')+
+        '<button class="s mini" onclick="editarContatoFicha(\''+x.id+'\')">✏️ Editar</button>'+
+      '</div></div></div>';
+}
+function editarContatoFicha(id){
+  var x = (ST.cache.fichaContatos||[]).filter(function(c){ return c.id===id; })[0];
+  var alvo = $("fiContato_"+id);
+  if(!x || !alvo) return;
+  alvo.outerHTML = '<div class="card" id="fiContato_'+id+'" style="--u:#B8862B">'+
+    '<label for="ecNome_'+id+'">Nome</label><input id="ecNome_'+id+'" value="'+esc(x.nome||"")+'">'+
+    '<div style="display:flex;gap:8px">'+
+      '<div style="flex:1"><label for="ecCargo_'+id+'">Cargo</label><input id="ecCargo_'+id+'" value="'+esc(x.cargo||"")+'"></div>'+
+      '<div style="flex:1"><label for="ecTelefone_'+id+'">Telefone</label><input id="ecTelefone_'+id+'" value="'+esc(x.telefone||"")+'"></div>'+
+    '</div>'+
+    '<label for="ecEmail_'+id+'">E-mail</label><input id="ecEmail_'+id+'" type="email" value="'+esc(x.email||"")+'">'+
+    '<label style="display:flex;align-items:center;gap:8px;margin-top:14px;text-transform:none;letter-spacing:0;font-size:14px;font-weight:500">'+
+      '<input type="checkbox" id="ecDecisor_'+id+'" style="width:auto"'+(x.decisor?' checked':'')+'> É decisor de compra'+
+    '</label>'+
+    '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'+
+      '<button class="b" onclick="salvarEdicaoContatoFicha(\''+id+'\')">Salvar</button>'+
+      '<button class="s" onclick="inativarContatoFicha(\''+id+'\')">🗑️ Inativar</button>'+
+      '<button class="s" onclick="abrirFicha()">Cancelar</button>'+
+    '</div></div>';
+}
+async function salvarEdicaoContatoFicha(id){
+  var nome = $("ecNome_"+id).value.trim();
+  if(!nome) return msg("O nome é obrigatório", true);
+  var r = await sb.schema("crm").from("contatos").update({
+    nome: nome,
+    cargo: $("ecCargo_"+id).value.trim() || null,
+    telefone: $("ecTelefone_"+id).value.trim() || null,
+    email: $("ecEmail_"+id).value.trim() || null,
+    decisor: $("ecDecisor_"+id).checked
+  }).eq("id", id);
+  if(r.error) return msg("Não deu para salvar: "+r.error.message, true);
+  msg("Contato atualizado");
+  abrirFicha();
+}
+async function inativarContatoFicha(id){
+  var r = await sb.schema("crm").from("contatos").update({ativo:false}).eq("id", id);
+  if(r.error) return msg("Não deu para inativar: "+r.error.message, true);
+  msg("Contato inativado");
+  abrirFicha();
+}
+async function salvarNovoContatoFicha(cid){
+  var nome = $("ncNome").value.trim();
+  if(!nome) return msg("O nome do contato é obrigatório", true);
+  var r = await sb.schema("crm").from("contatos").insert({
+    cliente_id: cid,
+    nome: nome,
+    cargo: $("ncCargo").value.trim() || null,
+    telefone: $("ncTelefone").value.trim() || null,
+    email: $("ncEmail").value.trim() || null,
+    decisor: $("ncDecisor").checked,
+    criado_por: ST.email
+  });
+  if(r.error) return msg("Não deu para cadastrar: "+r.error.message, true);
+  msg("Contato cadastrado");
   abrirFicha();
 }
 
