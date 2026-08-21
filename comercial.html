@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="app-version" content="2026-08-21T10:05Z">
+<meta name="app-version" content="2026-08-21T11:23Z">
 <title>Nutríssima — Comercial</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -1055,7 +1055,8 @@ function formCliente(idEdicao){
     '<div style="display:flex;gap:8px;margin-top:14px">'+
       '<button class="b" onclick="salvarCliente()">'+(c?"Salvar alterações":"Cadastrar")+'</button>'+
       (c?'<button onclick="telaClientes()">Cancelar edição</button>':"")+
-    '</div></div>';
+    '</div></div>'+
+    (c ? blocoContatosCliente(c.id) : '');
 }
 async function salvarCliente(){
   var id = $("clId").value.trim();
@@ -1087,16 +1088,25 @@ async function salvarCliente(){
     observacao: $("clObs").value.trim() || null
   };
 
-  var r;
+  var r, novoId = null;
   if(id){
     r = await sb.from("clientes").update(dados).eq("id", id);
   } else {
     dados.criado_por = ST.email;
-    r = await sb.from("clientes").insert(dados);
+    r = await sb.from("clientes").insert(dados).select("id").single();
+    novoId = r.data && r.data.id;
   }
   if(r.error) return msg("Não deu para salvar: "+r.error.message, true);
-  msg(id ? "Cliente atualizado" : "Cliente cadastrado");
-  telaClientes();
+  if(novoId){
+    // cliente novo: já entra na edição dele, com o quadro de contatos pronto —
+    // cadastro de cliente e de contato ficam na mesma tela, sem trocar de aba
+    msg("Cliente cadastrado — adicione os contatos abaixo, se quiser");
+    await telaClientes();
+    editarCliente(novoId);
+  } else {
+    msg("Cliente atualizado");
+    telaClientes();
+  }
 }
 function editarCliente(id){
   pinta(
@@ -1104,6 +1114,7 @@ function editarCliente(id){
     barraFiltrosClientes()+
     '<div id="lista" style="margin-top:12px"></div>');
   filtraClientes();
+  carregarContatosCliente(id);
   var el = $("clRazao"); if(el) el.scrollIntoView({behavior:"smooth", block:"start"});
 }
 function filtraClientes(){
@@ -1137,6 +1148,81 @@ function filtraClientes(){
         '<td class="mono">'+dataBR(c._ultima)+'</td>'+
         '<td><button onclick="editarCliente(\''+c.id+'\')">✏️ editar</button></td></tr>';
     }).join("")+'</tbody></table></div>';
+}
+
+/* ---- Contatos do cliente, cadastrados direto aqui na tela Clientes ----     */
+/* ---- (centralizado — não precisa ir na aba Contatos), em quadro-grid,      */
+/* ---- mesmo modelo visual do "Quadro do dia" da Agenda (.quadro-grid/.nota) */
+var CONTATO_COR_QUADRO = {
+  decisor: {tarja:"#B8862B", fundo:"#F5EAD4", ic:"⭐"},
+  padrao:  {tarja:"#7A6A57", fundo:"#EFE9E1", ic:"👤"}
+};
+function notaContatoCliente(x){
+  var cor = x.decisor ? CONTATO_COR_QUADRO.decisor : CONTATO_COR_QUADRO.padrao;
+  var acoes = '';
+  if(x.telefone) acoes += '<button onclick="abrirWhatsApp(\''+esc(x.telefone)+'\')">💬 WhatsApp</button>';
+  if(x.email) acoes += '<button onclick="window.location.href=\'mailto:'+esc(x.email)+'\'">✉️ E-mail</button>';
+  acoes += '<button onclick="inativarContatoDoCliente(\''+x.id+'\',\''+x.cliente_id+'\')">🗑️ Inativar</button>';
+  return '<div class="nota" style="background:'+cor.fundo+';border-left:5px solid '+cor.tarja+'">'+
+    '<div class="tipo">'+cor.ic+' '+(x.decisor?'Decisor':'Contato')+'</div>'+
+    '<div class="cliente">'+esc(x.nome)+'</div>'+
+    '<div class="passo">'+(x.cargo?esc(x.cargo):'sem cargo informado')+'</div>'+
+    (x.telefone||x.email ? '<div class="contato">'+[x.telefone,x.email].filter(Boolean).map(esc).join(' · ')+'</div>' : '')+
+    '<div class="acoes">'+acoes+'</div>'+
+    '</div>';
+}
+function blocoContatosCliente(clienteId){
+  return '<div class="card" style="--u:#B8862B;margin-top:12px"><h3>Contatos deste cliente</h3>'+
+    '<div id="clContatosGrid"><div class="vazio">Carregando…</div></div>'+
+    '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--linha)">'+
+      '<label for="ccNome">Nome do novo contato</label><input id="ccNome" placeholder="Nome">'+
+      '<div style="display:flex;gap:8px">'+
+        '<div style="flex:1"><label for="ccCargo">Cargo (opcional)</label><input id="ccCargo" placeholder="Ex.: Comprador"></div>'+
+        '<div style="flex:1"><label for="ccTelefone">Telefone (opcional)</label><input id="ccTelefone" placeholder="(00) 00000-0000"></div>'+
+      '</div>'+
+      '<label for="ccEmail">E-mail (opcional)</label><input id="ccEmail" type="email">'+
+      '<label style="display:flex;align-items:center;gap:8px;margin-top:14px;text-transform:none;letter-spacing:0;font-size:14px;font-weight:500">'+
+        '<input type="checkbox" id="ccDecisor" style="width:auto"> É decisor de compra'+
+      '</label>'+
+      '<button class="b" style="margin-top:14px" onclick="salvarContatoDoCliente(\''+clienteId+'\')">+ Adicionar contato</button>'+
+    '</div></div>';
+}
+async function carregarContatosCliente(clienteId){
+  var grid = $("clContatosGrid");
+  if(!grid) return;
+  var r = await sb.schema("crm").from("contatos")
+    .select("id,cliente_id,nome,cargo,telefone,email,decisor")
+    .eq("cliente_id", clienteId).eq("ativo", true)
+    .order("decisor", {ascending:false}).order("nome");
+  if(r.error){ grid.innerHTML = '<div class="vazio">Não consegui ler os contatos: '+esc(r.error.message)+'</div>'; return; }
+  var L = r.data || [];
+  grid.innerHTML = L.length
+    ? '<div class="quadro-grid">'+L.map(notaContatoCliente).join("")+'</div>'
+    : '<div class="vazio">Nenhum contato cadastrado ainda.</div>';
+}
+async function salvarContatoDoCliente(clienteId){
+  var nome = $("ccNome").value.trim();
+  if(!nome) return msg("O nome do contato é obrigatório", true);
+  var r = await sb.schema("crm").from("contatos").insert({
+    cliente_id: clienteId,
+    nome: nome,
+    cargo: $("ccCargo").value.trim() || null,
+    telefone: $("ccTelefone").value.trim() || null,
+    email: $("ccEmail").value.trim() || null,
+    decisor: $("ccDecisor").checked,
+    criado_por: ST.email
+  });
+  if(r.error) return msg("Não deu para cadastrar o contato: "+r.error.message, true);
+  msg("Contato cadastrado");
+  $("ccNome").value=""; $("ccCargo").value=""; $("ccTelefone").value="";
+  $("ccEmail").value=""; $("ccDecisor").checked=false;
+  carregarContatosCliente(clienteId);
+}
+async function inativarContatoDoCliente(id, clienteId){
+  var r = await sb.schema("crm").from("contatos").update({ativo:false}).eq("id", id);
+  if(r.error) return msg("Não deu para inativar: "+r.error.message, true);
+  msg("Contato inativado");
+  carregarContatosCliente(clienteId);
 }
 
 /* ================= CRM: ficha do cliente (360º) ================= */
