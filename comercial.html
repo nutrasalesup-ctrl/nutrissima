@@ -2809,11 +2809,6 @@ async function baixarPdfProposta(cotacaoId){
     var rT = await sb.schema("crm").from("tabelas_preco").select("nome,pedido_minimo").eq("id", cot.tabela_preco_id).single();
     tabela = rT.data || null;
   }
-  var repNome = null;
-  if(cot.representante_id){
-    var rR = await sb.from("representantes").select("nome").eq("id", cot.representante_id).single();
-    repNome = rR.data ? rR.data.nome : null;
-  }
 
   var vendidos = itens.filter(function(it){ return !it.bonificado; });
   var bonificados = itens.filter(function(it){ return it.bonificado; });
@@ -2867,9 +2862,7 @@ async function baixarPdfProposta(cotacaoId){
     ["Prazo de faturamento", "até "+(cot.prazo_faturamento_dias!=null?cot.prazo_faturamento_dias:7)+" dias após confirmação e liberação financeira"],
     ["Despacho", "dia seguinte ao faturamento"],
     ["Bonificação (degustação)", bonificados.length ? "R$ "+brl(totalBonif) : "nenhuma"],
-    ["Validade da proposta", cot.validade ? dataBR(cot.validade) : "—"],
-    ["Representante", repNome || "—"],
-    ["Comissão do representante", cot.comissao_pct_aplicada!=null ? (Number(cot.comissao_pct_aplicada))+"% após liquidação financeira" : "—"]
+    ["Validade da proposta", cot.validade ? dataBR(cot.validade) : "—"]
   ];
   doc.autoTable({
     startY: y, body: linhasCondicoes, theme: "plain",
