@@ -2512,6 +2512,8 @@ async function abrirNovaProposta(oportunidadeId, clienteId, tituloEsc){
   ST.cache.propOportunidadeId = oportunidadeId;
   ST.cache.propTitulo = tituloEsc;
   ST.cache.propItensAtual = [];
+  ST.cache.propCotacaoEditando = null;
+  ST.cache.propCotacaoAtual = null;
   ST.cache.propTabelas = tabelas;
   ST.cache.propTabelaItens = tabelaItens;
   ST.cache.propRepresentante = representante;
@@ -2534,30 +2536,32 @@ async function abrirNovaProposta(oportunidadeId, clienteId, tituloEsc){
         (x.contato_id && nomeContato[x.contato_id] ? '<div style="font-size:12.5px;color:var(--tinta2);margin-top:4px">pra '+esc(nomeContato[x.contato_id])+'</div>' : '')+
         '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'+
           '<button class="s mini" onclick="baixarPdfProposta(\''+x.id+'\')">📄 Baixar PDF</button>'+
+          (x.status==='rascunho' ? '<button class="s mini" onclick="editarProposta(\''+x.id+'\')">✏️ Editar</button>' : '')+
           (x.status==='rascunho' ? '<button class="s mini" onclick="enviarProposta(\''+x.id+'\')">📤 Marcar como enviada</button>' : '')+
         '</div>'+
       '</div>';
     }).join("") : '<div class="vazio">Nenhuma proposta ainda pra essa oportunidade.</div>')+
     '</div>';
 
-  h += htmlFormularioProposta();
+  h += '<div id="formPropostaContainer">'+htmlFormularioProposta()+'</div>';
 
   alvo.innerHTML = h;
   renderItensProposta();
 }
 function htmlFormularioProposta(){
   var representante = ST.cache.propRepresentante;
-  return '<div class="card" style="--u:#3E7C45"><h3 style="font-size:15px">Condições da proposta</h3>'+
+  var cot = ST.cache.propCotacaoAtual || null;
+  return '<div class="card" style="--u:#3E7C45"><h3 style="font-size:15px">Condições da proposta'+(cot?' — editando #'+cot.numero:'')+'</h3>'+
     (representante ? '<div style="font-size:12.5px;color:var(--tinta2);margin-top:-6px;margin-bottom:8px">Representante: <b>'+esc(representante.nome)+'</b> · comissão '+(Number(representante.comissao_pct)||0)+'%</div>'
                     : '<div style="font-size:12.5px;color:var(--tinta2);margin-top:-6px;margin-bottom:8px">Cliente sem representante vinculado.</div>')+
     '<label for="prContato">Contato (opcional)</label><select id="prContato">'+
       '<option value="">— sem contato específico —</option>'+
-      (ST.cache.propContatos||[]).map(function(c){ return '<option value="'+c.id+'">'+esc(c.nome)+(c.cargo?' · '+esc(c.cargo):'')+'</option>'; }).join("")+
+      (ST.cache.propContatos||[]).map(function(c){ return '<option value="'+c.id+'"'+(cot&&cot.contato_id===c.id?' selected':'')+'>'+esc(c.nome)+(c.cargo?' · '+esc(c.cargo):'')+'</option>'; }).join("")+
     '</select>'+
-    '<label for="prValidade">Válida até</label><input id="prValidade" type="date">'+
-    '<label for="prFrete">Frete</label><input id="prFrete" value="CIF">'+
-    '<label for="prPrazo">Prazo de faturamento (dias)</label><input id="prPrazo" type="number" min="0" value="7">'+
-    '<label for="prObs">Observações</label><input id="prObs" placeholder="Opcional">'+
+    '<label for="prValidade">Válida até</label><input id="prValidade" type="date" value="'+(cot&&cot.validade?cot.validade:"")+'">'+
+    '<label for="prFrete">Frete</label><input id="prFrete" value="'+esc(cot?(cot.frete||"CIF"):"CIF")+'">'+
+    '<label for="prPrazo">Prazo de faturamento (dias)</label><input id="prPrazo" type="number" min="0" value="'+(cot&&cot.prazo_faturamento_dias!=null?cot.prazo_faturamento_dias:7)+'">'+
+    '<label for="prObs">Observações</label><input id="prObs" placeholder="Opcional" value="'+(cot?esc(cot.observacoes||""):"")+'">'+
     '<div style="margin-top:14px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--tinta2)">Itens</div>'+
     '<div id="prItens" style="margin-top:8px"></div>'+
     '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'+
@@ -2873,6 +2877,33 @@ function renderItensProposta(){
   }).join("") : '<div class="vazio" style="padding:14px">Nenhum item ainda — clique em "Adicionar item".</div>';
   recalcularTotalProposta();
 }
+async function editarProposta(cotacaoId){
+  var rC = await sb.schema("crm").from("cotacoes").select("*").eq("id", cotacaoId).single();
+  if(rC.error || !rC.data){ msg("Não consegui carregar a proposta.", true); return; }
+  var cot = rC.data;
+  var rI = await sb.schema("crm").from("cotacao_itens")
+    .select("produto_acabado_id,descricao,qtd,valor_unitario,desconto_pct,bonificado")
+    .eq("cotacao_id", cotacaoId);
+
+  ST.cache.propItensAtual = (rI.data||[]).map(function(it){
+    return { produto_acabado_id: it.produto_acabado_id, descricao: it.descricao, qtd: Number(it.qtd)||0,
+      valor_unitario: Number(it.valor_unitario)||0, desconto_pct: Number(it.desconto_pct)||0, bonificado: !!it.bonificado };
+  });
+  ST.cache.propCotacaoEditando = cotacaoId;
+  ST.cache.propCotacaoAtual = cot;
+  ST.cache.propCondicaoSelecionada = cot.condicao_pagamento || "";
+  ST.cache.propMargemRegime = cot.regime_faturamento || "nutrissima_real";
+  ST.cache.propMargemImpostos = cot.impostos_pct != null ? cot.impostos_pct : (ST.cache.propMargemRegime==="nutrissima_real" ? 23 : "");
+  ST.cache.propMargemCmv = cot.cmv_pct != null ? cot.cmv_pct : 35;
+  ST.cache.margemDesbloqueada = false;
+
+  var alvoForm = $(ST.cache.propModoStandalone ? "npFormularioContainer" : "formPropostaContainer");
+  if(!alvoForm){ msg("Não achei onde abrir a edição — tenta pela tela Nova proposta.", true); return; }
+  alvoForm.innerHTML = htmlFormularioProposta();
+  renderItensProposta();
+  msg("Editando proposta #"+cot.numero+".");
+  alvoForm.scrollIntoView({behavior:"smooth", block:"start"});
+}
 async function salvarPropostaOportunidade(){
   var itens = ST.cache.propItensAtual || [];
   if(!itens.length){ msg("Adicione ao menos um item antes de salvar.", true); return; }
@@ -2881,7 +2912,7 @@ async function salvarPropostaOportunidade(){
   }
   var totalVendido = itens.filter(function(it){ return !it.bonificado; }).reduce(function(a,it){ return a + totalItemProposta(it); }, 0);
   var rep = ST.cache.propRepresentante;
-  var rC = await sb.schema("crm").from("cotacoes").insert({
+  var dadosCotacao = {
     cliente_id: ST.cache.propCliente.id,
     oportunidade_id: ST.cache.propOportunidadeId,
     contato_id: $("prContato").value || null,
@@ -2899,9 +2930,20 @@ async function salvarPropostaOportunidade(){
     observacoes: $("prObs").value.trim() || null,
     valor_total: totalVendido,
     status: "rascunho"
-  }).select("id").single();
-  if(rC.error){ msg("Não consegui salvar a proposta: "+rC.error.message, true); return; }
-  var cotacaoId = rC.data.id;
+  };
+
+  var cotacaoId, editando = !!ST.cache.propCotacaoEditando;
+  if(editando){
+    cotacaoId = ST.cache.propCotacaoEditando;
+    var rU = await sb.schema("crm").from("cotacoes").update(dadosCotacao).eq("id", cotacaoId);
+    if(rU.error){ msg("Não consegui atualizar a proposta: "+rU.error.message, true); return; }
+    var rD = await sb.schema("crm").from("cotacao_itens").delete().eq("cotacao_id", cotacaoId);
+    if(rD.error){ msg("Não consegui limpar os itens antigos: "+rD.error.message, true); return; }
+  } else {
+    var rC = await sb.schema("crm").from("cotacoes").insert(dadosCotacao).select("id").single();
+    if(rC.error){ msg("Não consegui salvar a proposta: "+rC.error.message, true); return; }
+    cotacaoId = rC.data.id;
+  }
   var linhas = itens.map(function(it){
     return {
       cotacao_id: cotacaoId, produto_acabado_id: it.produto_acabado_id, descricao: it.descricao,
@@ -2910,13 +2952,15 @@ async function salvarPropostaOportunidade(){
     };
   });
   var rI = await sb.schema("crm").from("cotacao_itens").insert(linhas);
-  if(rI.error){ msg("Proposta criada, mas os itens falharam: "+rI.error.message, true); return; }
-  msg("Proposta salva como rascunho.");
+  if(rI.error){ msg("Proposta salva, mas os itens falharam: "+rI.error.message, true); return; }
+  ST.cache.propCotacaoEditando = null;
+  msg(editando ? "Proposta atualizada." : "Proposta salva como rascunho.");
   if(ST.cache.propModoStandalone){
     var fAlvo = $("npFormularioContainer");
-    if(fAlvo) fAlvo.innerHTML = '<div class="card" style="--u:#3E7C45">Proposta salva.'+
+    if(fAlvo) fAlvo.innerHTML = '<div class="card" style="--u:#3E7C45">Proposta '+(editando?"atualizada":"salva")+'.'+
       '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'+
         '<button class="b" onclick="baixarPdfProposta(\''+cotacaoId+'\')">📄 Baixar PDF</button>'+
+        '<button class="s" onclick="editarProposta(\''+cotacaoId+'\')">✏️ Editar</button>'+
         '<button class="s" onclick="telaNovaProposta()">+ Nova proposta</button>'+
       '</div></div>';
     return;
@@ -3380,6 +3424,8 @@ async function telaNovaProposta(){
   ST.cache.propMargemRegime = undefined;
   ST.cache.propMargemImpostos = undefined;
   ST.cache.propMargemCmv = undefined;
+  ST.cache.propCotacaoEditando = null;
+  ST.cache.propCotacaoAtual = null;
   pinta('<div class="vazio">Carregando catálogo…</div>');
 
   var rFaixas = await sb.schema("crm").from("bonificacao_faixas")
@@ -3646,6 +3692,8 @@ async function confirmarOportunidadeProposta(){
   ST.cache.propRepresentante = representante;
   ST.cache.propNumCompras = (rNumCompras.data||[]).length;
   ST.cache.propCondicaoSelecionada = "";
+  ST.cache.propCotacaoEditando = null;
+  ST.cache.propCotacaoAtual = null;
 
   alvo.innerHTML = '<div class="card" style="--u:#3E7C45;font-size:13px">Proposta pra <b>'+esc(rCli.data.razao_social)+'</b> — oportunidade "'+esc(titulo)+'"</div>';
   ST.cache.npClienteResolvido = true;
