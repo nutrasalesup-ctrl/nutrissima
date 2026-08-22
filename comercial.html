@@ -464,6 +464,7 @@ var TELAS = {
   clientes:    { rotulo:"Clientes",       sub:"Cadastro e quanto cada um comprou", fn:telaClientes, etapa:"Clientes" },
   representantes:{ rotulo:"Representantes", sub:"Cadastro, comissão e ficha", fn:telaRepres, etapa:"Clientes" },
   liquidacao:  { rotulo:"Liquidação",     sub:"Baixa de recebimento por NF", fn:telaLiquidacao, etapa:"Pedido" },
+  customp:     { rotulo:"Custo de Matéria-Prima", sub:"Preço de insumo, compartilhado com Controladoria", fn:telaCustoMP, etapa:"Proposta" },
   tabelaspreco:{ rotulo:"Nova proposta", sub:"Monte pelo catálogo e envie o PDF", fn:telaNovaProposta, etapa:"Proposta" },
   importar:    { rotulo:"Importar NF-e",  sub:"Ler XML e alimentar o faturamento", fn:telaImportar, etapa:"Pedido" },
   pendencias:  { rotulo:"Pendências",     sub:"Códigos de NF sem produto cadastrado", fn:telaPendencias, etapa:"Pedido" },
@@ -510,6 +511,7 @@ var MENU = [
   ["clientes",     "🏢","#EAF3EA",""],
   ["representantes","🤝","#F3EAD8",""],
   ["liquidacao",   "💰","#E7F0E4",""],
+  ["customp",      "🧪","#F0E4D8",""],
   ["tabelaspreco", "🧾","#F6ECD6",""],
   ["importar",     "📥","#E7F0E4",""],
   ["pendencias",   "⚠️","#FBEAEA",""],
@@ -3701,6 +3703,58 @@ async function confirmarOportunidadeProposta(){
   $("npFormularioContainer").innerHTML = htmlFormularioProposta();
   renderItensProposta();
   $("npFormularioContainer").scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+/* ================= custo de matéria-prima (compartilhado com controladoria) ================= */
+async function telaCustoMP(){
+  pinta('<div class="vazio">Carregando…</div>');
+  var rItens = await sb.from("itens").select("id,nome,categoria,unidade").order("nome");
+  var itens = rItens.data || [];
+  var rPrecos = await sb.from("item_precos").select("item_id,preco_unitario,vigencia_inicio,origem").eq("ativo", true);
+  var precoAtual = {};
+  (rPrecos.data||[]).forEach(function(p){ precoAtual[p.item_id] = p; });
+  ST.cache.mpItens = itens;
+  ST.cache.mpPrecoAtual = precoAtual;
+
+  var h = '<div class="card" style="--u:#22303A">'+
+    '<div style="font-size:13px;color:var(--tinta2)">Preço de compra da matéria-prima — compartilhado com a Controladoria (mesma fonte, sem cópia). Usado hoje pra simular margem na proposta; mais pra frente também vira base do CMV real do DRE.</div>'+
+    '<label for="mpBusca">Buscar item</label><input id="mpBusca" placeholder="Nome do item…" oninput="renderListaCustoMP()">'+
+    '</div>'+
+    '<div id="mpLista" style="margin-top:10px"></div>';
+  pinta(h);
+  renderListaCustoMP();
+}
+function renderListaCustoMP(){
+  var alvo = $("mpLista"); if(!alvo) return;
+  var busca = ($("mpBusca")?$("mpBusca").value:"").toLowerCase();
+  var lista = (ST.cache.mpItens||[]).filter(function(i){ return i.nome.toLowerCase().indexOf(busca) >= 0; });
+  var precoAtual = ST.cache.mpPrecoAtual || {};
+  alvo.innerHTML = lista.length ? lista.map(function(i){
+    var p = precoAtual[i.id];
+    return '<div style="display:flex;align-items:center;gap:10px;border:1px solid var(--linha);border-radius:12px;padding:10px 12px;margin-bottom:8px">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:14px;font-weight:600">'+esc(i.nome)+'</div>'+
+        '<div style="font-size:12px;color:var(--tinta2);margin-top:2px">'+(i.categoria?esc(i.categoria)+' · ':'')+(i.unidade?esc(i.unidade)+' · ':'')+
+          (p ? 'R$ '+brl(p.preco_unitario)+' desde '+dataBR(p.vigencia_inicio)+(p.origem==='manual'?' (manual)':' (compra)') : 'sem preço cadastrado')+
+        '</div>'+
+      '</div>'+
+      '<input type="number" step="0.01" placeholder="R$" id="mpNovo_'+i.id+'" style="width:90px">'+
+      '<button class="s mini" onclick="salvarPrecoItem(\''+i.id+'\')">Salvar</button>'+
+    '</div>';
+  }).join("") : '<div class="vazio">Nenhum item encontrado.</div>';
+}
+async function salvarPrecoItem(itemId){
+  var input = $("mpNovo_"+itemId);
+  var preco = Number(input.value);
+  if(!input.value || isNaN(preco) || preco < 0){ msg("Digite um preço válido.", true); return; }
+  var r = await sb.rpc("definir_preco_item", { p_item_id: itemId, p_preco: preco, p_responsavel: ST.email, p_origem: "manual" });
+  if(r.error){ msg("Não consegui salvar: "+r.error.message, true); return; }
+  msg("Preço atualizado.");
+  var rPrecos = await sb.from("item_precos").select("item_id,preco_unitario,vigencia_inicio,origem").eq("ativo", true);
+  var precoAtual = {};
+  (rPrecos.data||[]).forEach(function(p){ precoAtual[p.item_id] = p; });
+  ST.cache.mpPrecoAtual = precoAtual;
+  renderListaCustoMP();
 }
 
 /* ================= importar ================= */
