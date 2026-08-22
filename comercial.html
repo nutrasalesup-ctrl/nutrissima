@@ -464,6 +464,7 @@ var TELAS = {
   clientes:    { rotulo:"Clientes",       sub:"Cadastro e quanto cada um comprou", fn:telaClientes, etapa:"Clientes" },
   representantes:{ rotulo:"Representantes", sub:"Cadastro, comissão e ficha", fn:telaRepres, etapa:"Clientes" },
   liquidacao:  { rotulo:"Liquidação",     sub:"Baixa de recebimento por NF", fn:telaLiquidacao, etapa:"Pedido" },
+  tabelaspreco:{ rotulo:"Tabelas e Políticas", sub:"Preços por faixa e regras comerciais", fn:telaTabelasPreco, etapa:"Proposta" },
   importar:    { rotulo:"Importar NF-e",  sub:"Ler XML e alimentar o faturamento", fn:telaImportar, etapa:"Pedido" },
   pendencias:  { rotulo:"Pendências",     sub:"Códigos de NF sem produto cadastrado", fn:telaPendencias, etapa:"Pedido" },
   controladoria:{ rotulo:"Controladoria", sub:"DRE e apuração fiscal (e-commerce)", fn:telaControladoria, etapa:"" },
@@ -509,6 +510,7 @@ var MENU = [
   ["clientes",     "🏢","#EAF3EA",""],
   ["representantes","🤝","#F3EAD8",""],
   ["liquidacao",   "💰","#E7F0E4",""],
+  ["tabelaspreco", "📋","#F6ECD6",""],
   ["importar",     "📥","#E7F0E4",""],
   ["pendencias",   "⚠️","#FBEAEA",""],
   ["controladoria","🧮","#EFE0D8",""],
@@ -3213,6 +3215,77 @@ async function salvarPlanoParcelas(){
   msg("Parcelas gravadas.");
   abrirDetalheLiquidacao(ST.cache.liqNfAtual.id);
   buscarLiquidacao();
+}
+
+/* ================= tabelas e políticas (consulta) ================= */
+async function telaTabelasPreco(){
+  pinta('<div class="vazio">Carregando…</div>');
+
+  var rTab = await sb.schema("crm").from("tabelas_preco")
+    .select("id,nome,pedido_minimo,versao,vigencia_inicio,ativa").eq("ativa", true).order("pedido_minimo");
+  var tabelas = rTab.data || [];
+
+  var rItens = [];
+  if(tabelas.length){
+    var r = await sb.schema("crm").from("tabela_preco_itens")
+      .select("tabela_id,produto_acabado_id,codigo_origem,descricao_origem,preco_unitario,preco_sugerido")
+      .in("tabela_id", tabelas.map(function(t){return t.id;}));
+    rItens = r.data || [];
+  }
+  var nomeProduto = {};
+  var idsProdutos = Array.from(new Set(rItens.map(function(i){return i.produto_acabado_id;}).filter(Boolean)));
+  if(idsProdutos.length){
+    var rP = await sb.from("produto_acabado").select("id,nome").in("id", idsProdutos);
+    (rP.data||[]).forEach(function(p){ nomeProduto[p.id] = p.nome; });
+  }
+
+  var h = '<div class="card" style="--u:#22303A"><h3 style="font-size:15px">Como funciona</h3>'+
+    '<div style="font-size:13px;color:var(--tinta2)">A tabela é escolhida automaticamente pelo valor do pedido — quanto maior o pedido, melhor o preço unitário. Isso já acontece sozinho dentro de "Nova proposta"; esta tela é só pra consultar os valores e as regras sem precisar abrir uma proposta.</div></div>';
+
+  h += tabelas.map(function(t){
+    var itensDaTabela = rItens.filter(function(i){ return i.tabela_id === t.id; })
+      .sort(function(a,b){
+        var na = nomeProduto[a.produto_acabado_id] || a.descricao_origem || "";
+        var nb = nomeProduto[b.produto_acabado_id] || b.descricao_origem || "";
+        return na.localeCompare(nb);
+      });
+    return '<div class="card" style="--u:#3E7C45;margin-top:12px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px">'+
+        '<h3 style="font-size:15px;margin:0">'+esc(t.nome)+'</h3>'+
+        '<span style="font-size:12px;color:var(--tinta2)">pedido mínimo R$ '+brl(t.pedido_minimo)+' · versão '+t.versao+' · vigente desde '+dataBR(t.vigencia_inicio)+'</span>'+
+      '</div>'+
+      '<div class="tw" style="margin-top:8px"><table><thead><tr><th>Produto</th>'+
+        '<th style="text-align:right">Preço unitário</th><th style="text-align:right">Preço sugerido ao consumidor</th></tr></thead><tbody>'+
+        itensDaTabela.map(function(i){
+          var nome = nomeProduto[i.produto_acabado_id];
+          return '<tr><td>'+(nome ? esc(nome) : '<span style="color:var(--tinta2)">'+esc(i.descricao_origem||"—")+' <span class="tag" style="background:#7A6A57">sem SKU vinculado</span></span>')+'</td>'+
+            '<td class="n mono">R$ '+brl(i.preco_unitario)+'</td>'+
+            '<td class="n mono">'+(i.preco_sugerido!=null ? 'R$ '+brl(i.preco_sugerido) : "—")+'</td></tr>';
+        }).join("")+
+      '</tbody></table></div></div>';
+  }).join("");
+
+  h += '<div class="card" style="--u:#B8862B;margin-top:12px"><h3 style="font-size:15px">Condições de pagamento por histórico</h3>'+
+    '<div class="tw"><table><thead><tr><th>Cenário</th><th>Condição de pagamento</th></tr></thead><tbody>'+
+      '<tr><td>1ª, 2ª ou 3ª compra do cliente</td><td>À vista ou cartão em até 3x sem juros</td></tr>'+
+      '<tr><td>A partir da 4ª compra, pedido até R$ 1.000</td><td>Boleto 14 ou 21 dias, se crédito aprovado</td></tr>'+
+      '<tr><td>A partir da 4ª compra, de R$ 1.000,01 a R$ 3.000</td><td>Boleto 14/21/28/35 dias, se crédito aprovado</td></tr>'+
+      '<tr><td>A partir da 4ª compra, acima de R$ 3.000</td><td>Boleto 14/21/28/35/42 dias, se crédito aprovado</td></tr>'+
+    '</tbody></table></div>'+
+    '<div style="font-size:12px;color:var(--tinta2);margin-top:8px">A tabela de preço não muda com a condição de pagamento — ela é definida só pelo valor do pedido. Boleto sempre depende da situação de crédito do cliente estar "aprovado" (ver Ficha do cliente).</div>'+
+  '</div>';
+
+  h += '<div class="card" style="--u:#D9772B;margin-top:12px"><h3 style="font-size:15px">Regras fixas de toda proposta</h3>'+
+    '<div class="tw"><table><tbody>'+
+      '<tr><td>Frete</td><td>CIF (por conta da Nutríssima)</td></tr>'+
+      '<tr><td>Prazo de faturamento</td><td>até o prazo combinado na proposta, após confirmação e liberação financeira</td></tr>'+
+      '<tr><td>Despacho</td><td>dia seguinte ao faturamento</td></tr>'+
+      '<tr><td>Bonificação (degustação)</td><td>até 3% do valor vendido no pedido, nos itens permitidos</td></tr>'+
+      '<tr><td>Comissão do representante</td><td>percentual cadastrado por representante (padrão 5%), sobre o valor efetivamente liquidado — ver tela Liquidação</td></tr>'+
+      '<tr><td>Bloqueio de pedido mínimo</td><td>proposta abaixo de R$ '+brl(tabelas.length?tabelas[0].pedido_minimo:1000)+' não pode ser marcada como enviada (rascunho continua livre)</td></tr>'+
+    '</tbody></table></div></div>';
+
+  pinta(h);
 }
 
 /* ================= importar ================= */
