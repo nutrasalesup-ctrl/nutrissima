@@ -464,7 +464,6 @@ var TELAS = {
   clientes:    { rotulo:"Clientes",       sub:"Cadastro e quanto cada um comprou", fn:telaClientes, etapa:"Clientes" },
   representantes:{ rotulo:"Representantes", sub:"Cadastro, comissão e ficha", fn:telaRepres, etapa:"Clientes" },
   liquidacao:  { rotulo:"Liquidação",     sub:"Baixa de recebimento por NF", fn:telaLiquidacao, etapa:"Pedido" },
-  customp:     { rotulo:"Custo de Matéria-Prima", sub:"Preço de insumo, compartilhado com Controladoria", fn:telaCustoMP, etapa:"Proposta" },
   tabelaspreco:{ rotulo:"Nova proposta", sub:"Monte pelo catálogo e envie o PDF", fn:telaNovaProposta, etapa:"Proposta" },
   importar:    { rotulo:"Importar NF-e",  sub:"Ler XML e alimentar o faturamento", fn:telaImportar, etapa:"Pedido" },
   pendencias:  { rotulo:"Pendências",     sub:"Códigos de NF sem produto cadastrado", fn:telaPendencias, etapa:"Pedido" },
@@ -511,7 +510,6 @@ var MENU = [
   ["clientes",     "🏢","#EAF3EA",""],
   ["representantes","🤝","#F3EAD8",""],
   ["liquidacao",   "💰","#E7F0E4",""],
-  ["customp",      "🧪","#F0E4D8",""],
   ["tabelaspreco", "🧾","#F6ECD6",""],
   ["importar",     "📥","#E7F0E4",""],
   ["pendencias",   "⚠️","#FBEAEA",""],
@@ -3705,58 +3703,6 @@ async function confirmarOportunidadeProposta(){
   $("npFormularioContainer").scrollIntoView({behavior:"smooth", block:"start"});
 }
 
-/* ================= custo de matéria-prima (compartilhado com controladoria) ================= */
-async function telaCustoMP(){
-  pinta('<div class="vazio">Carregando…</div>');
-  var rItens = await sb.from("itens").select("id,nome,categoria,unidade").order("nome");
-  var itens = rItens.data || [];
-  var rPrecos = await sb.from("item_precos").select("item_id,preco_unitario,vigencia_inicio,origem").eq("ativo", true);
-  var precoAtual = {};
-  (rPrecos.data||[]).forEach(function(p){ precoAtual[p.item_id] = p; });
-  ST.cache.mpItens = itens;
-  ST.cache.mpPrecoAtual = precoAtual;
-
-  var h = '<div class="card" style="--u:#22303A">'+
-    '<div style="font-size:13px;color:var(--tinta2)">Preço de compra da matéria-prima — compartilhado com a Controladoria (mesma fonte, sem cópia). Usado hoje pra simular margem na proposta; mais pra frente também vira base do CMV real do DRE.</div>'+
-    '<label for="mpBusca">Buscar item</label><input id="mpBusca" placeholder="Nome do item…" oninput="renderListaCustoMP()">'+
-    '</div>'+
-    '<div id="mpLista" style="margin-top:10px"></div>';
-  pinta(h);
-  renderListaCustoMP();
-}
-function renderListaCustoMP(){
-  var alvo = $("mpLista"); if(!alvo) return;
-  var busca = ($("mpBusca")?$("mpBusca").value:"").toLowerCase();
-  var lista = (ST.cache.mpItens||[]).filter(function(i){ return i.nome.toLowerCase().indexOf(busca) >= 0; });
-  var precoAtual = ST.cache.mpPrecoAtual || {};
-  alvo.innerHTML = lista.length ? lista.map(function(i){
-    var p = precoAtual[i.id];
-    return '<div style="display:flex;align-items:center;gap:10px;border:1px solid var(--linha);border-radius:12px;padding:10px 12px;margin-bottom:8px">'+
-      '<div style="flex:1;min-width:0">'+
-        '<div style="font-size:14px;font-weight:600">'+esc(i.nome)+'</div>'+
-        '<div style="font-size:12px;color:var(--tinta2);margin-top:2px">'+(i.categoria?esc(i.categoria)+' · ':'')+(i.unidade?esc(i.unidade)+' · ':'')+
-          (p ? 'R$ '+brl(p.preco_unitario)+' desde '+dataBR(p.vigencia_inicio)+(p.origem==='manual'?' (manual)':' (compra)') : 'sem preço cadastrado')+
-        '</div>'+
-      '</div>'+
-      '<input type="number" step="0.01" placeholder="R$" id="mpNovo_'+i.id+'" style="width:90px">'+
-      '<button class="s mini" onclick="salvarPrecoItem(\''+i.id+'\')">Salvar</button>'+
-    '</div>';
-  }).join("") : '<div class="vazio">Nenhum item encontrado.</div>';
-}
-async function salvarPrecoItem(itemId){
-  var input = $("mpNovo_"+itemId);
-  var preco = Number(input.value);
-  if(!input.value || isNaN(preco) || preco < 0){ msg("Digite um preço válido.", true); return; }
-  var r = await sb.rpc("definir_preco_item", { p_item_id: itemId, p_preco: preco, p_responsavel: ST.email, p_origem: "manual" });
-  if(r.error){ msg("Não consegui salvar: "+r.error.message, true); return; }
-  msg("Preço atualizado.");
-  var rPrecos = await sb.from("item_precos").select("item_id,preco_unitario,vigencia_inicio,origem").eq("ativo", true);
-  var precoAtual = {};
-  (rPrecos.data||[]).forEach(function(p){ precoAtual[p.item_id] = p; });
-  ST.cache.mpPrecoAtual = precoAtual;
-  renderListaCustoMP();
-}
-
 /* ================= importar ================= */
 function telaImportar(){
   pinta(
@@ -4231,6 +4177,17 @@ async function telaPrecificacao(){
   desenharPrecificacao();
 }
 
+function opcoesSkuHtml(){
+  var lista = PREC.sel ? PREC.skus.filter(function(s){ return s.produto_id === PREC.sel; }) : PREC.skus;
+  return '<option value="">— selecione um SKU —</option>'+
+    lista.map(function(s){ return '<option value="'+esc(s.id)+'">'+esc(s.nome)+(s.linha?' · '+esc(s.linha):'')+'</option>'; }).join("");
+}
+function skuInfoTexto(){
+  var lista = PREC.sel ? PREC.skus.filter(function(s){ return s.produto_id === PREC.sel; }) : PREC.skus;
+  return PREC.sel
+    ? (lista.length+' SKU(s) dessa fórmula.'+(lista.length===0?' Nenhum SKU liga essa fórmula a uma embalagem ainda.':''))
+    : (PREC.skus.length+' SKU(s) com fórmula, no catálogo inteiro. Escolha uma fórmula acima pra ver só os dela.');
+}
 function desenharPrecificacao(){
   var comPreco = PREC.insumos.filter(function(i){ return i.preco_ref_kg != null; }).length;
   var total = PREC.insumos.length;
@@ -4254,11 +4211,8 @@ function desenharPrecificacao(){
 
   h += '<div class="card" style="--u:#3E7C45"><h3>Custo do pote pronto (fórmula + embalagem)</h3>'+
     '<select id="selSku" onchange="carregarCustoPote(this.value)" style="width:100%;min-height:44px;font-size:15px;padding:8px;border:1.5px solid #DCD2C4;border-radius:10px;margin-top:8px">'+
-    '<option value="">— selecione um SKU —</option>'+
-    PREC.skus.map(function(s){
-      return '<option value="'+esc(s.id)+'">'+esc(s.nome)+(s.linha?' · '+esc(s.linha):'')+'</option>';
-    }).join("")+'</select>'+
-    '<p style="font-size:12.5px;color:#7A6A57;margin-top:6px">'+PREC.skus.length+' SKU(s) com fórmula. Custo do pote = (custo/kg da fórmula × peso do pote) + embalagem.</p>'+
+    opcoesSkuHtml()+'</select>'+
+    '<p id="skuInfo" style="font-size:12.5px;color:#7A6A57;margin-top:6px">'+skuInfoTexto()+' Custo do pote = (custo/kg da fórmula × peso do pote) + embalagem.</p>'+
     '<div id="boxPote" style="margin-top:10px"></div></div>';
 
   var mp = PREC.insumos.filter(function(i){ return i.categoria==="materia_prima"; });
@@ -4277,8 +4231,8 @@ function desenharPrecificacao(){
 function tabelaPrecos(titulo, lista, cor){
   if(!lista.length) return "";
   return '<div class="card" style="--u:'+cor+'"><h3>'+esc(titulo)+'</h3>'+
-    '<p style="font-size:13px;color:#7A6A57">Origem <b>compra</b> = veio das notas fiscais. <b>manual</b> = você digitou. Editar recalcula tudo que usa o item.</p>'+
-    '<div class="tw" style="margin-top:10px"><table><thead><tr><th>Item</th><th style="text-align:right">Preço</th><th>Origem</th><th></th></tr></thead><tbody>'+
+    '<p style="font-size:13px;color:#7A6A57">Origem <b>compra</b> = veio de nota fiscal. <b>manual</b> = estimativa digitada. Marque "nota fiscal" antes de salvar quando o valor vier de uma compra de verdade — senão fica registrado como manual.</p>'+
+    '<div class="tw" style="margin-top:10px"><table><thead><tr><th>Item</th><th style="text-align:right">Preço</th><th>Origem atual</th><th style="text-align:center">É nota fiscal?</th><th></th></tr></thead><tbody>'+
     lista.map(function(i){
       var val = i.preco_ref_kg != null ? Number(i.preco_ref_kg).toFixed(2) : "";
       var org = i.preco_ref_origem || "—";
@@ -4287,6 +4241,7 @@ function tabelaPrecos(titulo, lista, cor){
         '<td class="n"><input id="pr_'+esc(i.id)+'" type="number" step="0.01" min="0" value="'+val+'" placeholder="—" '+
           'style="width:100px;text-align:right;font-family:ui-monospace,monospace;min-height:36px;padding:4px 8px;border:1.5px solid #DCD2C4;border-radius:8px"></td>'+
         '<td><span style="font-size:12px;font-weight:700;color:'+corOrg+'">'+esc(org)+'</span></td>'+
+        '<td style="text-align:center"><input type="checkbox" id="ori_'+esc(i.id)+'" style="width:20px;height:20px" title="Marque se esse preço vem de uma nota fiscal de compra"></td>'+
         '<td><button class="s" style="min-height:36px;padding:5px 12px;font-size:13px" onclick="salvarPreco(\''+esc(i.id)+'\')">Salvar</button></td></tr>';
     }).join("")+'</tbody></table></div>'+
     '<div id="resPreco_'+esc(cor.replace("#",""))+'" class="resPreco" style="margin-top:10px"></div></div>';
@@ -4332,6 +4287,10 @@ async function carregarCustoPote(id){
 async function carregarCustoProduto(id){
   PREC.sel = id || null;
   PREC.sim = {};
+  var selSku = $("selSku"), skuInfo = $("skuInfo"), boxPote = $("boxPote");
+  if(selSku){ selSku.value = ""; selSku.innerHTML = opcoesSkuHtml(); }
+  if(skuInfo) skuInfo.textContent = skuInfoTexto()+" Custo do pote = (custo/kg da fórmula × peso do pote) + embalagem.";
+  if(boxPote) boxPote.innerHTML = "";
   if(!id){ $("boxCusto").innerHTML = ""; return; }
   $("boxCusto").innerHTML = '<div class="vazio">Calculando…</div>';
 
@@ -4425,14 +4384,16 @@ async function salvarPreco(itemId){
   if(v === "" || v == null) return aviso('<span style="color:#C63A3A;font-size:13px">Digite um preço antes de salvar.</span>');
   var n = Number(v);
   if(isNaN(n) || n < 0) return aviso('<span style="color:#C63A3A;font-size:13px">Preço inválido.</span>');
+  var chk = $("ori_"+itemId);
+  var origemEscolhida = (chk && chk.checked) ? "compra" : "manual";
 
   aviso('<span style="color:#7A6A57;font-size:13px">Salvando…</span>');
-  var r = await sb.rpc("atualizar_preco_ref", { p_item_id:itemId, p_preco:n, p_responsavel:ST.email||"controladoria", p_origem:"manual" });
+  var r = await sb.rpc("atualizar_preco_ref", { p_item_id:itemId, p_preco:n, p_responsavel:ST.email||"controladoria", p_origem:origemEscolhida });
   if(r.error) return aviso('<span style="color:#C63A3A;font-size:13px">'+esc(r.error.message)+'</span>');
 
-  aviso('<span style="color:#3E7C45;font-size:13px">✓ '+esc(r.data && r.data.nome ? r.data.nome : "Preço")+' atualizado para R$ '+brl(n)+'.</span>');
+  aviso('<span style="color:#3E7C45;font-size:13px">✓ '+esc(r.data && r.data.nome ? r.data.nome : "Preço")+' atualizado para R$ '+brl(n)+' ('+(origemEscolhida==="compra"?"nota fiscal":"manual")+').</span>');
   PREC.insumos.forEach(function(i){
-    if(i.id === itemId){ i.preco_ref_kg = n; i.preco_ref_origem = "manual"; }
+    if(i.id === itemId){ i.preco_ref_kg = n; i.preco_ref_origem = origemEscolhida; }
   });
   if(PREC.sel) await carregarCustoProduto(PREC.sel);
   var sku = $("selSku");
