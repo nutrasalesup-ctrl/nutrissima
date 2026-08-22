@@ -2474,6 +2474,14 @@ async function abrirNovaProposta(oportunidadeId, clienteId, tituloEsc){
 
   if(rCli.error || !rCli.data){ alvo.innerHTML = '<div class="card" style="--u:#C63A3A">Não consegui abrir o cliente desta oportunidade.</div>'; return; }
 
+  var rFaixas = await sb.schema("crm").from("bonificacao_faixas")
+    .select("id,valor_minimo,qtd_potes").eq("ativa", true).order("valor_minimo", {ascending:true});
+  ST.cache.propFaixasBonif = rFaixas.data || [];
+  ST.cache.margemDesbloqueada = false;
+  ST.cache.propMargemRegime = undefined;
+  ST.cache.propMargemImpostos = undefined;
+  ST.cache.propMargemCmv = undefined;
+
   var tabelas = rTab.data || [];
   var tabelaItens = {};
   if(tabelas.length){
@@ -2555,8 +2563,13 @@ function htmlFormularioProposta(){
     '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'+
       '<button class="s" onclick="adicionarItemProposta()">+ Adicionar item</button>'+
       '<button class="s" onclick="aplicarTabelaATodosItens()">🔄 Recalcular preços pela tabela</button>'+
+      '<button class="s" onclick="sugerirBonificacao()">🎁 Sugerir bonificação</button>'+
     '</div>'+
     '<div id="prResumo" style="margin-top:12px"></div>'+
+    '<div style="margin-top:12px">'+
+      '<button class="s" onclick="abrirPainelMargem()">👁️ Ver margem (gestor)</button>'+
+      '<div id="prMargemContainer" style="margin-top:10px"></div>'+
+    '</div>'+
     '<div style="display:flex;gap:8px;margin-top:12px">'+
       '<button class="b" onclick="salvarPropostaOportunidade()">Salvar proposta (rascunho)</button>'+
       '<button class="s" onclick="fecharPainelProposta()">Fechar</button>'+
@@ -2628,6 +2641,134 @@ function aplicarTabelaATodosItens(){
   }
   renderItensProposta();
   msg("Preços recalculados pela tabela aplicável.");
+}
+function baseNomeProduto(nome){
+  return (nome||"").replace(/\s*[\d.,]+\s*(g|kg)\b.*$/i, "").trim().toLowerCase();
+}
+function encontrarPotePequeno(produtoId){
+  var prod = (ST.cache.produtos||[]).filter(function(p){ return p.id === produtoId; })[0];
+  if(!prod) return null;
+  var base = baseNomeProduto(prod.nome);
+  var c250 = (ST.cache.produtos||[]).filter(function(p){ return baseNomeProduto(p.nome)===base && /250\s*g\b/i.test(p.nome); });
+  if(c250.length) return c250[0];
+  var c150 = (ST.cache.produtos||[]).filter(function(p){ return baseNomeProduto(p.nome)===base && /150\s*g\b/i.test(p.nome); });
+  if(c150.length) return c150[0];
+  return null;
+}
+function bonificacaoAplicavel(valorVendido){
+  var faixas = (ST.cache.propFaixasBonif||[]).slice().sort(function(a,b){ return a.valor_minimo - b.valor_minimo; });
+  var elegiveis = faixas.filter(function(f){ return f.valor_minimo <= valorVendido; });
+  if(!elegiveis.length) return 0;
+  var maior = elegiveis[elegiveis.length-1];
+  var qtd = maior.qtd_potes;
+  var topo = faixas[faixas.length-1];
+  if(topo && maior.valor_minimo === topo.valor_minimo && valorVendido > topo.valor_minimo){
+    qtd += Math.floor((valorVendido - topo.valor_minimo) / 1000) * 2;
+  }
+  return qtd;
+}
+function candidatosVolumeDesc(){
+  return (ST.cache.propItensAtual||[]).filter(function(it){ return !it.bonificado && it.produto_acabado_id; })
+    .slice().sort(function(a,b){ return (Number(b.qtd)||0) - (Number(a.qtd)||0); });
+}
+function sugerirBonificacao(){
+  var totalVendido = (ST.cache.propItensAtual||[]).filter(function(it){ return !it.bonificado; })
+    .reduce(function(a,it){ return a + totalItemProposta(it); }, 0);
+  var qtdTotal = bonificacaoAplicavel(totalVendido);
+  if(!qtdTotal){ msg("Esse pedido ainda não atinge a faixa mínima de bonificação (R$1.000).", true); return; }
+
+  var candidatos = candidatosVolumeDesc();
+  var escolhidos = [];
+  for(var i=0; i<candidatos.length && escolhidos.length<2; i++){
+    var pote = encontrarPotePequeno(candidatos[i].produto_acabado_id);
+    if(pote && escolhidos.filter(function(p){return p.id===pote.id;}).length===0) escolhidos.push(pote);
+  }
+  if(!escolhidos.length){ msg("Nenhum item do pedido tem uma versão pequena (150g/250g) cadastrada pra bonificação.", true); return; }
+
+  var partes = escolhidos.length===2 ? [Math.ceil(qtdTotal/2), Math.floor(qtdTotal/2)] : [qtdTotal];
+
+  ST.cache.propItensAtual = (ST.cache.propItensAtual||[]).filter(function(it){ return !it._bonifSugerida; });
+  escolhidos.forEach(function(pote, idx){
+    var qtd = partes[idx] || 0;
+    if(qtd <= 0) return;
+    var preco = precoAtualCatalogo ? precoAtualCatalogo(pote.id) : null;
+    if(preco == null){
+      var tabAtual = melhorTabelaProposta(totalVendido);
+      var p = tabAtual ? precoNaTabelaProposta(tabAtual.id, pote.id) : null;
+      preco = p ? p.preco_unitario : 0;
+    }
+    ST.cache.propItensAtual.push({
+      produto_acabado_id: pote.id, descricao: pote.nome, qtd: qtd,
+      valor_unitario: preco || 0, desconto_pct: 0, bonificado: true, _bonifSugerida: true
+    });
+  });
+  msg("Bonificação sugerida: "+qtdTotal+" pote(s) aplicado(s).");
+  renderItensProposta();
+  if($("npResumoCarrinho")) renderResumoCarrinhoProposta();
+}
+async function abrirPainelMargem(){
+  var alvo = $("prMargemContainer");
+  if(!alvo) return;
+  if(ST.cache.margemDesbloqueada){ renderPainelMargem(); return; }
+  alvo.innerHTML = '<div class="card" style="--u:#22303A">'+
+    '<label for="mgPin">PIN do gestor</label><input id="mgPin" type="password" inputmode="numeric" maxlength="6">'+
+    '<button class="b" style="margin-top:8px" onclick="conferirPinMargem()">Ver margem</button></div>';
+  alvo.scrollIntoView({behavior:"smooth", block:"start"});
+}
+async function conferirPinMargem(){
+  var pin = $("mgPin").value.trim();
+  var r = await sb.rpc("verificar_pin", { p_nome: "Gestor", p_pin: pin });
+  if(r.error || !r.data){ msg("PIN incorreto.", true); return; }
+  ST.cache.margemDesbloqueada = true;
+  renderPainelMargem();
+}
+function renderPainelMargem(){
+  var alvo = $("prMargemContainer");
+  if(!alvo) return;
+  var itens = ST.cache.propItensAtual || [];
+  var totalVendido = itens.filter(function(it){ return !it.bonificado; }).reduce(function(a,it){ return a + totalItemProposta(it); }, 0);
+  var totalBonifTabela = itens.filter(function(it){ return it.bonificado; }).reduce(function(a,it){ return a + totalItemProposta(it); }, 0);
+
+  if(ST.cache.propMargemRegime === undefined) ST.cache.propMargemRegime = "nutrissima_real";
+  if(ST.cache.propMargemImpostos === undefined) ST.cache.propMargemImpostos = ST.cache.propMargemRegime==="nutrissima_real" ? 23 : "";
+  if(ST.cache.propMargemCmv === undefined) ST.cache.propMargemCmv = 35;
+
+  var cmvPct = Number(ST.cache.propMargemCmv) || 0;
+  var impPct = Number(ST.cache.propMargemImpostos) || 0;
+  var comissaoPct = (ST.cache.propRepresentante ? Number(ST.cache.propRepresentante.comissao_pct) : 0) || 0;
+
+  var cmv = totalVendido * cmvPct/100;
+  var margemBruta = totalVendido - cmv;
+  var impostos = totalVendido * impPct/100;
+  var comissao = totalVendido * comissaoPct/100;
+  var custoBonif = totalBonifTabela * cmvPct/100;
+  var margemContribuicao = margemBruta - impostos - comissao - custoBonif;
+  var pctContribuicao = totalVendido>0 ? (margemContribuicao/totalVendido*100) : 0;
+
+  var tabelasOrd = (ST.cache.propTabelas||[]).slice().sort(function(a,b){ return a.pedido_minimo - b.pedido_minimo; });
+  var proxTabela = tabelasOrd.filter(function(t){ return t.pedido_minimo > totalVendido; })[0];
+  var faixasOrd = (ST.cache.propFaixasBonif||[]).slice().sort(function(a,b){ return a.valor_minimo - b.valor_minimo; });
+  var proxFaixaBonif = faixasOrd.filter(function(f){ return f.valor_minimo > totalVendido; })[0];
+
+  alvo.innerHTML = '<div class="card" style="--u:#22303A"><h3 style="font-size:15px">Margem deste pedido (visão do gestor)</h3>'+
+    '<label for="mgRegime">Faturado por</label><select id="mgRegime" onchange="ST.cache.propMargemRegime=this.value;ST.cache.propMargemImpostos=(this.value===\'nutrissima_real\'?23:\'\');renderPainelMargem();">'+
+      '<option value="nutrissima_real"'+(ST.cache.propMargemRegime==="nutrissima_real"?" selected":"")+'>Nutríssima (Lucro Real)</option>'+
+      '<option value="lbr_simples"'+(ST.cache.propMargemRegime==="lbr_simples"?" selected":"")+'>LBR (Simples Nacional)</option>'+
+    '</select>'+
+    '<label for="mgImpostos">% impostos sobre a venda'+((ST.cache.propCliente&&ST.cache.propCliente.uf)?' · cliente em '+esc(ST.cache.propCliente.uf):"")+'</label>'+
+    '<input id="mgImpostos" type="number" step="0.1" value="'+esc(String(ST.cache.propMargemImpostos))+'" oninput="ST.cache.propMargemImpostos=this.value;renderPainelMargem();">'+
+    '<label for="mgCmv">% CMV aproximado</label>'+
+    '<input id="mgCmv" type="number" step="0.1" value="'+cmvPct+'" oninput="ST.cache.propMargemCmv=this.value;renderPainelMargem();">'+
+    '<div class="conta" style="margin-top:10px">'+
+      'R$ '+brl(totalVendido)+' vendido − R$ '+brl(cmv)+' CMV ('+cmvPct+'%) = <b>R$ '+brl(margemBruta)+' margem bruta</b><br>'+
+      '− R$ '+brl(impostos)+' impostos ('+impPct+'%) − R$ '+brl(comissao)+' comissão ('+comissaoPct+'%) − R$ '+brl(custoBonif)+' custo da bonificação'+
+      ' = <b>R$ '+brl(margemContribuicao)+' margem de contribuição ('+pctContribuicao.toFixed(1)+'%)</b>'+
+    '</div>'+
+    '<div style="font-size:12px;color:var(--tinta2);margin-top:8px">Margem líquida de verdade (depois de custo fixo — aluguel, folha etc.) não é calculável ainda: falta esse dado no sistema. O que está acima é a margem de contribuição desse pedido específico.</div>'+
+    '<div style="margin-top:12px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--tinta2)">Oportunidades</div>'+
+    (proxTabela ? '<div style="font-size:13px;margin-top:4px">Faltam <b>R$ '+brl(Number(proxTabela.pedido_minimo)-totalVendido)+'</b> pra tabela '+esc(proxTabela.nome)+'</div>' : '<div style="font-size:13px;margin-top:4px;color:var(--tinta2)">Já está na melhor tabela de preço.</div>')+
+    (proxFaixaBonif ? '<div style="font-size:13px;margin-top:2px">Faltam <b>R$ '+brl(Number(proxFaixaBonif.valor_minimo)-totalVendido)+'</b> pra '+proxFaixaBonif.qtd_potes+' pote(s) de bonificação</div>' : '')+
+  '</div>';
 }
 function atualizarItemProposta(idx, campo, valor){
   var item = ST.cache.propItensAtual[idx];
@@ -2752,6 +2893,9 @@ async function salvarPropostaOportunidade(){
     tabela_preco_id: ST.cache.propTabelaAtual ? ST.cache.propTabelaAtual.id : null,
     representante_id: rep ? rep.id : null,
     comissao_pct_aplicada: rep ? rep.comissao_pct : null,
+    regime_faturamento: ST.cache.propMargemRegime || "nutrissima_real",
+    impostos_pct: (ST.cache.propMargemImpostos !== undefined && ST.cache.propMargemImpostos !== "") ? Number(ST.cache.propMargemImpostos) : null,
+    cmv_pct: ST.cache.propMargemCmv !== undefined ? Number(ST.cache.propMargemCmv) : 35,
     observacoes: $("prObs").value.trim() || null,
     valor_total: totalVendido,
     status: "rascunho"
@@ -3232,7 +3376,15 @@ async function telaNovaProposta(){
   ST.cache.npFiltroLinha = "Todas";
   ST.cache.npClienteResolvido = false;
   ST.cache.npClienteEmSelecao = false;
+  ST.cache.margemDesbloqueada = false;
+  ST.cache.propMargemRegime = undefined;
+  ST.cache.propMargemImpostos = undefined;
+  ST.cache.propMargemCmv = undefined;
   pinta('<div class="vazio">Carregando catálogo…</div>');
+
+  var rFaixas = await sb.schema("crm").from("bonificacao_faixas")
+    .select("id,valor_minimo,qtd_potes").eq("ativa", true).order("valor_minimo", {ascending:true});
+  ST.cache.propFaixasBonif = rFaixas.data || [];
 
   var rTab = await sb.schema("crm").from("tabelas_preco")
     .select("id,nome,pedido_minimo").eq("ativa", true).order("pedido_minimo", {ascending:true});
