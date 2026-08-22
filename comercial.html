@@ -464,7 +464,7 @@ var TELAS = {
   clientes:    { rotulo:"Clientes",       sub:"Cadastro e quanto cada um comprou", fn:telaClientes, etapa:"Clientes" },
   representantes:{ rotulo:"Representantes", sub:"Cadastro, comissão e ficha", fn:telaRepres, etapa:"Clientes" },
   liquidacao:  { rotulo:"Liquidação",     sub:"Baixa de recebimento por NF", fn:telaLiquidacao, etapa:"Pedido" },
-  tabelaspreco:{ rotulo:"Tabelas e Políticas", sub:"Preços por faixa e regras comerciais", fn:telaTabelasPreco, etapa:"Proposta" },
+  tabelaspreco:{ rotulo:"Nova proposta", sub:"Monte pelo catálogo e envie o PDF", fn:telaNovaProposta, etapa:"Proposta" },
   importar:    { rotulo:"Importar NF-e",  sub:"Ler XML e alimentar o faturamento", fn:telaImportar, etapa:"Pedido" },
   pendencias:  { rotulo:"Pendências",     sub:"Códigos de NF sem produto cadastrado", fn:telaPendencias, etapa:"Pedido" },
   controladoria:{ rotulo:"Controladoria", sub:"DRE e apuração fiscal (e-commerce)", fn:telaControladoria, etapa:"" },
@@ -510,7 +510,7 @@ var MENU = [
   ["clientes",     "🏢","#EAF3EA",""],
   ["representantes","🤝","#F3EAD8",""],
   ["liquidacao",   "💰","#E7F0E4",""],
-  ["tabelaspreco", "📋","#F6ECD6",""],
+  ["tabelaspreco", "🧾","#F6ECD6",""],
   ["importar",     "📥","#E7F0E4",""],
   ["pendencias",   "⚠️","#FBEAEA",""],
   ["controladoria","🧮","#EFE0D8",""],
@@ -2496,6 +2496,7 @@ async function abrirNovaProposta(oportunidadeId, clienteId, tituloEsc){
   var rNumCompras = await sb.from("nf_venda").select("id").eq("cliente_id", clienteId).eq("classificacao","venda");
   var numCompras = (rNumCompras.data||[]).length;
 
+  ST.cache.propModoStandalone = false;
   ST.cache.propCliente = rCli.data;
   ST.cache.propContatos = rCt.data || [];
   ST.cache.propPrecoPadrao = {};
@@ -2531,12 +2532,19 @@ async function abrirNovaProposta(oportunidadeId, clienteId, tituloEsc){
     }).join("") : '<div class="vazio">Nenhuma proposta ainda pra essa oportunidade.</div>')+
     '</div>';
 
-  h += '<div class="card" style="--u:#3E7C45"><h3 style="font-size:15px">Nova proposta</h3>'+
+  h += htmlFormularioProposta();
+
+  alvo.innerHTML = h;
+  renderItensProposta();
+}
+function htmlFormularioProposta(){
+  var representante = ST.cache.propRepresentante;
+  return '<div class="card" style="--u:#3E7C45"><h3 style="font-size:15px">Condições da proposta</h3>'+
     (representante ? '<div style="font-size:12.5px;color:var(--tinta2);margin-top:-6px;margin-bottom:8px">Representante: <b>'+esc(representante.nome)+'</b> · comissão '+(Number(representante.comissao_pct)||0)+'%</div>'
                     : '<div style="font-size:12.5px;color:var(--tinta2);margin-top:-6px;margin-bottom:8px">Cliente sem representante vinculado.</div>')+
     '<label for="prContato">Contato (opcional)</label><select id="prContato">'+
       '<option value="">— sem contato específico —</option>'+
-      ST.cache.propContatos.map(function(c){ return '<option value="'+c.id+'">'+esc(c.nome)+(c.cargo?' · '+esc(c.cargo):'')+'</option>'; }).join("")+
+      (ST.cache.propContatos||[]).map(function(c){ return '<option value="'+c.id+'">'+esc(c.nome)+(c.cargo?' · '+esc(c.cargo):'')+'</option>'; }).join("")+
     '</select>'+
     '<label for="prValidade">Válida até</label><input id="prValidade" type="date">'+
     '<label for="prFrete">Frete</label><input id="prFrete" value="CIF">'+
@@ -2553,11 +2561,9 @@ async function abrirNovaProposta(oportunidadeId, clienteId, tituloEsc){
       '<button class="b" onclick="salvarPropostaOportunidade()">Salvar proposta (rascunho)</button>'+
       '<button class="s" onclick="fecharPainelProposta()">Fechar</button>'+
     '</div></div>';
-
-  alvo.innerHTML = h;
-  renderItensProposta();
 }
 function fecharPainelProposta(){
+  if(ST.cache.propModoStandalone){ telaNovaProposta(); return; }
   var alvo = $("opPainelContainer");
   if(alvo) alvo.innerHTML = "";
 }
@@ -2762,6 +2768,15 @@ async function salvarPropostaOportunidade(){
   var rI = await sb.schema("crm").from("cotacao_itens").insert(linhas);
   if(rI.error){ msg("Proposta criada, mas os itens falharam: "+rI.error.message, true); return; }
   msg("Proposta salva como rascunho.");
+  if(ST.cache.propModoStandalone){
+    var fAlvo = $("npFormularioContainer");
+    if(fAlvo) fAlvo.innerHTML = '<div class="card" style="--u:#3E7C45">Proposta salva.'+
+      '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'+
+        '<button class="b" onclick="baixarPdfProposta(\''+cotacaoId+'\')">📄 Baixar PDF</button>'+
+        '<button class="s" onclick="telaNovaProposta()">+ Nova proposta</button>'+
+      '</div></div>';
+    return;
+  }
   var opId = ST.cache.propOportunidadeId, cliId = ST.cache.propCliente.id, tit = ST.cache.propTitulo;
   await carregarOportunidades(); // atualiza o badge de propostas no card
   abrirNovaProposta(opId, cliId, tit); // reabre já com a proposta nova na lista
@@ -3217,75 +3232,254 @@ async function salvarPlanoParcelas(){
   buscarLiquidacao();
 }
 
-/* ================= tabelas e políticas (consulta) ================= */
-async function telaTabelasPreco(){
-  pinta('<div class="vazio">Carregando…</div>');
+/* ================= nova proposta (catálogo + carrinho) ================= */
+async function telaNovaProposta(){
+  ST.cache.propModoStandalone = true;
+  ST.cache.propItensAtual = [];
+  ST.cache.npFiltroLinha = "Todas";
+  pinta('<div class="vazio">Carregando catálogo…</div>');
 
   var rTab = await sb.schema("crm").from("tabelas_preco")
-    .select("id,nome,pedido_minimo,versao,vigencia_inicio,ativa").eq("ativa", true).order("pedido_minimo");
+    .select("id,nome,pedido_minimo").eq("ativa", true).order("pedido_minimo", {ascending:true});
   var tabelas = rTab.data || [];
-
-  var rItens = [];
+  var tabelaItens = {};
   if(tabelas.length){
-    var r = await sb.schema("crm").from("tabela_preco_itens")
-      .select("tabela_id,produto_acabado_id,codigo_origem,descricao_origem,preco_unitario,preco_sugerido")
-      .in("tabela_id", tabelas.map(function(t){return t.id;}));
-    rItens = r.data || [];
+    var rTI = await sb.schema("crm").from("tabela_preco_itens")
+      .select("tabela_id,produto_acabado_id,preco_unitario,preco_sugerido")
+      .in("tabela_id", tabelas.map(function(t){ return t.id; }));
+    (rTI.data||[]).forEach(function(it){
+      if(!it.produto_acabado_id) return;
+      if(!tabelaItens[it.tabela_id]) tabelaItens[it.tabela_id] = {};
+      tabelaItens[it.tabela_id][it.produto_acabado_id] = { preco_unitario:Number(it.preco_unitario)||0, preco_sugerido:Number(it.preco_sugerido)||0 };
+    });
   }
-  var nomeProduto = {};
-  var idsProdutos = Array.from(new Set(rItens.map(function(i){return i.produto_acabado_id;}).filter(Boolean)));
-  if(idsProdutos.length){
-    var rP = await sb.from("produto_acabado").select("id,nome").in("id", idsProdutos);
-    (rP.data||[]).forEach(function(p){ nomeProduto[p.id] = p.nome; });
-  }
+  var idsComPreco = Array.from(new Set(
+    Object.keys(tabelaItens).reduce(function(acc,tid){ return acc.concat(Object.keys(tabelaItens[tid])); }, [])
+  ));
+  var rP = await sb.from("produto_acabado").select("id,nome,linha").eq("ativo", true);
+  ST.cache.produtos = rP.data || [];
+  var produtosCatalogo = (rP.data||[]).filter(function(p){ return idsComPreco.indexOf(p.id) >= 0; })
+    .sort(function(a,b){ return a.nome.localeCompare(b.nome); });
 
-  var h = '<div class="card" style="--u:#22303A"><h3 style="font-size:15px">Como funciona</h3>'+
-    '<div style="font-size:13px;color:var(--tinta2)">A tabela é escolhida automaticamente pelo valor do pedido — quanto maior o pedido, melhor o preço unitário. Isso já acontece sozinho dentro de "Nova proposta"; esta tela é só pra consultar os valores e as regras sem precisar abrir uma proposta.</div></div>';
+  ST.cache.propTabelas = tabelas;
+  ST.cache.propTabelaItens = tabelaItens;
+  ST.cache.npProdutos = produtosCatalogo;
+  ST.cache.npLinhas = ["Todas"].concat(
+    Array.from(new Set(produtosCatalogo.map(function(p){ return p.linha; }).filter(Boolean))).sort()
+  );
 
-  h += tabelas.map(function(t){
-    var itensDaTabela = rItens.filter(function(i){ return i.tabela_id === t.id; })
-      .sort(function(a,b){
-        var na = nomeProduto[a.produto_acabado_id] || a.descricao_origem || "";
-        var nb = nomeProduto[b.produto_acabado_id] || b.descricao_origem || "";
-        return na.localeCompare(nb);
-      });
-    return '<div class="card" style="--u:#3E7C45;margin-top:12px">'+
-      '<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:6px">'+
-        '<h3 style="font-size:15px;margin:0">'+esc(t.nome)+'</h3>'+
-        '<span style="font-size:12px;color:var(--tinta2)">pedido mínimo R$ '+brl(t.pedido_minimo)+' · versão '+t.versao+' · vigente desde '+dataBR(t.vigencia_inicio)+'</span>'+
-      '</div>'+
-      '<div class="tw" style="margin-top:8px"><table><thead><tr><th>Produto</th>'+
-        '<th style="text-align:right">Preço unitário</th><th style="text-align:right">Preço sugerido ao consumidor</th></tr></thead><tbody>'+
-        itensDaTabela.map(function(i){
-          var nome = nomeProduto[i.produto_acabado_id];
-          return '<tr><td>'+(nome ? esc(nome) : '<span style="color:var(--tinta2)">'+esc(i.descricao_origem||"—")+' <span class="tag" style="background:#7A6A57">sem SKU vinculado</span></span>')+'</td>'+
-            '<td class="n mono">R$ '+brl(i.preco_unitario)+'</td>'+
-            '<td class="n mono">'+(i.preco_sugerido!=null ? 'R$ '+brl(i.preco_sugerido) : "—")+'</td></tr>';
-        }).join("")+
-      '</tbody></table></div></div>';
-  }).join("");
-
-  h += '<div class="card" style="--u:#B8862B;margin-top:12px"><h3 style="font-size:15px">Condições de pagamento por histórico</h3>'+
-    '<div class="tw"><table><thead><tr><th>Cenário</th><th>Condição de pagamento</th></tr></thead><tbody>'+
-      '<tr><td>1ª, 2ª ou 3ª compra do cliente</td><td>À vista ou cartão em até 3x sem juros</td></tr>'+
-      '<tr><td>A partir da 4ª compra, pedido até R$ 1.000</td><td>Boleto 14 ou 21 dias, se crédito aprovado</td></tr>'+
-      '<tr><td>A partir da 4ª compra, de R$ 1.000,01 a R$ 3.000</td><td>Boleto 14/21/28/35 dias, se crédito aprovado</td></tr>'+
-      '<tr><td>A partir da 4ª compra, acima de R$ 3.000</td><td>Boleto 14/21/28/35/42 dias, se crédito aprovado</td></tr>'+
-    '</tbody></table></div>'+
-    '<div style="font-size:12px;color:var(--tinta2);margin-top:8px">A tabela de preço não muda com a condição de pagamento — ela é definida só pelo valor do pedido. Boleto sempre depende da situação de crédito do cliente estar "aprovado" (ver Ficha do cliente).</div>'+
-  '</div>';
-
-  h += '<div class="card" style="--u:#D9772B;margin-top:12px"><h3 style="font-size:15px">Regras fixas de toda proposta</h3>'+
-    '<div class="tw"><table><tbody>'+
-      '<tr><td>Frete</td><td>CIF (por conta da Nutríssima)</td></tr>'+
-      '<tr><td>Prazo de faturamento</td><td>até o prazo combinado na proposta, após confirmação e liberação financeira</td></tr>'+
-      '<tr><td>Despacho</td><td>dia seguinte ao faturamento</td></tr>'+
-      '<tr><td>Bonificação (degustação)</td><td>até 3% do valor vendido no pedido, nos itens permitidos</td></tr>'+
-      '<tr><td>Comissão do representante</td><td>percentual cadastrado por representante (padrão 5%), sobre o valor efetivamente liquidado — ver tela Liquidação</td></tr>'+
-      '<tr><td>Bloqueio de pedido mínimo</td><td>proposta abaixo de R$ '+brl(tabelas.length?tabelas[0].pedido_minimo:1000)+' não pode ser marcada como enviada (rascunho continua livre)</td></tr>'+
-    '</tbody></table></div></div>';
-
+  var menorMinimo = tabelas.length ? tabelas[0].pedido_minimo : 1000;
+  var h = '<div class="card" style="--u:#22303A">'+
+      '<label for="npBusca">Buscar produto</label>'+
+      '<input id="npBusca" placeholder="Nome do produto…" oninput="renderCatalogoProposta()">'+
+      '<div id="npChips" style="display:flex;gap:6px;overflow-x:auto;padding:8px 0 2px"></div>'+
+    '</div>'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">'+
+      '<span class="tag" style="background:#7A6A57">🚚 Frete CIF</span>'+
+      '<span class="tag" style="background:#7A6A57">🎁 Bonificação até 3%</span>'+
+      '<span class="tag" style="background:#7A6A57">🤝 Comissão padrão 5%</span>'+
+      '<span class="tag" style="background:#7A6A57">📦 Mínimo R$ '+brl(menorMinimo)+'</span>'+
+    '</div>'+
+    '<details style="margin-top:8px;font-size:12.5px;color:var(--tinta2)"><summary style="cursor:pointer">Condição de pagamento por histórico de compras</summary>'+
+      '<div class="tw" style="margin-top:6px"><table><tbody>'+
+        '<tr><td>1ª–3ª compra</td><td>À vista ou cartão 3x sem juros</td></tr>'+
+        '<tr><td>4ª+, até R$ 1.000</td><td>Boleto 14/21 dias (crédito aprovado)</td></tr>'+
+        '<tr><td>4ª+, R$ 1.000,01–3.000</td><td>Boleto 14/21/28/35 dias</td></tr>'+
+        '<tr><td>4ª+, acima de R$ 3.000</td><td>Boleto 14/21/28/35/42 dias</td></tr>'+
+      '</tbody></table></div>'+
+    '</details>'+
+    '<div id="npLista" style="margin-top:10px"></div>'+
+    '<div id="npResumoCarrinho" style="margin-top:10px"></div>'+
+    '<div id="npClienteContainer" style="margin-top:12px"></div>'+
+    '<div id="npFormularioContainer" style="margin-top:12px"></div>';
   pinta(h);
+  renderChipsCatalogoProposta();
+  renderCatalogoProposta();
+  renderResumoCarrinhoProposta();
+}
+function renderChipsCatalogoProposta(){
+  var alvo = $("npChips"); if(!alvo) return;
+  alvo.innerHTML = (ST.cache.npLinhas||["Todas"]).map(function(l){
+    var ativo = l === ST.cache.npFiltroLinha;
+    return '<button class="'+(ativo?"b":"s")+' mini" style="white-space:nowrap" '+
+      'onclick="ST.cache.npFiltroLinha='+"'"+l.replace(/'/g,"\\'")+"'"+';renderChipsCatalogoProposta();renderCatalogoProposta();">'+esc(l)+'</button>';
+  }).join("");
+}
+function melhorTabelaCarrinho(){
+  var total = (ST.cache.propItensAtual||[]).filter(function(it){ return !it.bonificado; })
+    .reduce(function(a,it){ return a + totalItemProposta(it); }, 0);
+  return melhorTabelaProposta(total);
+}
+function precoAtualCatalogo(produtoId){
+  var tab = melhorTabelaCarrinho();
+  if(tab){
+    var p = precoNaTabelaProposta(tab.id, produtoId);
+    if(p) return p.preco_unitario;
+  }
+  var tabelas = (ST.cache.propTabelas||[]).slice().sort(function(a,b){ return a.pedido_minimo - b.pedido_minimo; });
+  for(var i=0;i<tabelas.length;i++){
+    var p2 = precoNaTabelaProposta(tabelas[i].id, produtoId);
+    if(p2) return p2.preco_unitario;
+  }
+  return null;
+}
+function qtdNoCarrinho(produtoId){
+  var item = (ST.cache.propItensAtual||[]).filter(function(it){ return it.produto_acabado_id === produtoId; })[0];
+  return item ? Number(item.qtd)||0 : 0;
+}
+function alterarQtdCatalogo(produtoId, delta){
+  var itens = ST.cache.propItensAtual;
+  var item = itens.filter(function(it){ return it.produto_acabado_id === produtoId; })[0];
+  if(!item){
+    if(delta <= 0) return;
+    var prod = (ST.cache.npProdutos||[]).filter(function(p){ return p.id === produtoId; })[0];
+    item = { produto_acabado_id:produtoId, descricao: prod?prod.nome:"", qtd:0, valor_unitario: precoAtualCatalogo(produtoId)||0, desconto_pct:0, bonificado:false };
+    itens.push(item);
+  }
+  item.qtd = Math.max(0, (Number(item.qtd)||0) + delta);
+  if(item.qtd === 0){
+    ST.cache.propItensAtual = itens.filter(function(it){ return it !== item; });
+  } else {
+    var preco = precoAtualCatalogo(produtoId);
+    if(preco != null) item.valor_unitario = preco;
+  }
+  renderCatalogoProposta();
+  renderResumoCarrinhoProposta();
+}
+function renderCatalogoProposta(){
+  var alvo = $("npLista"); if(!alvo) return;
+  var busca = ($("npBusca") ? $("npBusca").value : "").toLowerCase();
+  var linha = ST.cache.npFiltroLinha || "Todas";
+  var lista = (ST.cache.npProdutos||[]).filter(function(p){
+    return (linha==="Todas" || p.linha===linha) && p.nome.toLowerCase().indexOf(busca) >= 0;
+  });
+  alvo.innerHTML = lista.length ? lista.map(function(p){
+    var qtd = qtdNoCarrinho(p.id);
+    var preco = precoAtualCatalogo(p.id);
+    return '<div style="display:flex;align-items:center;gap:10px;border:1px solid var(--linha);border-radius:12px;padding:10px 12px;margin-bottom:8px">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(p.nome)+'</div>'+
+        '<div style="font-size:12px;color:var(--tinta2);margin-top:2px">'+(p.linha?esc(p.linha)+' · ':'')+(preco!=null?'R$ '+brl(preco):'sem preço de tabela')+'</div>'+
+      '</div>'+
+      (qtd>0 ?
+        '<div style="display:flex;align-items:center;gap:6px">'+
+          '<button class="s mini" onclick="alterarQtdCatalogo(\''+p.id+'\',-1)">−</button>'+
+          '<span style="min-width:16px;text-align:center;font-family:ui-monospace,Menlo,monospace">'+qtd+'</span>'+
+          '<button class="s mini" onclick="alterarQtdCatalogo(\''+p.id+'\',1)">+</button>'+
+        '</div>'
+       : '<button class="s mini" onclick="alterarQtdCatalogo(\''+p.id+'\',1)">+ Adicionar</button>')+
+    '</div>';
+  }).join("") : '<div class="vazio">Nenhum produto encontrado.</div>';
+}
+function renderResumoCarrinhoProposta(){
+  var alvo = $("npResumoCarrinho"); if(!alvo) return;
+  var itens = ST.cache.propItensAtual || [];
+  var n = itens.reduce(function(a,it){ return a + (Number(it.qtd)||0); }, 0);
+  if(!n){ alvo.innerHTML = ""; $("npClienteContainer").innerHTML=""; $("npFormularioContainer").innerHTML=""; return; }
+  var total = itens.filter(function(it){ return !it.bonificado; }).reduce(function(a,it){ return a + totalItemProposta(it); }, 0);
+  var tab = melhorTabelaCarrinho();
+  var tabelasOrd = (ST.cache.propTabelas||[]).slice().sort(function(a,b){ return a.pedido_minimo - b.pedido_minimo; });
+  var proxima = tabelasOrd.filter(function(t){ return t.pedido_minimo > total; })[0];
+
+  alvo.innerHTML = '<div class="card" style="--u:#3E7C45">'+
+    '<div style="display:flex;justify-content:space-between;align-items:baseline">'+
+      '<span style="font-size:13px;color:var(--tinta2)">'+n+' '+(n===1?'item':'itens')+'</span>'+
+      '<span style="font-size:20px;font-weight:800;font-family:ui-monospace,Menlo,monospace">R$ '+brl(total)+'</span>'+
+    '</div>'+
+    (tab ? '<div style="font-size:12.5px;color:var(--tinta2);margin-top:2px">'+esc(tab.nome)+' aplicada'+
+        (proxima ? ' · faltam R$ '+brl(Number(proxima.pedido_minimo)-total)+' pra '+esc(proxima.nome) : '')+'</div>' : '')+
+    '<button class="b" style="width:100%;margin-top:10px" onclick="iniciarClienteProposta()">Montar proposta →</button>'+
+  '</div>';
+}
+async function iniciarClienteProposta(){
+  var alvo = $("npClienteContainer"); if(!alvo) return;
+  var rc = await sb.from("clientes").select("id,razao_social,municipio,uf,documento").order("razao_social");
+  ST.cache.clientesSelect = rc.data || [];
+  alvo.innerHTML = '<div class="card" style="--u:#B8862B">'+
+    campoBuscaCliente("npBuscaCli","npCliente")+
+    '<label for="npCliente">Cliente</label><select id="npCliente">'+opcoesCliente(ST.cache.clientesSelect)+'</select>'+
+    '<button class="b" style="margin-top:10px" onclick="resolverOportunidadeProposta()">Continuar</button>'+
+  '</div>';
+  $("npFormularioContainer").innerHTML = "";
+  alvo.scrollIntoView({behavior:"smooth", block:"start"});
+}
+async function resolverOportunidadeProposta(){
+  var clienteId = $("npCliente").value;
+  if(!clienteId){ msg("Escolha um cliente.", true); return; }
+  ST.cache.npClienteEscolhido = clienteId;
+  var alvo = $("npClienteContainer");
+  alvo.innerHTML = '<div class="vazio">Carregando…</div>';
+
+  var rOp = await sb.schema("crm").from("oportunidades")
+    .select("id,titulo,etapa")
+    .eq("cliente_id", clienteId)
+    .not("etapa","in","(fechado_ganho,fechado_perdido)")
+    .order("criado_em", {ascending:false});
+  var abertas = rOp.data || [];
+
+  var h = '<div class="card" style="--u:#B8862B">';
+  if(abertas.length){
+    h += '<label for="npOportunidade">Usar oportunidade aberta, ou criar nova</label>'+
+      '<select id="npOportunidade">'+
+        '<option value="">— criar nova oportunidade —</option>'+
+        abertas.map(function(o){ return '<option value="'+o.id+'">'+esc(o.titulo)+' · '+esc(ETAPA_ROTULO[o.etapa]||o.etapa)+'</option>'; }).join("")+
+      '</select>';
+  } else {
+    h += '<div style="font-size:13px;color:var(--tinta2)">Esse cliente não tem oportunidade aberta — vou criar uma nova.</div>';
+  }
+  h += '<button class="b" style="margin-top:10px" onclick="confirmarOportunidadeProposta()">Confirmar</button></div>';
+  alvo.innerHTML = h;
+}
+async function confirmarOportunidadeProposta(){
+  var clienteId = ST.cache.npClienteEscolhido;
+  var oportunidadeEscolhida = $("npOportunidade") ? $("npOportunidade").value : "";
+  var alvo = $("npClienteContainer");
+  alvo.innerHTML = '<div class="vazio">Preparando a proposta…</div>';
+
+  var totalCarrinho = (ST.cache.propItensAtual||[]).filter(function(it){ return !it.bonificado; })
+    .reduce(function(a,it){ return a + totalItemProposta(it); }, 0);
+
+  var oportunidadeId = oportunidadeEscolhida, titulo = "";
+  if(!oportunidadeId){
+    var rc = (ST.cache.clientesSelect||[]).filter(function(c){return c.id===clienteId;})[0];
+    var rNovaOp = await sb.schema("crm").from("oportunidades").insert({
+      cliente_id: clienteId,
+      titulo: "Proposta " + new Date().toLocaleDateString("pt-BR") + (rc?" — "+rc.razao_social:""),
+      etapa: "proposta",
+      valor_estimado: totalCarrinho
+    }).select("id,titulo").single();
+    if(rNovaOp.error){ alvo.innerHTML = '<div class="card" style="--u:#C63A3A">Não consegui criar a oportunidade: '+esc(rNovaOp.error.message)+'</div>'; return; }
+    oportunidadeId = rNovaOp.data.id; titulo = rNovaOp.data.titulo;
+  } else {
+    var op = (await sb.schema("crm").from("oportunidades").select("titulo").eq("id",oportunidadeId).single()).data;
+    titulo = op ? op.titulo : "proposta";
+  }
+
+  var rCli = await sb.from("clientes")
+    .select("id,razao_social,condicao_pagamento,representante_id,situacao_credito").eq("id", clienteId).single();
+  var rCt = await sb.schema("crm").from("contatos").select("id,nome,cargo").eq("cliente_id", clienteId).eq("ativo", true).order("nome");
+  var rPreco = await sb.schema("crm").from("preco_padrao").select("produto_acabado_id,preco");
+  var representante = null;
+  if(rCli.data && rCli.data.representante_id){
+    var rRep = await sb.from("representantes").select("id,nome,comissao_pct").eq("id", rCli.data.representante_id).single();
+    representante = rRep.data || null;
+  }
+  var rNumCompras = await sb.from("nf_venda").select("id").eq("cliente_id", clienteId).eq("classificacao","venda");
+
+  ST.cache.propCliente = rCli.data;
+  ST.cache.propContatos = rCt.data || [];
+  ST.cache.propPrecoPadrao = {};
+  (rPreco.data||[]).forEach(function(p){ ST.cache.propPrecoPadrao[p.produto_acabado_id] = Number(p.preco)||0; });
+  ST.cache.propOportunidadeId = oportunidadeId;
+  ST.cache.propTitulo = esc(titulo);
+  ST.cache.propRepresentante = representante;
+  ST.cache.propNumCompras = (rNumCompras.data||[]).length;
+  ST.cache.propCondicaoSelecionada = "";
+
+  alvo.innerHTML = '<div class="card" style="--u:#3E7C45;font-size:13px">Proposta pra <b>'+esc(rCli.data.razao_social)+'</b> — oportunidade "'+esc(titulo)+'"</div>';
+  $("npFormularioContainer").innerHTML = htmlFormularioProposta();
+  renderItensProposta();
+  $("npFormularioContainer").scrollIntoView({behavior:"smooth", block:"start"});
 }
 
 /* ================= importar ================= */
