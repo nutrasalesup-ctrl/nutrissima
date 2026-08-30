@@ -1601,15 +1601,25 @@ async function editarPedido(id){
 /* ================= VENDAS / DESPACHO ================= */
 async function tVendas(){
   document.getElementById('app').innerHTML=topo('Vendas / Despacho','carregando demanda…')+'<main><div class="center">Carregando…</div></main>';
-  const [dem,pa]=await Promise.all([
-    sb.from('demanda_vendas').select('produto_acabado_id,qtd_potes,data_despacho,plataforma,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto'),
-    sb.from('produto_acabado').select('id,nome').eq('ativo',true).order('nome')
+  const [dem,pa,vp]=await Promise.all([
+    sb.from('demanda_vendas').select('produto_acabado_id,qtd_potes,data_despacho,plataforma,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto').neq('origem','import_varejo'),
+    sb.from('produto_acabado').select('id,nome').eq('ativo',true).order('nome'),
+    sb.from('vendas_pedidos').select('produto_acabado_id,canal,entrega,qtd,qtd_separada,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto').in('canal',['Varejo','Shopee Full'])
   ]);
   EST.cache.paLista=pa.data||[];
   if(!EST.filtroVendas)EST.filtroVendas='varejo';
   const ehVarejo=d=>String(d.plataforma||'').toLowerCase().includes('varejo');
   const ehShopee=d=>String(d.plataforma||'').toLowerCase().includes('shopee full');
-  const todos=dem.data||[];
+  // Varejo e Shopee Full vêm direto da Carteira (vendas_pedidos), não da foto congelada do import:
+  // demanda real = qtd - qtd_separada (o que a Sabrina já separou não conta mais como necessidade).
+  const vpDemanda=(vp.data||[]).filter(r=>r.produto_acabado_id).map(r=>({
+    produto_acabado_id:r.produto_acabado_id,
+    qtd_potes:Math.max(0,Number(r.qtd||0)-Number(r.qtd_separada||0)),
+    data_despacho:r.entrega,
+    plataforma:r.canal,
+    produto_acabado:r.produto_acabado
+  })).filter(r=>r.qtd_potes>0);
+  const todos=[...(dem.data||[]),...vpDemanda];
   const somaP=arr=>arr.reduce((s,d)=>s+(Number(d.qtd_potes)||0),0);
   const totV=somaP(todos.filter(ehVarejo)), totE=somaP(todos.filter(d=>!ehVarejo(d)&&!ehShopee(d))), totS=somaP(todos.filter(ehShopee));
   const fv=EST.filtroVendas;
