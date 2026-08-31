@@ -2482,6 +2482,10 @@ async function abrirNovaProposta(oportunidadeId, clienteId, tituloEsc){
   ST.cache.propMargemImpostos = undefined;
   ST.cache.propMargemCmv = undefined;
 
+  var rCustoRef = await sb.from("sku_custo_referencia_externa").select("produto_acabado_id,custo_pote");
+  ST.cache.propCustosRef = {};
+  (rCustoRef.data||[]).forEach(function(c){ ST.cache.propCustosRef[c.produto_acabado_id] = Number(c.custo_pote)||0; });
+
   var tabelas = rTab.data || [];
   var tabelaItens = {};
   if(tabelas.length){
@@ -2741,13 +2745,36 @@ function renderPainelMargem(){
   var impPct = Number(ST.cache.propMargemImpostos) || 0;
   var comissaoPct = (ST.cache.propRepresentante ? Number(ST.cache.propRepresentante.comissao_pct) : 0) || 0;
 
-  var cmv = totalVendido * cmvPct/100;
+  var custosRef = ST.cache.propCustosRef || {};
+  function cmvDoGrupo(lista){
+    var custo = 0, valorComCusto = 0, valorTotal = 0;
+    lista.forEach(function(it){
+      var v = totalItemProposta(it);
+      valorTotal += v;
+      var c = custosRef[it.produto_acabado_id];
+      if(c != null){
+        custo += (Number(it.qtd)||0) * c;
+        valorComCusto += v;
+      } else {
+        custo += v * cmvPct/100;
+      }
+    });
+    return { custo: custo, valorComCusto: valorComCusto, valorTotal: valorTotal };
+  }
+  var itensVendidos = itens.filter(function(it){ return !it.bonificado; });
+  var itensBonif = itens.filter(function(it){ return it.bonificado; });
+  var cmvGrupoVendido = cmvDoGrupo(itensVendidos);
+  var cmvGrupoBonif = cmvDoGrupo(itensBonif);
+
+  var cmv = cmvGrupoVendido.custo;
   var margemBruta = totalVendido - cmv;
   var impostos = totalVendido * impPct/100;
   var comissao = totalVendido * comissaoPct/100;
-  var custoBonif = totalBonifTabela * cmvPct/100;
+  var custoBonif = cmvGrupoBonif.custo;
   var margemContribuicao = margemBruta - impostos - comissao - custoBonif;
   var pctContribuicao = totalVendido>0 ? (margemContribuicao/totalVendido*100) : 0;
+  var cmvPctEfetivo = totalVendido>0 ? (cmv/totalVendido*100) : 0;
+  var pctCoberturaCustoReal = totalVendido>0 ? (cmvGrupoVendido.valorComCusto/totalVendido*100) : 0;
 
   var tabelasOrd = (ST.cache.propTabelas||[]).slice().sort(function(a,b){ return a.pedido_minimo - b.pedido_minimo; });
   var proxTabela = tabelasOrd.filter(function(t){ return t.pedido_minimo > totalVendido; })[0];
@@ -2761,14 +2788,14 @@ function renderPainelMargem(){
     '</select>'+
     '<label for="mgImpostos">% impostos sobre a venda'+((ST.cache.propCliente&&ST.cache.propCliente.uf)?' · cliente em '+esc(ST.cache.propCliente.uf):"")+'</label>'+
     '<input id="mgImpostos" type="number" step="0.1" value="'+esc(String(ST.cache.propMargemImpostos))+'" oninput="ST.cache.propMargemImpostos=this.value;renderPainelMargem();">'+
-    '<label for="mgCmv">% CMV aproximado</label>'+
+    '<label for="mgCmv">% CMV fallback (só para SKU sem custo cadastrado)</label>'+
     '<input id="mgCmv" type="number" step="0.1" value="'+cmvPct+'" oninput="ST.cache.propMargemCmv=this.value;renderPainelMargem();">'+
     '<div class="conta" style="margin-top:10px">'+
-      'R$ '+brl(totalVendido)+' vendido − R$ '+brl(cmv)+' CMV ('+cmvPct+'%) = <b>R$ '+brl(margemBruta)+' margem bruta</b><br>'+
+      'R$ '+brl(totalVendido)+' vendido − R$ '+brl(cmv)+' CMV ('+cmvPctEfetivo.toFixed(1)+'% efetivo) = <b>R$ '+brl(margemBruta)+' margem bruta</b><br>'+
       '− R$ '+brl(impostos)+' impostos ('+impPct+'%) − R$ '+brl(comissao)+' comissão ('+comissaoPct+'%) − R$ '+brl(custoBonif)+' custo da bonificação'+
       ' = <b>R$ '+brl(margemContribuicao)+' margem de contribuição ('+pctContribuicao.toFixed(1)+'%)</b>'+
     '</div>'+
-    '<div style="font-size:12px;color:var(--tinta2);margin-top:8px">Margem líquida de verdade (depois de custo fixo — aluguel, folha etc.) não é calculável ainda: falta esse dado no sistema. O que está acima é a margem de contribuição desse pedido específico.</div>'+
+    '<div style="font-size:12px;color:var(--tinta2);margin-top:8px">'+pctCoberturaCustoReal.toFixed(0)+'% do valor vendido usa custo real por SKU (planilha de custo sem impostos, 31/08/2026); o restante usa o % manual acima, por falta de custo cadastrado pra esse SKU. Margem líquida de verdade (depois de custo fixo — aluguel, folha etc.) não é calculável ainda: falta esse dado no sistema. O que está acima é a margem de contribuição desse pedido específico.</div>'+
     '<div style="margin-top:12px;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--tinta2)">Oportunidades</div>'+
     (proxTabela ? '<div style="font-size:13px;margin-top:4px">Faltam <b>R$ '+brl(Number(proxTabela.pedido_minimo)-totalVendido)+'</b> pra tabela '+esc(proxTabela.nome)+'</div>' : '<div style="font-size:13px;margin-top:4px;color:var(--tinta2)">Já está na melhor tabela de preço.</div>')+
     (proxFaixaBonif ? '<div style="font-size:13px;margin-top:2px">Faltam <b>R$ '+brl(Number(proxFaixaBonif.valor_minimo)-totalVendido)+'</b> pra '+proxFaixaBonif.qtd_potes+' pote(s) de bonificação</div>' : '')+
@@ -3431,6 +3458,10 @@ async function telaNovaProposta(){
   var rFaixas = await sb.schema("crm").from("bonificacao_faixas")
     .select("id,valor_minimo,qtd_potes").eq("ativa", true).order("valor_minimo", {ascending:true});
   ST.cache.propFaixasBonif = rFaixas.data || [];
+
+  var rCustoRef = await sb.from("sku_custo_referencia_externa").select("produto_acabado_id,custo_pote");
+  ST.cache.propCustosRef = {};
+  (rCustoRef.data||[]).forEach(function(c){ ST.cache.propCustosRef[c.produto_acabado_id] = Number(c.custo_pote)||0; });
 
   var rTab = await sb.schema("crm").from("tabelas_preco")
     .select("id,nome,pedido_minimo").eq("ativa", true).order("pedido_minimo", {ascending:true});
