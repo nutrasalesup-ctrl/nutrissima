@@ -1004,13 +1004,16 @@ async function tProg(){
   const dnum=d=>new Date(d+'T12:00').getDate();
   const mesNome=new Date(ini+'T12:00').toLocaleDateString('pt-BR',{month:'long'});
   const janelaKan=[hojeStr,addDias(hojeStr,1),addDias(hojeStr,2)];
+  const semIniKan=mondayOf(), semFimKan=addDias(semIniKan,6);
   const diaLabelKan=d=>{
     const label=d===janelaKan[0]?'hoje':d===janelaKan[1]?'amanhã':wname(d);
     return label+' <span style="font-size:9px;color:#A99A82;font-weight:400">'+dnum(d)+'/'+(new Date(d+'T12:00').getMonth()+1)+'</span>';
   };
   const porStatusKan={programado:[],pesado:[],mistura:[],refino:[],balde:[]};
+  let baldeForaSemana=0;
   linhas.forEach(p=>{
     if(p.status==='programado'){if(janelaKan.includes(p.data))porStatusKan.programado.push(p)}
+    else if(p.status==='balde'){if(p.data>=semIniKan&&p.data<=semFimKan)porStatusKan.balde.push(p);else baldeForaSemana++}
     else{(porStatusKan[p.status]=porStatusKan[p.status]||[]).push(p)}
   });
   const kanCardHTML=(p,mostrarData)=>{
@@ -1051,8 +1054,9 @@ async function tProg(){
     }else{
       corpo=list.slice().sort(function(a,b){return new Date(a.data)-new Date(b.data)}).map(function(p){return kanCardHTML(p,true)}).join('');
     }
-    const contagem=status==='programado'?list.length+' <span style="font-weight:400;opacity:.5">/3d</span>':String(list.length);
-    return '<div class="kancol"><div class="kancol-h" style="color:'+cor+'"><span>'+titulo+'</span><span class="mono">'+contagem+'</span></div>'+(list.length?corpo:'<div class="kanvazio">—</div>')+'</div>';
+    const contagem=status==='programado'?list.length+' <span style="font-weight:400;opacity:.5">/3d</span>':status==='balde'?list.length+' <span style="font-weight:400;opacity:.5">/semana</span>':String(list.length);
+    const rodape=status==='balde'&&baldeForaSemana?'<div class="kanvazio" style="font-size:11px">+'+baldeForaSemana+' de outras semanas (ocultos)</div>':'';
+    return '<div class="kancol"><div class="kancol-h" style="color:'+cor+'"><span>'+titulo+'</span><span class="mono">'+contagem+'</span></div>'+(list.length?corpo:'<div class="kanvazio">—</div>')+rodape+'</div>';
   };
   const kanHTML='<div class="kanscroll">'
     +kanColHTML('programado','📋 Pesar','#7A6A57')
@@ -1112,7 +1116,7 @@ async function tProg(){
       if (!criticosAbaixoMinimo.length) return '';
       return `<div class="card" style="border-color:#FFB9B9;background:#FFFBFB;margin-bottom:12px;border-left:7px solid var(--morango)"><b style="color:var(--morango)">🔴 PRODUTOS ABAIXO DO ESTOQUE MÍNIMO — PROGRAMAR PRODUÇÃO</b>${criticosAbaixoMinimo.map(p=>`<p style="font-size:13px;margin-top:6px;font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums"><b>${p.nome}</b> · saldo ${fmt(Number(p.saldo_potes))} potes · mínimo ${fmt(Number(p.estoque_minimo))} · <span style="color:var(--morango)">faltam ${fmt(Number(p.estoque_minimo) - Number(p.saldo_potes))} potes</span></p>`).join('')}<small style="color:#7A6A57">incluir no formulário "＋ Programar produto" abaixo</small></div>`;
     })()}
-    <p style="font-size:11px;font-weight:800;color:#8A7A64;letter-spacing:.04em;text-transform:uppercase;margin:0 0 6px 2px">pesar: hoje + próx. 2 dias · demais colunas: tudo em aberto</p>
+    <p style="font-size:11px;font-weight:800;color:#8A7A64;letter-spacing:.04em;text-transform:uppercase;margin:0 0 6px 2px">pesar: hoje + próx. 2 dias · balde: semana atual · demais colunas: tudo em aberto</p>
     ${kanHTML}
     <div class="calweek">
       <button onclick="progSemana(-7)">‹${antes?` <i>${antes}</i>`:''}</button>
