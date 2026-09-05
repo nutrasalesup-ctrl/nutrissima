@@ -2496,18 +2496,24 @@ async function mapearCodigo(cod){
 /* ================= PESAGEM ================= */
 async function tPesagem(progId){
   if(!progId)return tela('programacao');
-  const {data:prog}=await sb.from('programacao_refino').select('*, produtos(nome)').eq('id',progId).single();
+  const {data:prog}=await sb.from('programacao_refino').select('*, produtos(nome), equipamentos(nome)').eq('id',progId).single();
   const perda=3; const pesar=Number(prog.quantidade_kg)/(1-perda/100);
   const {data:exp,error}=await sb.rpc('fn_explode',{p_produto:prog.produto_id,p_kg:pesar});
   if(error)return msg(error.message,true);
-  if(!EST.cache.itens){const {data}=await sb.from('itens').select('id,nome,unidade');EST.cache.itensById=Object.fromEntries((data||[]).map(i=>[i.id,i]))}
+  if(!EST.cache.itens){const {data}=await sb.from('itens').select('id,nome,unidade,ordem');EST.cache.itensById=Object.fromEntries((data||[]).map(i=>[i.id,i]))}
   else EST.cache.itensById=EST.cache.itensById||Object.fromEntries(EST.cache.itens.map(i=>[i.id,i]));
-  if(!EST.cache.itensById){const {data}=await sb.from('itens').select('id,nome');EST.cache.itensById=Object.fromEntries((data||[]).map(i=>[i.id,i]))}
+  if(!EST.cache.itensById||Object.values(EST.cache.itensById)[0]?.ordem===undefined){const {data}=await sb.from('itens').select('id,nome,ordem');EST.cache.itensById=Object.fromEntries((data||[]).map(i=>[i.id,i]))}
   const {data:prodsAll}=await sb.from('produtos').select('id,nome');
   const prodBy=Object.fromEntries((prodsAll||[]).map(p=>[p.id,p.nome]));
   const {count}=await sb.from('programacao_refino').select('id',{count:'exact',head:true}).like('lote',loteDiaAtual()+'-%');
   const insumos=(exp||[]).filter(e=>e.item_id);
   const baldes=(exp||[]).filter(e=>e.balde_produto_id);
+  const {data:irmas}=await sb.from('programacao_refino').select('id,criado_em').eq('produto_id',prog.produto_id).eq('equipamento_id',prog.equipamento_id).eq('data',prog.data).order('criado_em');
+  const posBat=Math.max(1,((irmas||[]).findIndex(x=>x.id===progId)+1)||1);
+  EST.fichaRefino={produto:prog.produtos?.nome||'—',moinho:prog.equipamentos?.nome||'',data:prog.data,kg:Number(prog.quantidade_kg),
+    i:posBat,n:(irmas||[]).length||1,
+    itens:insumos.map(i=>({nome:EST.cache.itensById[i.item_id]?.nome||'?',ordem:EST.cache.itensById[i.item_id]?.ordem??999}))
+      .sort((x,y)=>(x.ordem-y.ordem)||x.nome.localeCompare(y.nome,'pt-BR')).map(x=>x.nome)};
   document.getElementById('app').innerHTML=`
   ${trilha('Pesagem')}${topo('Pesagem',prog.produtos.nome+' · '+fmt(prog.quantidade_kg)+' kg programados')}
   <main>
@@ -2531,7 +2537,100 @@ async function confPesagem(progId){
   if(!await travaEstoque())return;
   const {error}=await sb.rpc('confirmar_pesagem',{p_prog:progId,p_responsavel:EST.operador,p_lote:lote,p_lotes:lotesMP});
   if(error)return msg(error.message,true);
-  msg('✅ Pesagem concluída — estoque baixado · lote '+lote);tela('programacao');
+  msg('✅ Pesagem concluída — estoque baixado · lote '+lote);
+  if(EST.fichaRefino){EST.fichaRefino.lote=lote;pesagemFim(lote);}else{tela('programacao');}
+}
+
+
+/* ===== Ficha de refino — sai junto com o cartao de identificacao, depois da pesagem ===== */
+const PS_APLIC={m1:['Masseira','46'],m2:['Dispersor','53']};
+function fichaRefinoHTML(d,lote){
+  const esc=t=>String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const ap=PS_APLIC[moinhoTipo(d.moinho)];
+  const its=d.itens||[];
+  const duas=its.length>8, pad=duas?'0.8mm':'1.6mm', tfs=duas?'8.5pt':'9.5pt';
+  const row=(k,it)=>'<tr><td class="n">'+k+'</td><td>'+esc(it)+'</td><td class="esc2"></td><td class="chk">&#9744;</td></tr>';
+  let lista;
+  if(duas){
+    const meio=Math.ceil(its.length/2);
+    const cab='<tr><th></th><th>Insumo</th><th style="width:20mm">Lote MP</th><th></th></tr>';
+    lista='<div style="display:grid;grid-template-columns:1fr 1fr;gap:4mm"><table>'+cab
+      +its.slice(0,meio).map((it,k)=>row(k+1,it)).join('')+'</table><table>'+cab
+      +its.slice(meio).map((it,k)=>row(meio+k+1,it)).join('')+'</table></div>';
+  }else{
+    const cab='<tr><th></th><th>Insumo</th><th style="width:32mm">Lote do insumo</th><th></th></tr>';
+    lista='<table>'+cab+its.map((it,k)=>row(k+1,it)).join('')+'</table>';
+  }
+  const cx=t=>'<div><div class="lb">'+t+'</div><div class="hora"></div></div>';
+  return '<div class="f" style="--pad:'+pad+';--tfs:'+tfs+'">'
+   +'<div class="hd"><div class="eb">Nutrissima &middot; refino &mdash; ficha da batelada</div>'
+   +'<div class="tt">'+esc(d.produto)+'</div>'
+   +'<div class="hsub">'+esc(d.moinho)+' &middot; '+brData(d.data)+' &middot; ficha '+d.i+' de '+d.n+' &middot; '+fmt(d.kg,0)+' kg</div></div>'
+   +'<div class="grid">'
+   +'<div class="cel"><div class="lb">Lote da pesagem</div><div class="vl">'+esc(lote)+'</div></div>'
+   +'<div class="cel"><div class="lb">Desta batelada</div><div class="vl">'+fmt(d.kg,0)+' kg</div></div>'
+   +'<div class="cel"><div class="lb">Operador</div><div class="esc"></div></div></div>'
+   +'<div class="blk" style="--tar:#3E7C45"><p class="bt">1 &middot; Sequencia &mdash; ordem da formulacao</p>'+lista+'</div>'
+   +'<div class="blk" style="--tar:#22303A"><p class="bt">2 &middot; Horarios</p><div class="g4">'
+   +cx('Entrou no moinho')+cx('Produto refinado')+cx('Saiu p/ o balde')+cx('kg real no balde')+'</div></div>'
+   +'<div class="blk ps"><p class="bt">3 &middot; PS 233 &mdash; '+ap[0]+', '+ap[1]+' &deg;C</p>'
+   +'<p class="bs">Derrete toda a quantidade no micro-ondas (~5 min). Com o agitador ligado, aplica aos poucos, misturando cada parte com um pouco de creme antes de jogar. Abaixo de '+ap[1]+' &deg;C, espera.</p>'
+   +'<div class="g4">'+cx('Temperatura lida')+cx('Hora que aplicou')+cx('Quem aplicou')+cx('Micro-ondas (min)')+'</div></div>'
+   +'<div class="rod"><b>Parou?</b> &#9744; esperando temperatura &#9744; falta de insumo &#9744; limpeza / troca &#9744; manutencao &#9744; moinho ocupado &#9744; outro: ____________<br>'
+   +'<b>Como ler:</b> a sequencia e a ordem cadastrada na formulacao; o lote e o mesmo do cartao de identificacao da pesagem. '
+   +'<b>Procedencia:</b> pesagem confirmada no app &middot; temperaturas informadas pela producao em 05/09/2026.</div></div>';
+}
+function fichaRefinoPrint(){
+  const d=EST.fichaRefino;
+  if(!d){msg('Ficha indisponivel — refaca a pesagem pela tela',true);return}
+  const css="@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap');"
+   +"*{box-sizing:border-box}body{margin:0;background:#EFE7DC;font-family:Archivo,system-ui,sans-serif;color:#33200F}"
+   +".f{background:#FFFDF9;width:190mm;min-height:262mm;margin:10px auto;padding:7mm;font-size:9.5pt;border:1px solid #DCD2C4;display:flex;flex-direction:column}"
+   +".hd{background:#22303A;color:#FFFDF9;margin:-7mm -7mm 4mm;padding:5mm 7mm 4mm}"
+   +".eb{font-size:9pt;letter-spacing:.16em;text-transform:uppercase;opacity:.75}"
+   +".tt{font-size:17pt;font-weight:800;line-height:1.05;margin-top:2mm}"
+   +".hsub{font-size:9.5pt;margin-top:1.5mm;opacity:.85}"
+   +".grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3mm;margin-bottom:3mm}"
+   +".cel{border:1.5px solid #DCD2C4;border-radius:8px;padding:1.5mm 2.5mm;min-height:11mm}"
+   +".cel .lb,.blk .lb{font-size:7.5pt;letter-spacing:.08em;text-transform:uppercase;color:#7A6A57}"
+   +".cel .vl{font-family:'IBM Plex Mono',monospace;font-size:13pt;font-weight:600;margin-top:1mm;font-variant-numeric:tabular-nums}"
+   +".cel .esc{border-bottom:1px solid #B9AC99;height:6.5mm}"
+   +".blk{border-left:7px solid var(--tar,#3E7C45);background:#fff;border-top:1px solid #DCD2C4;border-right:1px solid #DCD2C4;border-bottom:1px solid #DCD2C4;padding:2.5mm 3.5mm;margin-bottom:3mm}"
+   +".bt{font-size:10.5pt;font-weight:700;margin:0 0 1.5mm}"
+   +".bs{font-size:8.5pt;color:#7A6A57;margin:0 0 2mm;line-height:1.35}"
+   +"table{width:100%;border-collapse:collapse;font-size:var(--tfs,9.5pt)}"
+   +"th{font-size:8pt;letter-spacing:.08em;text-transform:uppercase;color:#7A6A57;text-align:left;font-weight:700;padding-bottom:1mm}"
+   +"td{padding:var(--pad,1.6mm) 1mm;border-bottom:1px solid #EDE5D9}"
+   +".n{font-family:'IBM Plex Mono',monospace;color:#7A6A57;width:8mm}"
+   +".chk{width:8mm;text-align:center;font-size:12pt;color:#B9AC99}"
+   +".esc2{border-bottom:1px solid #B9AC99}"
+   +".ps{background:#FAF3E3;border-left-color:#B8862B}"
+   +".g4{display:grid;grid-template-columns:repeat(4,1fr);gap:3mm}"
+   +".blk .lb{margin-bottom:1mm}"
+   +".hora{border:1.5px solid #B9AC99;border-radius:6px;height:7.5mm}"
+   +".rod{margin-top:auto;border-top:1px solid #DCD2C4;padding-top:2mm;font-size:7.5pt;color:#7A6A57;line-height:1.4}"
+   +"@media print{body{background:#fff}.f{margin:0;border:0;width:auto;min-height:0;page-break-after:always}}"
+   +"@page{size:A4;margin:8mm}";
+  const html='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Ficha de refino '+d.produto+'</title><style>'+css+'</style></head><body>'
+   +fichaRefinoHTML(d,EST.fichaRefino.lote||'')+'</body></html>';
+  const w=window.open('','_blank');
+  if(!w){msg('O navegador bloqueou a janela — libere o pop-up e toque de novo',true);return}
+  w.document.write(html);w.document.close();
+  setTimeout(()=>{try{w.print()}catch(e){}},400);
+}
+
+
+function pesagemFim(lote){
+  const d=EST.fichaRefino||{};
+  document.getElementById('app').innerHTML=
+   trilha('Pesagem')+topo('Pesagem concluída',(d.produto||'')+' · lote '+lote)
+   +'<main><div class="card" style="text-align:center;margin-top:0">'
+   +'<span class="step-label">lote gerado</span>'
+   +'<b class="mono" style="font-size:34px;display:block;margin:4px 0 10px">'+lote+'</b>'
+   +'<p style="color:#7A6A57;font-size:13px;margin:0 0 14px">Imprima a ficha e mande junto com o cartão de identificação — as duas com o mesmo lote.</p>'
+   +'<button class="btnP" style="width:100%" onclick="fichaRefinoPrint()">🖨️ Imprimir ficha da mistura</button>'
+   +'<button class="btnSec" style="width:100%;margin-top:10px;min-height:44px" onclick="tela(\'programacao\')">Voltar para a programação</button>'
+   +'</div></main>';
 }
 
 /* ================= ENVASE ================= */
