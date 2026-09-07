@@ -593,8 +593,302 @@ async function sepConferirEan(l,cod,diz){
   return 'segue';
 }
 
-const TELAS={inicio:tInicio,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao,treinamento:tTreinamento,separacao:tSeparacao,relComercial:tRelComercial};
+const TELAS={inicio:tInicio,linha:tLinha,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao,treinamento:tTreinamento,separacao:tSeparacao,relComercial:tRelComercial};
 function tela(n,arg){TELAS[n](arg)}
+
+/* ================= MISTURA & REFINO (área da linha) ================= */
+const PS_NOME='Emulsificante PS 233';
+const MICRA_ALVO=30;
+const BALDE_CAP=18;
+function alvoTemp(eqNome){return moinhoTipo(eqNome)==='m1'?46:53}
+function nomeVaso(eqNome){return moinhoTipo(eqNome)==='m1'?'masseira':'dispersor'}
+function hhmm(d){return new Date(d).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
+function decorrido(a,b){
+  const m=Math.round((new Date(b)-new Date(a))/60000);
+  if(m<1)return'agora';if(m<60)return m+' min';
+  return Math.floor(m/60)+'h'+String(m%60).padStart(2,'0');
+}
+function haQuanto(a){return decorrido(a,new Date())}
+function fecharSheet(){const s=document.getElementById('sheetLinha');if(s)s.remove()}
+function sheetLinha(titulo,sub,corpo){
+  fecharSheet();
+  const d=el('<div id="sheetLinha" style="position:fixed;inset:0;background:rgba(20,12,6,.55);z-index:90;display:flex;align-items:flex-end">'
+    +'<div style="background:#EFE7DC;width:100%;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:16px 14px 22px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px">'
+    +'<div><b style="font-size:16px">'+titulo+'</b><div style="font-size:12px;color:#7A6A57">'+(sub||'')+'</div></div>'
+    +'<button onclick="fecharSheet()" style="background:#fff;border:1.5px solid var(--linha);border-radius:10px;width:40px;height:40px;font-size:18px;font-weight:800">✕</button>'
+    +'</div>'+corpo+'</div></div>');
+  document.body.appendChild(d);
+}
+/* toda gravação passa por aqui: escolhe a hora sem teclado */
+function perguntarHora(rotulo,cb){
+  const agora=new Date();
+  const btn=(m)=>'<button onclick="EST._horaMin='+m+';fecharSheet();EST._horaCb&&EST._horaCb('+m+')" style="flex:1;background:#fff;border:1.5px solid var(--linha);border-radius:10px;padding:14px 0;font-weight:800;font-size:14px">−'+m+' min</button>';
+  EST._horaCb=cb;
+  sheetLinha(rotulo,'quando foi?',
+    '<button onclick="fecharSheet();EST._horaCb&&EST._horaCb(0)" style="width:100%;background:#3E7C45;color:#fff;border:none;border-radius:12px;padding:20px;font-size:19px;font-weight:800">Foi agora · '+hhmm(agora)+'</button>'
+    +'<div style="display:flex;gap:7px;margin-top:9px">'+[5,10,15,30].map(btn).join('')+'</div>');
+}
+function horaDe(min){return new Date(Date.now()-(min||0)*60000).toISOString()}
+async function gravarEvento(o){
+  const {error}=await sb.from('refino_eventos').insert(o);
+  if(error){msg(error.message,true);return false}
+  return true;
+}
+async function tLinha(){
+  if(precisaOperador())return;
+  const filtro=EST.filtroLinha||'todas';
+  const {data:bats}=await sb.from('programacao_refino')
+    .select('id,quantidade_kg,status,lote,data,produto_id,produtos(nome),equipamentos(nome)')
+    .in('status',['pesado','mistura','refino']).order('data');
+  const lista=bats||[];
+  const ids=lista.map(b=>b.id);
+  const {data:evs}=ids.length
+    ?await sb.from('refino_eventos').select('*').in('batelada_id',ids).order('ocorrido_em')
+    :{data:[]};
+  const prodIds=[...new Set(lista.map(b=>b.produto_id))];
+  const {data:ps}=prodIds.length
+    ?await sb.from('receita_itens').select('produto_id,qtd_por_100kg,itens(nome)').in('produto_id',prodIds)
+    :{data:[]};
+  const psPor={};(ps||[]).forEach(r=>{if((r.itens?.nome||'')===PS_NOME)psPor[r.produto_id]=Number(r.qtd_por_100kg)||0});
+  EST.cacheLinha={};
+  const porBat={};(evs||[]).forEach(e=>(porBat[e.batelada_id]=porBat[e.batelada_id]||[]).push(e));
+  const visiveis=lista.filter(b=>filtro==='todas'||moinhoTipo(b.equipamentos?.nome)===filtro);
+  const nM1=lista.filter(b=>moinhoTipo(b.equipamentos?.nome)==='m1').length;
+  const nM2=lista.length-nM1;
+  const chip=(k,rot,n)=>'<button onclick="EST.filtroLinha=\''+k+'\';tela(\'linha\')" style="flex:1;background:'+(filtro===k?'#22303A':'#fff')+';color:'+(filtro===k?'#fff':'var(--cacau)')+';border:1.5px solid '+(filtro===k?'#22303A':'var(--linha)')+';border-radius:10px;padding:12px 4px;font-weight:800;font-size:14px">'+rot+' · '+n+'</button>';
+  const cards=visiveis.map(b=>{
+    EST.cacheLinha[b.id]=b;
+    const ev=porBat[b.id]||[];
+    const m=moinhoTipo(b.equipamentos?.nome);
+    const corM=m==='m1'?'#B8862B':'#2B5A78';
+    const alvo=alvoTemp(b.equipamentos?.nome), vaso=nomeVaso(b.equipamentos?.nome);
+    const abast=ev.find(e=>e.evento==='abastecimento');
+    const psOk=ev.filter(e=>e.evento==='ps'&&e.no_alvo).pop();
+    const psTentativas=ev.filter(e=>e.evento==='ps');
+    const transf=ev.find(e=>e.evento==='transferencia');
+    const ciclos=ev.filter(e=>e.evento==='ciclo_fim');
+    const ultCiclo=ciclos[ciclos.length-1];
+    const liberado=ultCiclo&&Number(ultCiclo.micragem)<=MICRA_ALVO;
+    const pct=psPor[b.produto_id];
+    const kgPS=pct!==undefined?Math.round(pct*b.quantidade_kg)/100:null;
+    let cor,rot,botao,sub,extra='',travado='';
+    if(b.status==='pesado'){
+      cor='#2F6DA8';rot='PESADO, PARADO';
+      botao='🥣 Abasteci a '+vaso;sub='carimba o início da mistura';
+    }else if(b.status==='mistura'&&!psOk){
+      cor='#B8862B';rot='EM MISTURA';
+      botao='🧪 Apliquei o PS';sub='vai pedir a temperatura da '+vaso;
+      extra='<div style="background:#22303A;color:#fff;border-radius:12px;padding:12px 13px;margin-bottom:10px">'
+        +'<div style="font-size:10.5px;letter-spacing:.14em;font-weight:800;color:#C9B79E">APLICAÇÃO OBRIGATÓRIA</div>'
+        +'<div style="display:flex;align-items:baseline;gap:8px;margin-top:3px"><b class="mono" style="font-size:30px;line-height:1">'+(kgPS!==null?fmt(kgPS,2):'—')+'</b><span style="font-size:14px;font-weight:800">kg de '+PS_NOME+'</span></div>'
+        +'<div style="font-size:12px;color:#C9B79E;margin-top:3px">'+(kgPS!==null?fmt(pct,2)+' kg por 100 kg × '+fmt(b.quantidade_kg,0)+' kg desta batelada':'quantidade não encontrada na receita — confira na ficha antes de aplicar')+'</div>'
+        +'<div style="background:#B0510F;border-radius:9px;padding:9px 11px;margin-top:9px">'
+        +'<div style="font-size:12px">a '+vaso+' precisa estar em</div>'
+        +'<b class="mono" style="font-size:26px;line-height:1.1">'+alvo+'° ou mais</b></div>'
+        +(psTentativas.length?'<div style="font-size:11.5px;color:#F0C0A0;margin-top:7px">última leitura <b class="mono">'+fmt(psTentativas[psTentativas.length-1].temperatura,0)+'°</b> às '+hhmm(psTentativas[psTentativas.length-1].ocorrido_em)+' — abaixo do alvo, ainda travado</div>':'')
+        +'</div>';
+      travado='<button onclick="msg(\'Carimbe o PS primeiro — a transferência libera com a temperatura no alvo\',true)" style="width:100%;margin-top:7px;background:#F2ECE3;color:#9A8A77;border:1.5px dashed var(--linha);border-radius:12px;padding:15px 12px;font-size:15px;font-weight:800">🔒 Transferir pro moinho</button>'
+        +'<div style="text-align:center;font-size:11.5px;color:#9A8A77;margin-top:4px">libera depois do PS</div>';
+    }else if(b.status==='mistura'){
+      cor='#B8862B';rot='PS APLICADO — PODE TRANSFERIR';
+      botao='🌀 Transferi pro moinho';sub='carimba a transferência e abre o 1º ciclo';
+      extra='<div style="background:#EAF3EA;border-left:4px solid #3E7C45;border-radius:8px;padding:8px 10px;margin-bottom:9px;font-size:12px">'
+        +'✓ PS aplicado às <b class="mono">'+hhmm(psOk.ocorrido_em)+'</b> com <b class="mono">'+fmt(psOk.temperatura,0)+'°</b> na '+vaso+'</div>';
+    }else{
+      cor='#B0510F';rot='EM REFINO';
+      const prox=ciclos.length+1;
+      botao='✓ Fechar '+prox+'º ciclo';sub='vai pedir a micragem';
+      if(ultCiclo){
+        const mic=Number(ultCiclo.micragem);
+        const faltam=Math.max(0,Math.ceil((mic-MICRA_ALVO)/10));
+        extra='<div style="background:'+(liberado?'#EAF3EA':'#FBF1E6')+';border-left:4px solid '+(liberado?'#3E7C45':'#B0510F')+';border-radius:8px;padding:8px 10px;margin-bottom:9px">'
+          +'<div style="font-size:12px"><b class="mono" style="font-size:18px;color:'+(liberado?'#3E7C45':'#B0510F')+'">'+fmt(mic,0)+' µm</b> no '+ciclos.length+'º ciclo · alvo <b class="mono">'+MICRA_ALVO+'</b></div>'
+          +'<div style="font-size:11.5px;color:#7A6A57">'+(liberado?'chegou no alvo — pode mandar pro balde':'cai ~10 µm por ciclo → provável liberar no <b>'+(ciclos.length+faltam)+'º</b>')+'</div></div>';
+      }
+      if(liberado){
+        botao='🛢️ Foi pro balde';sub='lança o kg e imprime as etiquetas';
+        travado='<button onclick="linhaCiclo(\''+b.id+'\')" style="width:100%;margin-top:7px;background:#fff;border:1.5px solid var(--linha);border-radius:12px;padding:13px;font-size:14px;font-weight:800;color:#7A6A57">rodar mais um ciclo</button>';
+      }else if(ciclos.length){
+        travado='<button onclick="linhaBalde(\''+b.id+'\',true)" style="width:100%;margin-top:7px;background:#fff;border:1.5px dashed #C63A3A;border-radius:12px;padding:13px;font-size:13.5px;font-weight:800;color:#C63A3A">mandar pro balde fora do alvo</button>';
+      }
+    }
+    const acao=b.status==='pesado'?'linhaAbastecer':(b.status==='mistura'&&!psOk?'linhaPS':(b.status==='mistura'?'linhaTransferir':(liberado?'linhaBalde':'linhaCiclo')));
+    const trilhaEv=[];
+    if(abast)trilhaEv.push([hhmm(abast.ocorrido_em),vaso.charAt(0).toUpperCase()+vaso.slice(1)+' abastecida — mistura começou','']);
+    psTentativas.forEach(e=>trilhaEv.push([hhmm(e.ocorrido_em),'PS 233 · <b class="mono">'+fmt(e.temperatura,0)+'°</b> '+(e.no_alvo?'✓':'✗ abaixo do alvo'),abast?decorrido(abast.ocorrido_em,e.ocorrido_em):'']));
+    if(transf)trilhaEv.push([hhmm(transf.ocorrido_em),'Transferido pro moinho',psOk?decorrido(psOk.ocorrido_em,transf.ocorrido_em):'']);
+    ciclos.forEach((e,ix)=>{
+      const ant=ix?ciclos[ix-1].ocorrido_em:(transf?transf.ocorrido_em:null);
+      trilhaEv.push([hhmm(e.ocorrido_em),(ix+1)+'º ciclo fechado · <b class="mono">'+fmt(e.micragem,0)+' µm</b>',ant?decorrido(ant,e.ocorrido_em):'']);
+    });
+    const linhasEv=trilhaEv.map(t=>'<div style="display:flex;gap:8px;align-items:baseline;padding:2px 0"><b class="mono" style="font-size:13px;min-width:46px">'+t[0]+'</b><span style="font-size:12px;flex:1">'+t[1]+'</span><small style="color:#9A8A77;white-space:nowrap">'+t[2]+'</small></div>').join('');
+    const ultima=ev.length?ev[ev.length-1].ocorrido_em:null;
+    return '<div style="background:#fff;border:1px solid var(--linha);border-radius:14px;overflow:hidden;margin-bottom:12px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;background:'+corM+';color:#fff;padding:8px 13px">'
+      +'<div><b class="mono" style="font-size:19px;letter-spacing:.03em">'+(b.lote||'sem lote')+'</b>'
+      +'<div style="font-size:12px;opacity:.9">'+(b.produtos?.nome||'—')+'</div></div>'
+      +'<div style="text-align:right"><b class="mono" style="font-size:17px">'+fmt(b.quantidade_kg,0)+'</b><small> kg</small>'
+      +'<div style="font-size:11px;opacity:.9">'+(m==='m1'?'Moinho 1':'Moinho 2')+'</div></div></div>'
+      +'<div style="padding:11px 13px">'
+      +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:9px">'
+      +'<b style="color:'+cor+';font-size:12px;letter-spacing:.04em">'+rot+'</b>'
+      +'<span style="font-size:12px;color:#7A6A57">'+(ultima?'há '+haQuanto(ultima):'desde '+brData(b.data))+'</span></div>'
+      +extra
+      +'<button onclick="'+acao+'(\''+b.id+'\')" style="width:100%;background:'+cor+';color:#fff;border:none;border-radius:12px;padding:20px 12px;font-size:19px;font-weight:800;line-height:1.2">'+botao+'</button>'
+      +'<div style="text-align:center;font-size:11.5px;color:#7A6A57;margin-top:5px">'+sub+'</div>'
+      +travado
+      +(linhasEv?'<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--linha)">'+linhasEv+'</div>':'')
+      +'<button onclick="linhaEtiquetas(\''+b.id+'\')" style="width:100%;margin-top:8px;background:none;border:none;color:#7A6A57;font-size:12px;font-weight:700;padding:6px">🏷️ reimprimir etiquetas</button>'
+      +'</div></div>';
+  }).join('');
+  document.getElementById('app').innerHTML=`
+  ${trilha('Moinho')}
+  ${topo('Mistura & Refino','o que está na sua área agora · '+EST.operador)}
+  <main>
+    <div class="card" style="padding:11px 13px"><div style="display:flex;gap:7px">
+      ${chip('todas','Todas',lista.length)}${chip('m1','Moinho 1',nM1)}${chip('m2','Moinho 2',nM2)}
+    </div></div>
+    ${cards||'<div class="card"><div class="center">Nenhuma batelada na mistura ou no refino agora. 😴</div></div>'}
+    <div class="card"><small style="color:#7A6A57"><b>Como funciona.</b> Cada batelada tem um botão só: o próximo passo. O toque grava a hora — e é isso que faz a trilha mostrar quanto tempo cada fase levou.<br><br>
+    <b>O PS trava a transferência.</b> A quantidade vem da receita e a temperatura é mínimo: ${'46° na masseira (Moinho 1) e 53° no dispersor (Moinho 2)'}. Leitura abaixo fica registrada com a hora, mas não libera.<br><br>
+    <b>Micragem:</b> ${MICRA_ALVO} µm ou menos libera o balde. Acima disso o botão abre o próximo ciclo e estima quantos faltam pela queda média de 10 µm por ciclo.<br><br>
+    <b>Etiquetas:</b> saem no lançamento do balde, uma por balde de até ${BALDE_CAP} kg, numeradas dentro do lote.</small></div>
+  </main>`;
+}
+async function linhaAbastecer(id){
+  const b=EST.cacheLinha[id];if(!b)return;
+  perguntarHora('🥣 Abasteci a '+nomeVaso(b.equipamentos?.nome),async(min)=>{
+    if(!await gravarEvento({batelada_id:id,evento:'abastecimento',ocorrido_em:horaDe(min),responsavel:EST.operador}))return;
+    const {error}=await sb.rpc('iniciar_mistura',{p_prog:id,p_responsavel:EST.operador});
+    if(error)return msg(error.message,true);
+    msg('✅ Mistura começou — '+(b.produtos?.nome||''));tela('linha');
+  });
+}
+function linhaPS(id){
+  const b=EST.cacheLinha[id];if(!b)return;
+  const alvo=alvoTemp(b.equipamentos?.nome), vaso=nomeVaso(b.equipamentos?.nome);
+  const vals=alvo===46?[41,43,44,45,46,47,48,50,52]:[48,50,51,52,53,54,55,56,58];
+  const chips=vals.map(v=>{const ok=v>=alvo;
+    return '<button onclick="linhaPSGrava(\''+id+'\','+v+')" style="border:2px solid '+(ok?'#3E7C45':'#C63A3A')+';background:'+(ok?'#EAF3EA':'#FBEAEA')+';color:'+(ok?'#3E7C45':'#C63A3A')+';border-radius:12px;padding:18px 0;font-size:19px;font-weight:800;font-family:\'IBM Plex Mono\',monospace">'+v+'°</button>';
+  }).join('');
+  sheetLinha('Temperatura da '+vaso,'alvo: '+alvo+'° ou mais',
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px">'+chips+'</div>'
+    +'<div style="background:#fff;border-left:4px solid #C63A3A;border-radius:8px;padding:9px 11px;margin-top:10px;font-size:11.5px;color:#7A6A57">'
+    +'Abaixo de '+alvo+'° a leitura fica registrada com a hora e a transferência continua travada.</div>');
+}
+async function linhaPSGrava(id,temp){
+  const b=EST.cacheLinha[id];if(!b)return;
+  const alvo=alvoTemp(b.equipamentos?.nome);
+  fecharSheet();
+  const ok=temp>=alvo;
+  perguntarHora('🧪 PS aplicado a '+temp+'°',async(min)=>{
+    if(!await gravarEvento({batelada_id:id,evento:'ps',ocorrido_em:horaDe(min),temperatura:temp,no_alvo:ok,responsavel:EST.operador}))return;
+    msg(ok?'✅ PS registrado a '+temp+'° — pode transferir':'⚠️ '+temp+'° abaixo de '+alvo+'° — registrado, mas não libera',!ok);
+    tela('linha');
+  });
+}
+async function linhaTransferir(id){
+  const b=EST.cacheLinha[id];if(!b)return;
+  perguntarHora('🌀 Transferi pro moinho',async(min)=>{
+    if(!await gravarEvento({batelada_id:id,evento:'transferencia',ocorrido_em:horaDe(min),responsavel:EST.operador}))return;
+    const {error}=await sb.rpc('iniciar_refino',{p_prog:id,p_responsavel:EST.operador});
+    if(error)return msg(error.message,true);
+    msg('✅ No moinho — 1º ciclo rodando');tela('linha');
+  });
+}
+function linhaCiclo(id){
+  const vals=[60,55,50,45,40,35,30,25,20];
+  const chips=vals.map(v=>{const ok=v<=MICRA_ALVO;
+    return '<button onclick="linhaCicloGrava(\''+id+'\','+v+')" style="border:2px solid '+(ok?'#3E7C45':'var(--linha)')+';background:'+(ok?'#EAF3EA':'#fff')+';color:'+(ok?'#3E7C45':'var(--cacau)')+';border-radius:12px;padding:18px 0;font-size:19px;font-weight:800;font-family:\'IBM Plex Mono\',monospace">'+v+'</button>';
+  }).join('');
+  sheetLinha('Micragem do ciclo','µm · verde libera o balde',
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px">'+chips+'</div>');
+}
+async function linhaCicloGrava(id,mic){
+  fecharSheet();
+  const {data:ja}=await sb.from('refino_eventos').select('id').eq('batelada_id',id).eq('evento','ciclo_fim');
+  const n=(ja||[]).length+1;
+  perguntarHora('✓ '+n+'º ciclo · '+mic+' µm',async(min)=>{
+    if(!await gravarEvento({batelada_id:id,evento:'ciclo_fim',ocorrido_em:horaDe(min),ciclo:n,micragem:mic,no_alvo:mic<=MICRA_ALVO,responsavel:EST.operador}))return;
+    msg(mic<=MICRA_ALVO?'✅ '+mic+' µm — liberado pro balde':'🌀 '+mic+' µm — segue mais um ciclo');
+    tela('linha');
+  });
+}
+function linhaBalde(id,fora){
+  const b=EST.cacheLinha[id];if(!b)return;
+  EST._baldeKg=Number(b.quantidade_kg)||0;
+  const corpo=()=>{
+    const n=Math.max(1,Math.ceil(EST._baldeKg/BALDE_CAP));
+    return '<div style="display:flex;align-items:center;gap:9px;justify-content:center;margin-bottom:10px">'
+      +'<button onclick="linhaBaldeAjusta(\''+id+'\',-1)" style="background:#fff;border:1.5px solid var(--linha);border-radius:10px;width:54px;height:54px;font-size:22px;font-weight:800">−</button>'
+      +'<div style="text-align:center"><b class="mono" style="font-size:32px">'+fmt(EST._baldeKg,0)+'</b><small> kg</small>'
+      +'<div style="font-size:11.5px;color:#7A6A57">= '+n+' balde'+(n>1?'s':'')+' de até '+BALDE_CAP+' kg</div></div>'
+      +'<button onclick="linhaBaldeAjusta(\''+id+'\',1)" style="background:#fff;border:1.5px solid var(--linha);border-radius:10px;width:54px;height:54px;font-size:22px;font-weight:800">+</button></div>'
+      +(fora?'<div style="background:#FBEAEA;border-left:4px solid #C63A3A;border-radius:8px;padding:9px 11px;margin-bottom:9px;font-size:11.5px;color:#C63A3A"><b>Fora do alvo de micragem.</b> Vai ser registrado assim.</div>':'')
+      +'<button onclick="linhaBaldeGrava(\''+id+'\')" style="width:100%;background:#22303A;color:#fff;border:none;border-radius:12px;padding:18px;font-size:17px;font-weight:800">🏷️ Lançar e imprimir '+n+' etiqueta'+(n>1?'s':'')+'</button>';
+  };
+  EST._baldeCorpo=corpo;
+  sheetLinha('🛢️ Foi pro balde','quanto saiu do moinho?',corpo());
+}
+function linhaBaldeAjusta(id,d){
+  EST._baldeKg=Math.max(1,(EST._baldeKg||0)+d);
+  const b=EST.cacheLinha[id];
+  sheetLinha('🛢️ Foi pro balde','quanto saiu do moinho?',EST._baldeCorpo());
+}
+async function linhaBaldeGrava(id){
+  const b=EST.cacheLinha[id];if(!b)return;
+  const kg=EST._baldeKg;
+  fecharSheet();
+  perguntarHora('🛢️ '+fmt(kg,0)+' kg no balde',async(min)=>{
+    if(!await gravarEvento({batelada_id:id,evento:'balde',ocorrido_em:horaDe(min),quantidade_kg:kg,responsavel:EST.operador}))return;
+    const r1=await sb.rpc('concluir_refino',{p_prog:id,p_responsavel:EST.operador});
+    if(r1.error)return msg(r1.error.message,true);
+    const r2=await sb.rpc('entrada_balde',{p_produto_id:b.produto_id,p_kg:kg,p_responsavel:EST.operador,p_lote:b.lote||'MANUAL'});
+    if(r2.error)return msg('Andamento ok, mas a entrada no balde falhou: '+r2.error.message,true);
+    msg('✅ '+fmt(kg,0)+' kg no balde — imprimindo etiquetas');
+    imprimirEtiquetasBalde(b.lote,b.produtos?.nome||'—',kg);
+    tela('linha');
+  });
+}
+function linhaEtiquetas(id){
+  const b=EST.cacheLinha[id];if(!b)return;
+  imprimirEtiquetasBalde(b.lote,b.produtos?.nome||'—',Number(b.quantidade_kg)||0);
+}
+function imprimirEtiquetasBalde(lote,produto,kg){
+  const n=Math.max(1,Math.ceil(kg/BALDE_CAP));
+  const pesos=[];for(let i=0;i<n;i++)pesos.push(i<n-1?BALDE_CAP:Math.round((kg-BALDE_CAP*(n-1))*10)/10);
+  const hoje=new Date().toLocaleDateString('pt-BR');
+  const et=pesos.map((p,i)=>'<div class="et">'
+    +'<div class="et-top"><span class="eyebrow">NUTRÍSSIMA · BALDE</span><b class="mono num">'+(i+1)+'<span>/'+n+'</span></b></div>'
+    +'<b class="mono lote">'+(lote||'SEM LOTE')+'</b>'
+    +'<div class="prod">'+produto+'</div>'
+    +'<div class="et-bot"><div><div class="rot">PESO</div><b class="mono">'+fmt(p,1)+' kg</b></div>'
+    +'<div style="text-align:right"><div class="rot">REFINADO EM</div><b class="mono">'+hoje+'</b></div></div>'
+    +'</div>').join('');
+  const html='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiquetas — '+(lote||'')+'</title>'
+    +'<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">'
+    +'<style>*{box-sizing:border-box;margin:0;padding:0}'
+    +"body{font-family:'Archivo',sans-serif;color:#33200F;background:#fff;padding:10px}"
+    +".mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;font-weight:700}"
+    +'.wrap{display:flex;flex-wrap:wrap;gap:8px;max-width:19cm;margin:0 auto}'
+    +'.et{border:2px solid #33200F;border-radius:8px;padding:10px 12px;width:calc(50% - 4px);page-break-inside:avoid}'
+    +'.et-top{display:flex;justify-content:space-between;align-items:flex-start}'
+    +'.eyebrow{font-size:9px;letter-spacing:.14em;font-weight:800;color:#7A6A57}'
+    +'.num{font-size:21px}.num span{font-size:13px;color:#7A6A57}'
+    +'.lote{font-size:24px;display:block;letter-spacing:.04em;margin:2px 0}'
+    +'.prod{font-size:13px;font-weight:700;line-height:1.2}'
+    +'.et-bot{display:flex;justify-content:space-between;margin-top:7px;padding-top:6px;border-top:1px solid #D8CCBB}'
+    +'.rot{font-size:8.5px;color:#7A6A57;letter-spacing:.08em}.et-bot b{font-size:16px}'
+    +'.barra{position:fixed;bottom:0;left:0;right:0;background:#22303A;padding:10px;text-align:center}'
+    +'.barra button{background:#fff;border:none;border-radius:9px;padding:12px 22px;font-size:15px;font-weight:800}'
+    +'@media print{.barra{display:none}body{padding:0}}'
+    +'</style></head><body><div class="wrap">'+et+'</div>'
+    +'<div class="barra"><button onclick="window.print()">🖨️ Imprimir '+n+' etiqueta'+(n>1?'s':'')+'</button></div></body></html>';
+  const w=window.open('','_blank');
+  if(!w)return msg('Libere os pop-ups pra imprimir as etiquetas',true);
+  w.document.write(html);w.document.close();
+}
 
 /* ================= INÍCIO ================= */
 async function tInicio(){
@@ -609,6 +903,7 @@ async function tInicio(){
     <div class="acoes">
       <button onclick="tela('painel')"><span class="ico" style="background:#EFE7DC">📊</span><span><b>Painel</b><small>A empresa agora — números e atividade</small></span></button>
       <button onclick="tela('programacao')"><span class="ico" style="background:#F3EAD8">🗓️</span><span><b>Programação</b><small>Moinhos 1 e 2 — pesar e lançar no balde</small></span></button>
+      <button onclick="tela('linha')"><span class="ico" style="background:#F6ECD6">🌀</span><span><b>Mistura & Refino</b><small>PS, ciclos e balde — um botão por vez</small></span></button>
       <button onclick="tela('mrp')"><span class="ico" style="background:#FBEAEA">🛒</span><span><b>Compras / MRP</b><small>O que comprar, quanto e até quando</small></span></button>
       <button onclick="tela('vendas')"><span class="ico" style="background:#EAF3EA">🛍️</span><span><b>Vendas / Despacho</b><small>Demanda dos marketplaces — o que envasar</small></span></button>
       <button onclick="tela('carteira')"><span class="ico" style="background:#E4EDF2">📑</span><span><b>Carteira de pedidos</b><small>Quem está esperando, o que venceu e o que trava</small></span></button>
