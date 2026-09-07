@@ -263,6 +263,7 @@ function parseNumBR(v){
 function hoje(){return new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})}
 function loteDiaAtual(){const d=new Date();const dia=Math.floor((d-new Date(d.getFullYear(),0,0))/864e5);return String(d.getFullYear()).slice(2)+String(dia).padStart(3,'0')}
 function loteSugestao(seq){return loteDiaAtual()+'-'+(seq||1)}
+function julianoDe(dataISO){const d=new Date(dataISO+'T12:00');const dia=Math.floor((d-new Date(d.getFullYear(),0,0))/864e5);return String(d.getFullYear()).slice(2)+String(dia).padStart(3,'0')}
 function msg(t,erro){const m=el(`<div class="msg ${erro?'erro':''}">${t}</div>`);document.body.appendChild(m);setTimeout(()=>m.remove(),3800)}
 const brData=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR');
 function trilha(atual){const etapas=['Programação','Compra','Receber','Pesagem','Moinho','Balde','Envase','Estoque'];return '<div class="trilha">'+etapas.map(e=>`<span class="${e===atual?'atual':''}">${e}</span>`).join('')+'</div>'}
@@ -1518,9 +1519,14 @@ function cartoesBatPrint(lista,obs){
     const corM=m==='m1'?'#B8862B':'#2B5A78';
     const rotM=m==='m1'?'Moinho 1':'Moinho 2';
     const par=idxDe(p);
+    const jul=julianoDe(p.data);
+    const hojeJul=loteDiaAtual();
     const loteBloco=p.lote
       ?'<div class="lote-num mono">'+p.lote+'</div>'
-      :'<div class="lote-escrever"></div><div class="lote-obs">preencher com o lote gerado na pesagem</div>';
+      :'<div class="lote-prev mono">'+jul+'<span class="tr">-</span><span class="seq"></span></div>'
+       +'<div class="lote-obs">'+(jul===hojeJul
+         ?'o número depois do traço sai na pesagem'
+         :'Juliano da data programada · pesou em outro dia, use o Juliano do dia')+'</div>';
     return '<div class="cartao">'
       +'<div class="c-topo"><div class="c-te"><div class="eyebrow">Nutríssima · Identificação de batelada</div><div class="produto">'+(p.produtos?.nome||'—')+'</div></div>'
       +'<div class="moinho" style="background:'+corM+'"><div class="letra mono">'+(m==='m1'?'M1':'M2')+'</div><div class="rot">'+rotM+'</div></div></div>'
@@ -1559,6 +1565,9 @@ function cartoesBatPrint(lista,obs){
   +'.rotulo{font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#7A6A57}'
   +'.lote-num{font-size:54px;line-height:1.05;letter-spacing:.04em}'
   +'.lote-escrever{border-bottom:2px solid #33200F;height:52px;max-width:60%;margin:6px auto 0}'
+  +'.lote-prev{font-size:54px;line-height:1.05;letter-spacing:.04em;display:flex;align-items:flex-end;justify-content:center;gap:4px}'
+  +'.lote-prev .tr{color:#B8A894}'
+  +'.lote-prev .seq{display:inline-block;width:70px;border-bottom:3px solid #33200F;height:46px}'
   +'.lote-obs{font-size:10px;color:#7A6A57;margin-top:3px}'
   +'.c-grid{display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1.5px solid #DCD2C4;border-bottom:1.5px solid #DCD2C4;margin-top:8px}'
   +'.c-cel{padding:8px 10px;text-align:center;border-right:1.5px solid #DCD2C4}'
