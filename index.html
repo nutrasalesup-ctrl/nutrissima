@@ -1609,7 +1609,7 @@ async function tVendas(){
     sb.from('demanda_vendas').select('produto_acabado_id,qtd_potes,data_despacho,plataforma,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto').neq('origem','import_varejo'),
     sb.from('produto_acabado').select('id,nome').eq('ativo',true).order('nome'),
     sb.from('vendas_pedidos').select('produto_acabado_id,canal,entrega,qtd,qtd_separada,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto').in('canal',['Varejo','Shopee Full']),
-    sb.from('vw_sku_bases').select('produto_acabado_id,base_id,base_nome,kg_por_pote,origem,saldo_balde_kg,kg_pesado')
+    sb.from('vw_sku_bases').select('produto_acabado_id,base_id,base_nome,kg_por_pote,origem,saldo_balde_kg,kg_pesado,kg_mistura,kg_refino,kg_a_pesar')
   ]);
   EST.cache.paLista=pa.data||[];
   if(!EST.filtroVendas)EST.filtroVendas='varejo';
@@ -1632,11 +1632,17 @@ async function tVendas(){
   (vb.data||[]).forEach(r=>{
     if(!r.base_id)return;
     (basesPa[r.produto_acabado_id]=basesPa[r.produto_acabado_id]||[]).push({id:r.base_id,nome:r.base_nome,kg:Number(r.kg_por_pote)||0,origem:r.origem});
-    if(!baseInfo[r.base_id])baseInfo[r.base_id]={nome:r.base_nome,balde:Number(r.saldo_balde_kg)||0,pesado:Number(r.kg_pesado)||0,usoBalde:0,usoPesado:0,faltaKg:0,skus:{},cobreAte:null,quebraEm:null};
+    if(!baseInfo[r.base_id]){
+      const f={pesado:Number(r.kg_pesado)||0,mistura:Number(r.kg_mistura)||0,refino:Number(r.kg_refino)||0,aPesar:Number(r.kg_a_pesar)||0};
+      baseInfo[r.base_id]={nome:r.base_nome,balde:Number(r.saldo_balde_kg)||0,pesado:f.mistura+f.refino,fases:f,usoBalde:0,usoPesado:0,faltaKg:0,skus:{},cobreAte:null,quebraEm:null};
+    }
   });
-  const poteDisp={},baldeDisp={},pesadoDisp={};
-  Object.keys(baseInfo).forEach(b=>{baldeDisp[b]=baseInfo[b].balde;pesadoDisp[b]=baseInfo[b].pesado;});
+  const poteDisp={},baldeDisp={},procDisp={};
+  Object.keys(baseInfo).forEach(b=>{baldeDisp[b]=baseInfo[b].balde;const f=baseInfo[b].fases;procDisp[b]={refino:f.refino,mistura:f.mistura};});
+  const somaProc=d=>(d?d.refino+d.mistura:0);
   const capacidade=(bs,disp)=>{let c=Infinity;bs.forEach(b=>{if(b.kg>0)c=Math.min(c,Math.floor((disp[b.id]||0)/b.kg));});return isFinite(c)?Math.max(0,c):0;};
+  const capacidadeProc=bs=>{let c=Infinity;bs.forEach(b=>{if(b.kg>0)c=Math.min(c,Math.floor(somaProc(procDisp[b.id])/b.kg));});return isFinite(c)?Math.max(0,c):0;};
+  const tiraProc=(bid,kg)=>{const d=procDisp[bid];if(!d)return;['refino','mistura'].forEach(f=>{const t=Math.min(d[f],kg);d[f]-=t;kg-=t;});};
   const fila={};
   todos.forEach(d=>{
     const info=d.produto_acabado||{}, dk=d.data_despacho||'sem-prazo', k=d.produto_acabado_id+'|'+dk;
@@ -1652,7 +1658,7 @@ async function tVendas(){
     let resta=f.dem;
     const usaPote=Math.min(resta,Math.max(0,poteDisp[f.pid]||0));poteDisp[f.pid]-=usaPote;resta-=usaPote;
     const bs=basesPa[f.pid]||[];
-    bs.forEach(b=>{if(!D[b.id])D[b.id]={nome:b.nome,precisa:0,tinhaBalde:Math.max(0,baldeDisp[b.id]||0),tinhaMoinho:Math.max(0,pesadoDisp[b.id]||0),usouBalde:0,usouMoinho:0,faltaKg:0,skus:[]};
+    bs.forEach(b=>{if(!D[b.id])D[b.id]={nome:b.nome,precisa:0,tinhaBalde:Math.max(0,baldeDisp[b.id]||0),tinhaMoinho:somaProc(procDisp[b.id]),tinhaFases:Object.assign({},procDisp[b.id]),fases:{pesado:((baseInfo[b.id]||{}).fases||{}).pesado||0,aPesar:((baseInfo[b.id]||{}).fases||{}).aPesar||0},usouBalde:0,usouMoinho:0,faltaKg:0,skus:[]};
       D[b.id].precisa+=Math.max(0,f.dem-usaPote)*b.kg;
       baseInfo[b.id].precisaKg=(baseInfo[b.id].precisaKg||0)+Math.max(0,f.dem-usaPote)*b.kg;
       if(f.dem-usaPote>0)D[b.id].skus.push(f.nome);});
@@ -1661,8 +1667,8 @@ async function tVendas(){
       usaBalde=Math.min(resta,capacidade(bs,baldeDisp));
       if(usaBalde>0){bs.forEach(b=>{baldeDisp[b.id]-=usaBalde*b.kg;baseInfo[b.id].usoBalde+=usaBalde*b.kg;D[b.id].usouBalde+=usaBalde*b.kg;});resta-=usaBalde;}
       if(resta>0){
-        usaPesado=Math.min(resta,capacidade(bs,pesadoDisp));
-        if(usaPesado>0){bs.forEach(b=>{pesadoDisp[b.id]-=usaPesado*b.kg;baseInfo[b.id].usoPesado+=usaPesado*b.kg;D[b.id].usouMoinho+=usaPesado*b.kg;});resta-=usaPesado;}
+        usaPesado=Math.min(resta,capacidadeProc(bs));
+        if(usaPesado>0){bs.forEach(b=>{tiraProc(b.id,usaPesado*b.kg);baseInfo[b.id].usoPesado+=usaPesado*b.kg;D[b.id].usouMoinho+=usaPesado*b.kg;});resta-=usaPesado;}
       }
     }
     bs.forEach(b=>{const i=baseInfo[b.id];
@@ -1671,7 +1677,8 @@ async function tVendas(){
       if(resta>0){i.faltaKg+=resta*b.kg;if(!i.quebraEm)i.quebraEm=f.dk;if(D[b.id])D[b.id].faltaKg+=resta*b.kg;}
     });
     ALOC[f.pid+'|'+f.dk]={pote:usaPote,balde:usaBalde,pesado:usaPesado,falta:resta,semBase:!bs.length,dem:f.dem,
-      bases:bs.map(b=>({nome:b.nome,kg:b.kg,livre:Math.max(0,baldeDisp[b.id]||0),moinho:Math.max(0,pesadoDisp[b.id]||0)}))};
+      bases:bs.map(b=>({nome:b.nome,kg:b.kg,livre:Math.max(0,baldeDisp[b.id]||0),moinho:somaProc(procDisp[b.id]),
+        fases:Object.assign({aPesar:((baseInfo[b.id]||{}).fases||{}).aPesar||0,pesado:((baseInfo[b.id]||{}).fases||{}).pesado||0},procDisp[b.id]),balde:(baseInfo[b.id]||{}).balde||0}))};
   });
   const somaP=arr=>arr.reduce((s,d)=>s+(Number(d.qtd_potes)||0),0);
   const totV=somaP(todos.filter(ehVarejo)), totE=somaP(todos.filter(d=>!ehVarejo(d)&&!ehShopee(d))), totS=somaP(todos.filter(ehShopee));
@@ -1722,21 +1729,40 @@ async function tVendas(){
   const selDatas=EST.filtroDatasVendas.filter(d=>datasOrdenadas.includes(d));
   const datasMostrar=selDatas.length?selDatas:datasOrdenadas;
   const kgTxt=v=>fmt(Math.round(v*10)/10,1)+' kg';
-  const cartaoItem=(x,cor,a)=>{
+  const linhaLista=(rot,val,cor,neg)=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:1px 0"><span style="color:#7A6A57">${neg?'<span style="color:#B8A894">−</span> ':''}${rot}</span><b class="mono" style="color:${cor}">${val}</b></div>`;
+  const listaFases=o=>`<div style="font-size:10.5px;margin-top:3px">
+    ${linhaLista('demanda em creme',kgTxt(o.precisa),'var(--cacau)')}
+    ${linhaLista('em balde',kgTxt(o.balde),'#3E7C45',true)}
+    ${o.refino>0.05?linhaLista('refinando',kgTxt(o.refino),'#B0510F',true):''}
+    ${o.mistura>0.05?linhaLista('misturando',kgTxt(o.mistura),'#B8862B',true):''}
+    <div style="border-top:1px dashed var(--linha);margin:2px 0"></div>
+    ${linhaLista(o.aMoer>0.5?'<b>falta produzir</b>':'<b>coberto</b>',o.aMoer>0.5?kgTxt(o.aMoer):'ok',o.aMoer>0.5?'#C63A3A':'#3E7C45')}
+    ${o.trava?`<div style="color:var(--morango);font-size:10px">parou na ${o.trava} — o creme desta base fica parado</div>`:''}
+    ${(o.pesado>0.05||o.aPesar>0.05)?`<div style="margin-top:2px;padding-top:2px;border-top:1px dashed var(--linha);color:#9A8A77">
+      <div style="font-size:9.5px;font-weight:800;letter-spacing:.03em">SÓ INFORMAÇÃO — AINDA NÃO É CREME</div>
+      ${o.pesado>0.05?linhaLista('pesado, aguardando mistura',kgTxt(o.pesado),'#2F6DA8'):''}
+      ${o.aPesar>0.05?linhaLista('a pesar (programado)',kgTxt(o.aPesar),'#9A8A77'):''}
+    </div>`:''}
+  </div>`;
+  const dataBR=d=>d&&d!=='sem-prazo'?new Date(d+'T12:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}):'sem prazo';
+  const cartaoItem=(x,cor,a,dk)=>{
     const platsArr=Object.entries(x.plats).sort((p,q)=>q[1]-p[1]);
     const bs=basesPa[x.pid]||[];
-    const pote=a?a.pote:Math.min(x.dem,x.saldo), balde=a?a.balde:0, pesado=a?a.pesado:0;
+    const pote=a?a.pote:Math.min(x.dem,x.saldo), balde=a?a.balde:0, proc=a?a.pesado:0;
     const semCreme=a?a.falta:Math.max(0,x.dem-x.saldo);
     const aEnvasar=Math.max(0,x.dem-pote);
     const bl=(a&&a.bases&&a.bases.length)?a.bases:[];
     let lim='';
     if(bl.length&&semCreme>0){let pior=Infinity;bl.forEach(b=>{if(b.kg>0){const c=(b.livre+b.moinho)/b.kg;if(c<pior){pior=c;lim=b.nome;}}});}
-    /* Cor = o que trava, nao o tamanho do numero */
     let corN='var(--pistache)', txt='tem pote pronto pro pedido inteiro';
     if(!bs.length&&aEnvasar>0){corN='#8A6B3D';txt='sem receita amarrada — creme não calculado';}
-    else if(semCreme>0){corN='#C63A3A';txt='<b>'+fmt(semCreme,0)+' sem creme</b>'+(lim?' — falta '+lim:'')+(balde+pesado>0?' · '+fmt(balde+pesado,0)+' dá pra envasar':'');}
-    else if(pesado>0){corN='#D9772B';txt='<b>'+fmt(balde+pesado,0)+' cobertos</b>, '+fmt(pesado,0)+' só depois que o moinho descer pro balde';}
+    else if(semCreme>0){corN='#C63A3A';txt='<b>'+fmt(semCreme,0)+' sem creme</b>'+(lim?' — falta '+lim:'');}
+    else if(proc>0){corN='#D9772B';txt='<b>'+fmt(balde+proc,0)+' cobertos</b>, '+fmt(proc,0)+' só quando o refino descer pro balde';}
     else if(balde>0){corN='#2F6DA8';txt='<b>'+fmt(balde,0)+' com creme em balde</b> — é só envasar';}
+    const kgBalde=bl.reduce((sm,b)=>sm+balde*b.kg,0), kgProc=bl.reduce((sm,b)=>sm+proc*b.kg,0);
+    const pipeline=bl.length?bl.map(b=>{const f=b.fases||{};const prec=aEnvasar*b.kg;
+      return `<div style="margin-top:4px"><b style="font-size:11px">${b.nome}</b> <span style="color:#9A8A77;font-size:10px">${fmt(b.kg,3).replace(/,?0+$/,'')} kg/pote</span>
+      ${listaFases({precisa:prec,balde:b.livre,refino:f.refino||0,mistura:f.mistura||0,pesado:f.pesado||0,aPesar:f.aPesar||0,aMoer:Math.max(0,prec-b.livre-(f.refino||0)-(f.mistura||0))})}</div>`;}).join(''):'';
     return `
     <div style="background:#fff;border:1px solid var(--linha);border-left:5px solid ${corN};border-radius:9px;padding:8px 11px;margin-bottom:6px">
       <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
@@ -1746,9 +1772,11 @@ async function tVendas(){
           <small style="color:#7A6A57;font-size:10px">a envasar</small>
         </div>
       </div>
-      <div style="font-size:11.5px;color:#7A6A57">pediram <span class="mono">${fmt(x.dem,0)}</span> · pote pronto <span class="mono">${fmt(x.saldo,0)}</span></div>
       ${platsArr.length?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px">${platsArr.map(([p,q])=>{const[bg,fg]=corCanal(p);return `<span style="background:${bg};color:${fg};font-size:10.5px;font-weight:800;border-radius:20px;padding:2px 9px;white-space:nowrap">${p} · ${fmt(q,0)}</span>`}).join('')}</div>`:''}
+      <div class="mono" style="font-size:11.5px;color:#7A6A57;margin-top:3px">pediram ${fmt(x.dem,0)} <span>−</span> ${fmt(pote,0)} de pote pronto <span>=</span> ${fmt(aEnvasar,0)} a envasar${dk&&dk!=='sem-prazo'?' <span style="color:#9A8A77">· despacha '+dataBR(dk)+'</span>':''}</div>
       <div style="font-size:11.5px;color:${corN};margin-top:2px">${txt}</div>
+      ${(kgBalde>0.05||kgProc>0.05)?`<div class="mono" style="font-size:11px;color:#7A6A57">consome ${kgBalde>0.05?'<b>'+kgTxt(kgBalde)+'</b> do balde':''}${kgBalde>0.05&&kgProc>0.05?' + ':''}${kgProc>0.05?'<b>'+kgTxt(kgProc)+'</b> do que está em processo':''}</div>`:''}
+      ${pipeline?`<div style="margin-top:4px;padding-top:4px;border-top:1px dashed var(--linha)"><small style="color:#9A8A77;font-weight:800;font-size:9.5px;letter-spacing:.03em">CREME DESTE PRODUTO NESTA DATA — JÁ DESCONTADOS OS DIAS ANTERIORES</small>${pipeline}</div>`:''}
     </div>`;};
   const chipsData=datasOrdenadas.map(dk=>{
     const dias=diasAte(dk==='sem-prazo'?null:dk);
@@ -1774,8 +1802,16 @@ async function tVendas(){
     const labels=selDatas.map(dk=>dk==='sem-prazo'?'Sem prazo':new Date(dk+'T12:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})).join(' + ');
     resumoCombo=`<div class="card" style="border-color:#C9AF8C;background:#FBF6EC">
       <b style="font-size:14px">📦 Resumo combinado — ${labels}</b>
-      <div style="font-size:12px;color:#7A6A57;margin:4px 0 10px">o pote e o creme são os mesmos pros dois dias — isso mostra se eles aguentam a soma</div>
-      ${naoCobre.length?`<div style="background:#FDF7F7;border:1px solid #E8B9B9;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;color:var(--morango);font-weight:700">⚠️ ${naoCobre.length} produto(s) ficam sem creme na soma das datas selecionadas</div>`:`<div style="background:#EAF3EA;border:1px solid #C7DFC9;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;color:var(--pistache-esc);font-weight:700">✓ pote + balde + moinho cobrem todos os produtos nas datas selecionadas</div>`}
+      <div style="font-size:12px;color:#7A6A57;margin:4px 0 8px">o pote e o creme são os mesmos pros dois dias — isso mostra se eles aguentam a soma</div>
+      ${(()=>{const T=entradas.reduce((t,x)=>({dem:t.dem+x.dem,pote:t.pote+x.a.pote,balde:t.balde+x.a.balde,proc:t.proc+x.a.pesado,falta:t.falta+x.a.falta}),{dem:0,pote:0,balde:0,proc:0,falta:0});
+        return `<div style="background:#fff;border:1px solid var(--linha);border-radius:11px;padding:9px 11px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+            <div><small style="color:#7A6A57;font-weight:800;letter-spacing:.02em">TOTAL DO PERÍODO</small>
+              <div class="mono" style="font-size:11.5px;color:#7A6A57;margin-top:2px">${fmt(T.dem,0)} pedidos <span>−</span> ${fmt(T.pote,0)} de pote pronto <span>−</span> ${fmt(T.balde,0)} do balde <span>−</span> ${fmt(T.proc,0)} do que está em processo <span>=</span> <b style="color:${T.falta>0?'var(--morango)':'var(--pistache)'}">${fmt(T.falta,0)} sem creme</b></div>
+              <div style="font-size:10.5px;color:#9A8A77">${entradas.length} produto(s) · ${selDatas.length} data(s)</div></div>
+            <div style="text-align:right;white-space:nowrap"><b class="mono" style="font-size:16px;color:${T.falta>0?'#C63A3A':'var(--pistache)'};display:block;line-height:1.1">${fmt(Math.max(0,T.dem-T.pote),0)}</b><small style="color:#7A6A57;font-size:10px">a envasar</small></div>
+          </div></div>`;})()}
+      ${naoCobre.length?`<div style="background:#FDF7F7;border:1px solid #E8B9B9;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;color:var(--morango);font-weight:700">⚠️ ${naoCobre.length} produto(s) ficam sem creme na soma das datas selecionadas</div>`:`<div style="background:#EAF3EA;border:1px solid #C7DFC9;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;color:var(--pistache-esc);font-weight:700">✓ pote + balde + processo cobrem todos os produtos nas datas selecionadas</div>`}
       ${(()=>{const agg={};
         selDatas.forEach(dk=>Object.entries(DIA[dk]||{}).forEach(([bid,b])=>{
           if(!agg[bid])agg[bid]={nome:b.nome,precisa:0,usouBalde:0,usouMoinho:0,faltaKg:0,tinha:null,skus:[]};
@@ -1789,7 +1825,7 @@ async function tVendas(){
             const disp=b.tinha||0, moer=Math.max(0,b.precisa-disp);
             return `<div style="display:flex;justify-content:space-between;gap:8px;margin-top:5px;padding-left:7px;border-left:3px solid ${cb}">
               <div style="min-width:0"><b style="font-size:12px">${b.nome}</b>
-              <div class="mono" style="font-size:11px;color:#7A6A57">precisa ${kgTxt(b.precisa)} <span>−</span> tem ${kgTxt(disp)} entre balde e moinho</div></div>
+              <div class="mono" style="font-size:11px;color:#7A6A57">precisa ${kgTxt(b.precisa)} <span>−</span> tem ${kgTxt(disp)} entre balde e processo</div></div>
               <b class="mono" style="color:${moer>0.5?'#C63A3A':cb};font-size:12px;white-space:nowrap">${moer>0.5?kgTxt(moer)+' a moer':'sobra '+kgTxt(disp-b.precisa)}</b>
             </div>`;}).join('')}
         </div>`:'';})()}
@@ -1801,7 +1837,6 @@ async function tVendas(){
   const diasQuebra=i=>i.quebraEm&&i.quebraEm!=='sem-prazo'?diasAte(i.quebraEm):(i.quebraEm==='sem-prazo'?99:null);
   basesUsadas.sort((a,b)=>{const da=diasQuebra(a[1]),db=diasQuebra(b[1]);return (da===null?999:da)-(db===null?999:db);});
   const corBase=i=>{const d=diasQuebra(i);if(d===null)return['#3E7C45','AGUENTA A CARTEIRA'];if(d<=2)return['#C63A3A','MOER JÁ'];if(d<=4)return['#D9772B','MOER ESTA SEMANA'];if(d<=6)return['#B8862B','PROGRAMAR'];return['#3E7C45','COM FOLGA'];};
-  const dataBR=d=>d&&d!=='sem-prazo'?new Date(d+'T12:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}):'sem prazo';
   const semBaseTot=Object.values(ALOC).filter(a=>a.semBase).reduce((s,a)=>s+a.dem,0);
   const blocoBases=basesUsadas.length?`<div class="card" style="padding:11px 14px">
     <b style="font-size:14px">🪣 Creme por base — toda a carteira</b>
@@ -1809,7 +1844,7 @@ async function tVendas(){
     ${basesUsadas.map(([id,i])=>{const [cor,tag]=corBase(i);
       return `<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-top:6px;padding-left:7px;border-left:4px solid ${cor}">
         <div style="min-width:0"><b style="font-size:12.5px">${i.nome}</b>
-          <div class="mono" style="font-size:11px;color:#7A6A57">precisa ${kgTxt(i.precisaKg||0)} <span>−</span> tem ${kgTxt(i.balde)} balde${i.pesado>0?' + '+kgTxt(i.pesado)+' moinho':''}</div>
+          <div class="mono" style="font-size:11px;color:#7A6A57">precisa ${kgTxt(i.precisaKg||0)} <span>−</span> tem ${kgTxt(i.balde)} em balde${i.pesado>0?' + '+kgTxt(i.pesado)+' em processo (pesado/mistura/refino)':''}</div>
           <div style="font-size:10.5px;color:${cor};font-weight:700">${i.quebraEm?'balde acaba em '+dataBR(i.quebraEm):'aguenta a carteira'} · ${Object.keys(i.skus).length} SKU(s)</div></div>
         <b class="mono" style="color:${cor};font-size:12.5px;white-space:nowrap">${(i.precisaKg||0)-i.balde-i.pesado>0.5?kgTxt((i.precisaKg||0)-i.balde-i.pesado)+' a moer':'sobra '+kgTxt(Math.max(0,i.balde+i.pesado-(i.precisaKg||0)))}</b>
       </div>`;}).join('')}
@@ -1833,10 +1868,9 @@ async function tVendas(){
       const cb=b.aMoer>0.5?'#C63A3A':(b.usouMoinho>0?'#D9772B':'#3E7C45');
       const sobra=Math.max(0,b.tinhaBalde-b.usouBalde), sobraM=Math.max(0,b.tinhaMoinho-b.usouMoinho);
       const trava=(b.faltaKg>0.5&&(sobra+sobraM)>1)?travas.filter(t=>t.nome!==b.nome&&t.skus.some(n=>b.skus.indexOf(n)>=0)).map(t=>t.nome):[];
-      return `<div style="display:flex;justify-content:space-between;gap:8px;margin-top:5px;padding-left:7px;border-left:3px solid ${cb}">
-        <div style="min-width:0"><b style="font-size:12px">${b.nome}</b>
-          <div class="mono" style="font-size:11px;color:#7A6A57">precisa ${kgTxt(b.precisa)} <span>−</span> tem ${kgTxt(b.tinhaBalde)} balde${b.tinhaMoinho>0?' + '+kgTxt(b.tinhaMoinho)+' moinho':''}${trava.length?` <span style="color:var(--morango)">· parou na ${trava[0]}</span>`:''}</div></div>
-        <b class="mono" style="color:${cb};font-size:12px;white-space:nowrap">${b.aMoer>0.5?kgTxt(b.aMoer)+' a moer':'sobra '+kgTxt(Math.max(0,b.tinhaBalde+b.tinhaMoinho-b.precisa))}</b>
+      return `<div style="margin-top:6px;padding-left:7px;border-left:3px solid ${cb}">
+        <div><b style="font-size:12px">${b.nome}</b> <span style="color:#9A8A77;font-size:10px">${b.skus.filter((v,ix,ar)=>ar.indexOf(v)===ix).slice(0,3).join(' + ')}</span>
+          ${listaFases({precisa:b.precisa,balde:b.tinhaBalde,refino:(b.tinhaFases||{}).refino||0,mistura:(b.tinhaFases||{}).mistura||0,pesado:(b.fases||{}).pesado||0,aPesar:(b.fases||{}).aPesar||0,aMoer:b.aMoer,trava:trava[0]})}</div>
       </div>`;};
     const travasDia=dbases.filter(b=>b.faltaKg>0.5&&(b.tinhaBalde+b.tinhaMoinho-b.usouBalde-b.usouMoinho)<=1);
     const faixaCreme=dbases.length?`<div style="background:#fff;border:1px solid var(--linha);border-radius:11px;padding:8px 11px;margin-bottom:8px">
@@ -1854,7 +1888,7 @@ async function tVendas(){
       </div>
       <div style="background:${corDia}0D;border:1px solid ${corDia}33;border-radius:14px;padding:10px">
         ${faixaCreme}
-        ${items.map(x=>cartaoItem(x,cor,ALOC[x.pid+'|'+dk])).join('')}
+        ${items.map(x=>cartaoItem(x,cor,ALOC[x.pid+'|'+dk],dk)).join('')}
       </div>
     </div>`;
   }).join('');
