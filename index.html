@@ -1605,10 +1605,11 @@ async function editarPedido(id){
 /* ================= VENDAS / DESPACHO ================= */
 async function tVendas(){
   document.getElementById('app').innerHTML=topo('Vendas / Despacho','carregando demanda…')+'<main><div class="center">Carregando…</div></main>';
-  const [dem,pa,vp]=await Promise.all([
+  const [dem,pa,vp,vb]=await Promise.all([
     sb.from('demanda_vendas').select('produto_acabado_id,qtd_potes,data_despacho,plataforma,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto').neq('origem','import_varejo'),
     sb.from('produto_acabado').select('id,nome').eq('ativo',true).order('nome'),
-    sb.from('vendas_pedidos').select('produto_acabado_id,canal,entrega,qtd,qtd_separada,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto').in('canal',['Varejo','Shopee Full'])
+    sb.from('vendas_pedidos').select('produto_acabado_id,canal,entrega,qtd,qtd_separada,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto').in('canal',['Varejo','Shopee Full']),
+    sb.from('vw_sku_bases').select('produto_acabado_id,base_id,base_nome,kg_por_pote,origem,saldo_balde_kg,kg_pesado')
   ]);
   EST.cache.paLista=pa.data||[];
   if(!EST.filtroVendas)EST.filtroVendas='varejo';
@@ -1624,6 +1625,54 @@ async function tVendas(){
     produto_acabado:r.produto_acabado
   })).filter(r=>r.qtd_potes>0);
   const todos=[...(dem.data||[]),...vpDemanda];
+  /* ===== Cobertura de creme (baldes das bases prontas) =====
+     Fila unica por data de despacho, sobre TODOS os canais: o mesmo kg de balde
+     nao pode ser prometido a dois SKUs. Ordem de consumo: pote pronto -> balde -> pesado (moinho). */
+  const basesPa={}, baseInfo={};
+  (vb.data||[]).forEach(r=>{
+    if(!r.base_id)return;
+    (basesPa[r.produto_acabado_id]=basesPa[r.produto_acabado_id]||[]).push({id:r.base_id,nome:r.base_nome,kg:Number(r.kg_por_pote)||0,origem:r.origem});
+    if(!baseInfo[r.base_id])baseInfo[r.base_id]={nome:r.base_nome,balde:Number(r.saldo_balde_kg)||0,pesado:Number(r.kg_pesado)||0,usoBalde:0,usoPesado:0,faltaKg:0,skus:{},cobreAte:null,quebraEm:null};
+  });
+  const poteDisp={},baldeDisp={},pesadoDisp={};
+  Object.keys(baseInfo).forEach(b=>{baldeDisp[b]=baseInfo[b].balde;pesadoDisp[b]=baseInfo[b].pesado;});
+  const capacidade=(bs,disp)=>{let c=Infinity;bs.forEach(b=>{if(b.kg>0)c=Math.min(c,Math.floor((disp[b.id]||0)/b.kg));});return isFinite(c)?Math.max(0,c):0;};
+  const fila={};
+  todos.forEach(d=>{
+    const info=d.produto_acabado||{}, dk=d.data_despacho||'sem-prazo', k=d.produto_acabado_id+'|'+dk;
+    if(!fila[k])fila[k]={pid:d.produto_acabado_id,dk:dk,ord:d.data_despacho||'9999-12-31',nome:info.nome||'—',saldo:Number(info.saldo_potes)||0,dem:0};
+    fila[k].dem+=Number(d.qtd_potes)||0;
+  });
+  const ALOC={}, DIA={};
+  let diaAtual=null;
+  Object.values(fila).sort((a,b)=>a.ord<b.ord?-1:(a.ord>b.ord?1:0)).forEach(f=>{
+    if(f.dk!==diaAtual){diaAtual=f.dk;DIA[f.dk]=DIA[f.dk]||{};}
+    const D=DIA[f.dk];
+    if(poteDisp[f.pid]===undefined)poteDisp[f.pid]=f.saldo;
+    let resta=f.dem;
+    const usaPote=Math.min(resta,Math.max(0,poteDisp[f.pid]||0));poteDisp[f.pid]-=usaPote;resta-=usaPote;
+    const bs=basesPa[f.pid]||[];
+    bs.forEach(b=>{if(!D[b.id])D[b.id]={nome:b.nome,precisa:0,tinhaBalde:Math.max(0,baldeDisp[b.id]||0),tinhaMoinho:Math.max(0,pesadoDisp[b.id]||0),usouBalde:0,usouMoinho:0,faltaKg:0,skus:[]};
+      D[b.id].precisa+=Math.max(0,f.dem-usaPote)*b.kg;
+      baseInfo[b.id].precisaKg=(baseInfo[b.id].precisaKg||0)+Math.max(0,f.dem-usaPote)*b.kg;
+      if(f.dem-usaPote>0)D[b.id].skus.push(f.nome);});
+    let usaBalde=0,usaPesado=0;
+    if(resta>0&&bs.length){
+      usaBalde=Math.min(resta,capacidade(bs,baldeDisp));
+      if(usaBalde>0){bs.forEach(b=>{baldeDisp[b.id]-=usaBalde*b.kg;baseInfo[b.id].usoBalde+=usaBalde*b.kg;D[b.id].usouBalde+=usaBalde*b.kg;});resta-=usaBalde;}
+      if(resta>0){
+        usaPesado=Math.min(resta,capacidade(bs,pesadoDisp));
+        if(usaPesado>0){bs.forEach(b=>{pesadoDisp[b.id]-=usaPesado*b.kg;baseInfo[b.id].usoPesado+=usaPesado*b.kg;D[b.id].usouMoinho+=usaPesado*b.kg;});resta-=usaPesado;}
+      }
+    }
+    bs.forEach(b=>{const i=baseInfo[b.id];
+      i.skus[f.nome]=(i.skus[f.nome]||0)+f.dem;
+      if(usaBalde>0&&f.dk!=='sem-prazo')i.cobreAte=f.dk;
+      if(resta>0){i.faltaKg+=resta*b.kg;if(!i.quebraEm)i.quebraEm=f.dk;if(D[b.id])D[b.id].faltaKg+=resta*b.kg;}
+    });
+    ALOC[f.pid+'|'+f.dk]={pote:usaPote,balde:usaBalde,pesado:usaPesado,falta:resta,semBase:!bs.length,dem:f.dem,
+      bases:bs.map(b=>({nome:b.nome,kg:b.kg,livre:Math.max(0,baldeDisp[b.id]||0),moinho:Math.max(0,pesadoDisp[b.id]||0)}))};
+  });
   const somaP=arr=>arr.reduce((s,d)=>s+(Number(d.qtd_potes)||0),0);
   const totV=somaP(todos.filter(ehVarejo)), totE=somaP(todos.filter(d=>!ehVarejo(d)&&!ehShopee(d))), totS=somaP(todos.filter(ehShopee));
   const fv=EST.filtroVendas;
@@ -1632,7 +1681,7 @@ async function tVendas(){
   const byPa={};
   linhas.forEach(d=>{
     const pid=d.produto_acabado_id, info=d.produto_acabado||{};
-    if(!byPa[pid]) byPa[pid]={nome:info.nome||'—',saldo:Number(info.saldo_potes)||0,dem:0,prazo:null,plats:{}};
+    if(!byPa[pid]) byPa[pid]={pid:pid,nome:info.nome||'—',saldo:Number(info.saldo_potes)||0,dem:0,prazo:null,plats:{}};
     byPa[pid].dem+=Number(d.qtd_potes)||0;
     if(d.data_despacho&&(!byPa[pid].prazo||d.data_despacho<byPa[pid].prazo)) byPa[pid].prazo=d.data_despacho;
     if(d.plataforma) byPa[pid].plats[d.plataforma]=(byPa[pid].plats[d.plataforma]||0)+(Number(d.qtd_potes)||0);
@@ -1663,7 +1712,7 @@ async function tVendas(){
   linhas.forEach(d=>{
     const dk=d.data_despacho||'sem-prazo', pid=d.produto_acabado_id, info=d.produto_acabado||{};
     if(!byData[dk])byData[dk]={};
-    if(!byData[dk][pid])byData[dk][pid]={nome:info.nome||'—',saldo:Number(info.saldo_potes)||0,dem:0,plats:{}};
+    if(!byData[dk][pid])byData[dk][pid]={pid:pid,nome:info.nome||'—',saldo:Number(info.saldo_potes)||0,dem:0,plats:{}};
     byData[dk][pid].dem+=Number(d.qtd_potes)||0;
     if(d.plataforma)byData[dk][pid].plats[d.plataforma]=(byData[dk][pid].plats[d.plataforma]||0)+(Number(d.qtd_potes)||0);
   });
@@ -1672,14 +1721,34 @@ async function tVendas(){
   if(!EST.filtroDatasVendas)EST.filtroDatasVendas=[];
   const selDatas=EST.filtroDatasVendas.filter(d=>datasOrdenadas.includes(d));
   const datasMostrar=selDatas.length?selDatas:datasOrdenadas;
-  const cartaoItem=(x,cor)=>{const platsArr=Object.entries(x.plats).sort((a,b)=>b[1]-a[1]);const falta=Math.max(0,x.dem-x.saldo);return `
-    <div style="background:#fff;border:1px solid var(--linha);border-radius:9px;padding:9px 11px;margin-bottom:6px">
+  const kgTxt=v=>fmt(Math.round(v*10)/10,1)+' kg';
+  const cartaoItem=(x,cor,a)=>{
+    const platsArr=Object.entries(x.plats).sort((p,q)=>q[1]-p[1]);
+    const bs=basesPa[x.pid]||[];
+    const pote=a?a.pote:Math.min(x.dem,x.saldo), balde=a?a.balde:0, pesado=a?a.pesado:0;
+    const semCreme=a?a.falta:Math.max(0,x.dem-x.saldo);
+    const aEnvasar=Math.max(0,x.dem-pote);
+    const bl=(a&&a.bases&&a.bases.length)?a.bases:[];
+    let lim='';
+    if(bl.length&&semCreme>0){let pior=Infinity;bl.forEach(b=>{if(b.kg>0){const c=(b.livre+b.moinho)/b.kg;if(c<pior){pior=c;lim=b.nome;}}});}
+    /* Cor = o que trava, nao o tamanho do numero */
+    let corN='var(--pistache)', txt='tem pote pronto pro pedido inteiro';
+    if(!bs.length&&aEnvasar>0){corN='#8A6B3D';txt='sem receita amarrada — creme não calculado';}
+    else if(semCreme>0){corN='#C63A3A';txt='<b>'+fmt(semCreme,0)+' sem creme</b>'+(lim?' — falta '+lim:'')+(balde+pesado>0?' · '+fmt(balde+pesado,0)+' dá pra envasar':'');}
+    else if(pesado>0){corN='#D9772B';txt='<b>'+fmt(balde+pesado,0)+' cobertos</b>, '+fmt(pesado,0)+' só depois que o moinho descer pro balde';}
+    else if(balde>0){corN='#2F6DA8';txt='<b>'+fmt(balde,0)+' com creme em balde</b> — é só envasar';}
+    return `
+    <div style="background:#fff;border:1px solid var(--linha);border-left:5px solid ${corN};border-radius:9px;padding:8px 11px;margin-bottom:6px">
       <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
         <b style="font-size:13.5px;line-height:1.3">${x.nome}</b>
-        ${falta>0?`<b class="mono" style="color:${cor};font-size:15px;white-space:nowrap">${fmt(falta,0)}</b>`:'<span style="color:var(--pistache);font-size:12px;white-space:nowrap;font-weight:700">✓ cobre</span>'}
+        <div style="text-align:right;white-space:nowrap">
+          <b class="mono" style="color:${aEnvasar>0?corN:'var(--pistache)'};font-size:15px;display:block;line-height:1.1">${fmt(aEnvasar,0)}</b>
+          <small style="color:#7A6A57;font-size:10px">a envasar</small>
+        </div>
       </div>
-      <div style="font-size:11.5px;color:#7A6A57;margin-top:2px">demanda <b>${fmt(x.dem,0)}</b> · estoque ${fmt(x.saldo,0)}</div>
-      ${platsArr.length?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px">${platsArr.map(([p,q])=>{const[bg,fg]=corCanal(p);return `<span style="background:${bg};color:${fg};font-size:10.5px;font-weight:800;border-radius:20px;padding:2px 9px;white-space:nowrap">${p} · ${fmt(q,0)}</span>`}).join('')}</div>`:''}
+      <div style="font-size:11.5px;color:#7A6A57">pediram <span class="mono">${fmt(x.dem,0)}</span> · pote pronto <span class="mono">${fmt(x.saldo,0)}</span></div>
+      ${platsArr.length?`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px">${platsArr.map(([p,q])=>{const[bg,fg]=corCanal(p);return `<span style="background:${bg};color:${fg};font-size:10.5px;font-weight:800;border-radius:20px;padding:2px 9px;white-space:nowrap">${p} · ${fmt(q,0)}</span>`}).join('')}</div>`:''}
+      <div style="font-size:11.5px;color:${corN};margin-top:2px">${txt}</div>
     </div>`;};
   const chipsData=datasOrdenadas.map(dk=>{
     const dias=diasAte(dk==='sem-prazo'?null:dk);
@@ -1693,37 +1762,99 @@ async function tVendas(){
     const byProdCombo={};
     selDatas.forEach(dk=>{
       Object.entries(byData[dk]).forEach(([pid,x])=>{
-        if(!byProdCombo[pid])byProdCombo[pid]={nome:x.nome,saldo:x.saldo,dem:0,plats:{}};
+        if(!byProdCombo[pid])byProdCombo[pid]={pid:pid,nome:x.nome,saldo:x.saldo,dem:0,plats:{},a:{pote:0,balde:0,pesado:0,falta:0,semBase:!(basesPa[pid]||[]).length}};
         byProdCombo[pid].dem+=x.dem;
+        const al=ALOC[pid+'|'+dk];
+        if(al){byProdCombo[pid].a.pote+=al.pote;byProdCombo[pid].a.balde+=al.balde;byProdCombo[pid].a.pesado+=al.pesado;byProdCombo[pid].a.falta+=al.falta;}
         Object.entries(x.plats).forEach(([p,q])=>{byProdCombo[pid].plats[p]=(byProdCombo[pid].plats[p]||0)+q;});
       });
     });
-    const entradas=Object.values(byProdCombo).sort((a,b)=>(b.dem-b.saldo)-(a.dem-a.saldo));
-    const naoCobre=entradas.filter(x=>x.dem>x.saldo);
+    const entradas=Object.values(byProdCombo).sort((a,b)=>b.a.falta-a.a.falta||(b.dem-b.saldo)-(a.dem-a.saldo));
+    const naoCobre=entradas.filter(x=>x.a.falta>0);
     const labels=selDatas.map(dk=>dk==='sem-prazo'?'Sem prazo':new Date(dk+'T12:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})).join(' + ');
     resumoCombo=`<div class="card" style="border-color:#C9AF8C;background:#FBF6EC">
       <b style="font-size:14px">📦 Resumo combinado — ${labels}</b>
-      <div style="font-size:12px;color:#7A6A57;margin:4px 0 10px">o estoque é o mesmo pros dois dias — isso mostra se ele aguenta a soma</div>
-      ${naoCobre.length?`<div style="background:#FDF7F7;border:1px solid #E8B9B9;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;color:var(--morango);font-weight:700">⚠️ ${naoCobre.length} produto(s) não cobrem a soma das datas selecionadas</div>`:`<div style="background:#EAF3EA;border:1px solid #C7DFC9;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;color:var(--pistache-esc);font-weight:700">✓ estoque cobre todos os produtos nas datas selecionadas</div>`}
-      ${entradas.map(x=>cartaoItem(x,'#C63A3A')).join('')}
+      <div style="font-size:12px;color:#7A6A57;margin:4px 0 10px">o pote e o creme são os mesmos pros dois dias — isso mostra se eles aguentam a soma</div>
+      ${naoCobre.length?`<div style="background:#FDF7F7;border:1px solid #E8B9B9;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;color:var(--morango);font-weight:700">⚠️ ${naoCobre.length} produto(s) ficam sem creme na soma das datas selecionadas</div>`:`<div style="background:#EAF3EA;border:1px solid #C7DFC9;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;color:var(--pistache-esc);font-weight:700">✓ pote + balde + moinho cobrem todos os produtos nas datas selecionadas</div>`}
+      ${(()=>{const agg={};
+        selDatas.forEach(dk=>Object.entries(DIA[dk]||{}).forEach(([bid,b])=>{
+          if(!agg[bid])agg[bid]={nome:b.nome,precisa:0,usouBalde:0,usouMoinho:0,faltaKg:0,tinha:null,skus:[]};
+          agg[bid].precisa+=b.precisa;agg[bid].usouBalde+=b.usouBalde;agg[bid].usouMoinho+=b.usouMoinho;agg[bid].faltaKg+=b.faltaKg;
+          if(agg[bid].tinha===null)agg[bid].tinha=b.tinhaBalde+b.tinhaMoinho;
+          b.skus.forEach(n=>{if(agg[bid].skus.indexOf(n)<0)agg[bid].skus.push(n)});}));
+        const lst=Object.values(agg).filter(b=>b.precisa>0.0001).sort((p,q)=>q.faltaKg-p.faltaKg||q.precisa-p.precisa);
+        return lst.length?`<div style="background:#fff;border:1px solid var(--linha);border-radius:11px;padding:8px 11px;margin-bottom:8px">
+          <small style="color:#7A6A57;font-weight:800;letter-spacing:.02em">CREME SOMADO DAS DATAS ESCOLHIDAS</small>
+          ${lst.map(b=>{const cb=b.faltaKg>0.5?'#C63A3A':(b.usouMoinho>0?'#D9772B':'#3E7C45');
+            const disp=b.tinha||0, moer=Math.max(0,b.precisa-disp);
+            return `<div style="display:flex;justify-content:space-between;gap:8px;margin-top:5px;padding-left:7px;border-left:3px solid ${cb}">
+              <div style="min-width:0"><b style="font-size:12px">${b.nome}</b>
+              <div class="mono" style="font-size:11px;color:#7A6A57">precisa ${kgTxt(b.precisa)} <span>−</span> tem ${kgTxt(disp)} entre balde e moinho</div></div>
+              <b class="mono" style="color:${moer>0.5?'#C63A3A':cb};font-size:12px;white-space:nowrap">${moer>0.5?kgTxt(moer)+' a moer':'sobra '+kgTxt(disp-b.precisa)}</b>
+            </div>`;}).join('')}
+        </div>`:'';})()}
+      ${entradas.map(x=>cartaoItem(x,'#C63A3A',x.a)).join('')}
     </div>`;
   }
+  /* ===== Bloco por base: o que mandar pro moinho ===== */
+  const basesUsadas=Object.entries(baseInfo).filter(([id,i])=>Object.keys(i.skus).length);
+  const diasQuebra=i=>i.quebraEm&&i.quebraEm!=='sem-prazo'?diasAte(i.quebraEm):(i.quebraEm==='sem-prazo'?99:null);
+  basesUsadas.sort((a,b)=>{const da=diasQuebra(a[1]),db=diasQuebra(b[1]);return (da===null?999:da)-(db===null?999:db);});
+  const corBase=i=>{const d=diasQuebra(i);if(d===null)return['#3E7C45','AGUENTA A CARTEIRA'];if(d<=2)return['#C63A3A','MOER JÁ'];if(d<=4)return['#D9772B','MOER ESTA SEMANA'];if(d<=6)return['#B8862B','PROGRAMAR'];return['#3E7C45','COM FOLGA'];};
+  const dataBR=d=>d&&d!=='sem-prazo'?new Date(d+'T12:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}):'sem prazo';
+  const semBaseTot=Object.values(ALOC).filter(a=>a.semBase).reduce((s,a)=>s+a.dem,0);
+  const blocoBases=basesUsadas.length?`<div class="card" style="padding:11px 14px">
+    <b style="font-size:14px">🪣 Creme por base — toda a carteira</b>
+    <div style="font-size:11.5px;color:#7A6A57;margin:2px 0 6px">o mesmo balde não é prometido a dois SKUs; a data é o dia em que ele acaba</div>
+    ${basesUsadas.map(([id,i])=>{const [cor,tag]=corBase(i);
+      return `<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-top:6px;padding-left:7px;border-left:4px solid ${cor}">
+        <div style="min-width:0"><b style="font-size:12.5px">${i.nome}</b>
+          <div class="mono" style="font-size:11px;color:#7A6A57">precisa ${kgTxt(i.precisaKg||0)} <span>−</span> tem ${kgTxt(i.balde)} balde${i.pesado>0?' + '+kgTxt(i.pesado)+' moinho':''}</div>
+          <div style="font-size:10.5px;color:${cor};font-weight:700">${i.quebraEm?'balde acaba em '+dataBR(i.quebraEm):'aguenta a carteira'} · ${Object.keys(i.skus).length} SKU(s)</div></div>
+        <b class="mono" style="color:${cor};font-size:12.5px;white-space:nowrap">${(i.precisaKg||0)-i.balde-i.pesado>0.5?kgTxt((i.precisaKg||0)-i.balde-i.pesado)+' a moer':'sobra '+kgTxt(Math.max(0,i.balde+i.pesado-(i.precisaKg||0)))}</b>
+      </div>`;}).join('')}
+  </div>`:'';
+  const comoLer=`<div class="card"><small style="color:#7A6A57"><b>Como ler.</b> A conta de cada produto é uma fila por data de despacho: primeiro o <b>pote pronto</b>, depois o <b>balde</b> da base, depois o que está <b>no moinho</b> (pesado, ainda não virou balde). O mesmo pote e o mesmo kg de creme não são prometidos a duas datas — por isso a segunda data aparece com menos cobertura que a primeira.<br><br>
+  <b>A cor diz o que trava</b>, não o tamanho do número: <b style="color:var(--pistache)">verde</b> já tem pote · <b style="color:#2F6DA8">azul</b> tem creme em balde, é só envasar · <b style="color:#D9772B">laranja</b> só fecha com o que está no moinho · <b style="color:var(--morango)">vermelho</b> falta creme mesmo contando o moinho, precisa programar refino.<br><br>
+  <b>Premissas:</b> kg por pote vem da receita do banco (mesma explosão que o Envase usa), sem descontar perda entre balde e pote; produção apenas <i>programada</i> não entra na conta, só o que já está pesado; embalagem e rótulo não entram.<br>
+  <b>Cobertura:</b> ${semBaseTot>0?`<b style="color:#8A6B3D">${fmt(semBaseTot,0)} potes</b> em SKUs sem receita amarrada ficam fora da conta de creme`:'todos os SKUs em demanda têm base amarrada'}. Para SKU envasado direto da base (Avelã, Leite, Chocolate, Trufado de Leite), o saldo do balde hoje é ajustado à mão — a cobertura vale o que valer esse lançamento.<br>
+  <b>Procedência:</b> vw_sku_bases (receita + estoque_balde + programação pesada) e demanda em aberto, lidos agora.</small></div>`;
   const secoesData=datasMostrar.map(dk=>{
     const dias=diasAte(dk==='sem-prazo'?null:dk);
     const [cor,tag]=corUrgencia(dias);
     const rot=dk==='sem-prazo'?'Sem prazo':new Date(dk+'T12:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'});
     const items=Object.values(byData[dk]).sort((a,b)=>b.dem-a.dem);
     const total=items.reduce((s,x)=>s+x.dem,0);
+    const faltaDia=items.reduce((s,x)=>{const al=ALOC[x.pid+'|'+dk];return s+(al?al.falta:0)},0);
+    const moinhoDia=items.reduce((s,x)=>{const al=ALOC[x.pid+'|'+dk];return s+(al?al.pesado:0)},0);
+    const corDia=faltaDia>0?'#C63A3A':(moinhoDia>0?'#D9772B':cor);
+    const dbases=Object.values(DIA[dk]||{}).filter(b=>b.precisa>0.0001).sort((a,b)=>b.faltaKg-a.faltaKg||b.precisa-a.precisa);
+    const linhaBase=(b,travas)=>{b.aMoer=Math.max(0,b.precisa-b.tinhaBalde-b.tinhaMoinho);
+      const cb=b.aMoer>0.5?'#C63A3A':(b.usouMoinho>0?'#D9772B':'#3E7C45');
+      const sobra=Math.max(0,b.tinhaBalde-b.usouBalde), sobraM=Math.max(0,b.tinhaMoinho-b.usouMoinho);
+      const trava=(b.faltaKg>0.5&&(sobra+sobraM)>1)?travas.filter(t=>t.nome!==b.nome&&t.skus.some(n=>b.skus.indexOf(n)>=0)).map(t=>t.nome):[];
+      return `<div style="display:flex;justify-content:space-between;gap:8px;margin-top:5px;padding-left:7px;border-left:3px solid ${cb}">
+        <div style="min-width:0"><b style="font-size:12px">${b.nome}</b>
+          <div class="mono" style="font-size:11px;color:#7A6A57">precisa ${kgTxt(b.precisa)} <span>−</span> tem ${kgTxt(b.tinhaBalde)} balde${b.tinhaMoinho>0?' + '+kgTxt(b.tinhaMoinho)+' moinho':''}${trava.length?` <span style="color:var(--morango)">· parou na ${trava[0]}</span>`:''}</div></div>
+        <b class="mono" style="color:${cb};font-size:12px;white-space:nowrap">${b.aMoer>0.5?kgTxt(b.aMoer)+' a moer':'sobra '+kgTxt(Math.max(0,b.tinhaBalde+b.tinhaMoinho-b.precisa))}</b>
+      </div>`;};
+    const travasDia=dbases.filter(b=>b.faltaKg>0.5&&(b.tinhaBalde+b.tinhaMoinho-b.usouBalde-b.usouMoinho)<=1);
+    const faixaCreme=dbases.length?`<div style="background:#fff;border:1px solid var(--linha);border-radius:11px;padding:8px 11px;margin-bottom:8px">
+      <small style="color:#7A6A57;font-weight:800;letter-spacing:.02em">CREME QUE ESTE DIA CONSOME</small>
+      ${dbases.map(b=>linhaBase(b,travasDia)).join('')}
+    </div>`:'';
     return `<div style="margin-bottom:16px">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:${cor};border-radius:12px;padding:11px 15px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:${corDia};border-radius:12px;padding:11px 15px;margin-bottom:8px">
         <div style="display:flex;align-items:center;gap:10px">
           <b style="color:#fff;font-size:14.5px">📅 ${rot}</b>
           <span style="background:#fff;color:${cor};font-size:10.5px;font-weight:900;border-radius:20px;padding:3px 9px;letter-spacing:.02em">${tag}</span>
+          ${faltaDia>0?`<span style="background:#fff;color:#C63A3A;font-size:10.5px;font-weight:900;border-radius:20px;padding:3px 9px">${fmt(faltaDia,0)} SEM CREME</span>`:(moinhoDia>0?`<span style="background:#fff;color:#D9772B;font-size:10.5px;font-weight:900;border-radius:20px;padding:3px 9px">${fmt(moinhoDia,0)} DEPENDEM DO MOINHO</span>`:'')}
         </div>
         <span style="color:#fff;font-size:12.5px;font-weight:800">${fmt(total,0)} potes · ${items.length}</span>
       </div>
-      <div style="background:${cor}0D;border:1px solid ${cor}33;border-radius:14px;padding:10px">
-        ${items.map(x=>cartaoItem(x,cor)).join('')}
+      <div style="background:${corDia}0D;border:1px solid ${corDia}33;border-radius:14px;padding:10px">
+        ${faixaCreme}
+        ${items.map(x=>cartaoItem(x,cor,ALOC[x.pid+'|'+dk])).join('')}
       </div>
     </div>`;
   }).join('');
@@ -1760,8 +1891,10 @@ async function tVendas(){
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${chipsData}${selDatas.length?`<button onclick="EST.filtroDatasVendas=[];tela('vendas')" style="border:1.5px dashed var(--linha);background:#fff;color:var(--cacau);border-radius:20px;padding:7px 13px;font-weight:800;font-size:12px;min-height:36px">✕ limpar</button>`:''}</div>
       <small style="color:#7A6A57;display:block;margin-top:7px">toque em 2+ datas pra somar a demanda e ver se o estoque cobre o período combinado</small>
     </div>`:''}
+    ${blocoBases}
     ${resumoCombo}
     ${datasOrdenadas.length?secoesData:`<div class="card"><div class="center">Sem demanda em aberto ${fv==='varejo'?'no varejo':(fv==='ecom'?'no e-commerce':'')}. 🛍️</div></div>`}
+    ${comoLer}
   </main>`;
 }
 function carregarXLSX(){
