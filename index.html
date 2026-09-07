@@ -301,7 +301,8 @@ function telaConfig(){
   ${topo('Configuração','só na primeira vez, neste aparelho',false)}
   <main><div class="card">
     <p style="font-size:15px;line-height:1.5">Cole a <b>chave pública (anon key)</b> do Supabase.<br><small style="color:#7A6A57">supabase.com → projeto nutrissima-producao → Settings → API Keys → <b>anon public</b></small></p>
-    <label>Chave</label><input id="cfgKey" placeholder="eyJ… ou sb_publishable_…">
+    <div style="background:#FBF1E6;border-left:4px solid #B0510F;border-radius:8px;padding:9px 11px;margin:8px 0;font-size:12.5px;line-height:1.5">Use a chave que <b>começa com <span class="mono">eyJ</span></b>. A do formato novo (<span class="mono">sb_publishable_…</span>) devolve <b>"Invalid API key"</b> no login deste app.</div>
+    <label>Chave</label><input id="cfgKey" placeholder="eyJ…">
     <button class="btnP" onclick="salvarCfg()">Salvar e continuar</button>
   </div></main>`;
 }
@@ -621,13 +622,23 @@ function sheetLinha(titulo,sub,corpo){
   document.body.appendChild(d);
 }
 /* toda gravação passa por aqui: escolhe a hora sem teclado */
-function perguntarHora(rotulo,cb){
+function perguntarHora(rotulo,cb,minISO){
   const agora=new Date();
-  const btn=(m)=>'<button onclick="EST._horaMin='+m+';fecharSheet();EST._horaCb&&EST._horaCb('+m+')" style="flex:1;background:#fff;border:1.5px solid var(--linha);border-radius:10px;padding:14px 0;font-weight:800;font-size:14px">−'+m+' min</button>';
+  const limite=minISO?new Date(minISO):null;
+  const cabe=m=>!limite||(Date.now()-m*60000)>=limite.getTime();
+  const btn=(m)=>cabe(m)
+    ?'<button onclick="fecharSheet();EST._horaCb&&EST._horaCb('+m+')" style="flex:1;background:#fff;border:1.5px solid var(--linha);border-radius:10px;padding:14px 0;font-weight:800;font-size:14px">−'+m+' min</button>'
+    :'<button disabled style="flex:1;background:#F2ECE3;border:1.5px dashed var(--linha);border-radius:10px;padding:14px 0;font-weight:800;font-size:14px;color:#B8A894">−'+m+'</button>';
   EST._horaCb=cb;
   sheetLinha(rotulo,'quando foi?',
     '<button onclick="fecharSheet();EST._horaCb&&EST._horaCb(0)" style="width:100%;background:#3E7C45;color:#fff;border:none;border-radius:12px;padding:20px;font-size:19px;font-weight:800">Foi agora · '+hhmm(agora)+'</button>'
-    +'<div style="display:flex;gap:7px;margin-top:9px">'+[5,10,15,30].map(btn).join('')+'</div>');
+    +'<div style="display:flex;gap:7px;margin-top:9px">'+[5,10,15,30].map(btn).join('')+'</div>'
+    +(limite?'<div style="font-size:11.5px;color:#7A6A57;margin-top:9px;padding-left:8px;border-left:3px solid var(--linha)">O passo anterior foi às <b class="mono">'+hhmm(limite)+'</b> — as opções apagadas cairiam antes dele.</div>':''));
+}
+function ultimoCarimbo(id){
+  const ev=(EST.cacheLinhaEv||{})[id]||[];
+  if(!ev.length)return null;
+  return ev.map(e=>e.ocorrido_em).sort().pop();
 }
 function horaDe(min){return new Date(Date.now()-(min||0)*60000).toISOString()}
 async function gravarEvento(o){
@@ -651,7 +662,7 @@ async function tLinha(){
     ?await sb.from('receita_itens').select('produto_id,qtd_por_100kg,itens(nome)').in('produto_id',prodIds)
     :{data:[]};
   const psPor={};(ps||[]).forEach(r=>{if((r.itens?.nome||'')===PS_NOME)psPor[r.produto_id]=Number(r.qtd_por_100kg)||0});
-  EST.cacheLinha={};
+  EST.cacheLinha={};EST.cacheLinhaEv={};
   const porBat={};(evs||[]).forEach(e=>(porBat[e.batelada_id]=porBat[e.batelada_id]||[]).push(e));
   const visiveis=lista.filter(b=>filtro==='todas'||moinhoTipo(b.equipamentos?.nome)===filtro);
   const nM1=lista.filter(b=>moinhoTipo(b.equipamentos?.nome)==='m1').length;
@@ -660,6 +671,7 @@ async function tLinha(){
   const cards=visiveis.map(b=>{
     EST.cacheLinha[b.id]=b;
     const ev=porBat[b.id]||[];
+    EST.cacheLinhaEv[b.id]=ev;
     const m=moinhoTipo(b.equipamentos?.nome);
     const corM=m==='m1'?'#B8862B':'#2B5A78';
     const alvo=alvoTemp(b.equipamentos?.nome), vaso=nomeVaso(b.equipamentos?.nome);
@@ -667,7 +679,7 @@ async function tLinha(){
     const psOk=ev.filter(e=>e.evento==='ps'&&e.no_alvo).pop();
     const psTentativas=ev.filter(e=>e.evento==='ps');
     const transf=ev.find(e=>e.evento==='transferencia');
-    const ciclos=ev.filter(e=>e.evento==='ciclo_fim');
+    const ciclos=ev.filter(e=>e.evento==='ciclo_fim').sort((x,y)=>(x.ciclo||0)-(y.ciclo||0));
     const ultCiclo=ciclos[ciclos.length-1];
     const liberado=ultCiclo&&Number(ultCiclo.micragem)<=MICRA_ALVO;
     const pct=psPor[b.produto_id];
@@ -707,8 +719,9 @@ async function tLinha(){
           +'<div style="font-size:11.5px;color:#7A6A57">'+(liberado?'chegou no alvo — pode mandar pro balde':'cai ~10 µm por ciclo → provável liberar no <b>'+(ciclos.length+faltam)+'º</b>')+'</div></div>';
       }
       if(liberado){
-        botao='🛢️ Foi pro balde';sub='lança o kg e imprime as etiquetas';
-        travado='<button onclick="linhaCiclo(\''+b.id+'\')" style="width:100%;margin-top:7px;background:#fff;border:1.5px solid var(--linha);border-radius:12px;padding:13px;font-size:14px;font-weight:800;color:#7A6A57">rodar mais um ciclo</button>';
+        botao='🛢️ Foi pro balde';sub='lança o kg e imprime as etiquetas · ou rode mais um ciclo abaixo';
+        travado='<button onclick="linhaCiclo(\''+b.id+'\')" style="width:100%;margin-top:8px;background:#B0510F;color:#fff;border:none;border-radius:12px;padding:20px 12px;font-size:19px;font-weight:800">✓ Fechar '+prox+'º ciclo</button>'
+          +'<div style="text-align:center;font-size:11.5px;color:#7A6A57;margin-top:5px">no moinho 2 costumam ser 3 ou 4</div>';
       }else if(ciclos.length){
         travado='<button onclick="linhaBalde(\''+b.id+'\',true)" style="width:100%;margin-top:7px;background:#fff;border:1.5px dashed #C63A3A;border-radius:12px;padding:13px;font-size:13.5px;font-weight:800;color:#C63A3A">mandar pro balde fora do alvo</button>';
       }
@@ -720,7 +733,8 @@ async function tLinha(){
     if(transf)trilhaEv.push([hhmm(transf.ocorrido_em),'Transferido pro moinho',psOk?decorrido(psOk.ocorrido_em,transf.ocorrido_em):'']);
     ciclos.forEach((e,ix)=>{
       const ant=ix?ciclos[ix-1].ocorrido_em:(transf?transf.ocorrido_em:null);
-      trilhaEv.push([hhmm(e.ocorrido_em),(ix+1)+'º ciclo fechado · <b class="mono">'+fmt(e.micragem,0)+' µm</b>',ant?decorrido(ant,e.ocorrido_em):'']);
+      const dur=ant&&new Date(e.ocorrido_em)>=new Date(ant)?decorrido(ant,e.ocorrido_em):'';
+      trilhaEv.push([hhmm(e.ocorrido_em),(e.ciclo||ix+1)+'º ciclo fechado · <b class="mono">'+fmt(e.micragem,0)+' µm</b>',dur]);
     });
     const linhasEv=trilhaEv.map(t=>'<div style="display:flex;gap:8px;align-items:baseline;padding:2px 0"><b class="mono" style="font-size:13px;min-width:46px">'+t[0]+'</b><span style="font-size:12px;flex:1">'+t[1]+'</span><small style="color:#9A8A77;white-space:nowrap">'+t[2]+'</small></div>').join('');
     const ultima=ev.length?ev[ev.length-1].ocorrido_em:null;
@@ -763,7 +777,7 @@ async function linhaAbastecer(id){
     const {error}=await sb.rpc('iniciar_mistura',{p_prog:id,p_responsavel:EST.operador});
     if(error)return msg(error.message,true);
     msg('✅ Mistura começou — '+(b.produtos?.nome||''));tela('linha');
-  });
+  },ultimoCarimbo(id));
 }
 function linhaPS(id){
   const b=EST.cacheLinha[id];if(!b)return;
@@ -786,7 +800,7 @@ async function linhaPSGrava(id,temp){
     if(!await gravarEvento({batelada_id:id,evento:'ps',ocorrido_em:horaDe(min),temperatura:temp,no_alvo:ok,responsavel:EST.operador}))return;
     msg(ok?'✅ PS registrado a '+temp+'° — pode transferir':'⚠️ '+temp+'° abaixo de '+alvo+'° — registrado, mas não libera',!ok);
     tela('linha');
-  });
+  },ultimoCarimbo(id));
 }
 async function linhaTransferir(id){
   const b=EST.cacheLinha[id];if(!b)return;
@@ -795,7 +809,7 @@ async function linhaTransferir(id){
     const {error}=await sb.rpc('iniciar_refino',{p_prog:id,p_responsavel:EST.operador});
     if(error)return msg(error.message,true);
     msg('✅ No moinho — 1º ciclo rodando');tela('linha');
-  });
+  },ultimoCarimbo(id));
 }
 function linhaCiclo(id){
   const vals=[60,55,50,45,40,35,30,25,20];
@@ -813,7 +827,7 @@ async function linhaCicloGrava(id,mic){
     if(!await gravarEvento({batelada_id:id,evento:'ciclo_fim',ocorrido_em:horaDe(min),ciclo:n,micragem:mic,no_alvo:mic<=MICRA_ALVO,responsavel:EST.operador}))return;
     msg(mic<=MICRA_ALVO?'✅ '+mic+' µm — liberado pro balde':'🌀 '+mic+' µm — segue mais um ciclo');
     tela('linha');
-  });
+  },ultimoCarimbo(id));
 }
 function linhaBalde(id,fora){
   const b=EST.cacheLinha[id];if(!b)return;
@@ -849,7 +863,7 @@ async function linhaBaldeGrava(id){
     msg('✅ '+fmt(kg,0)+' kg no balde — imprimindo etiquetas');
     imprimirEtiquetasBalde(b.lote,b.produtos?.nome||'—',kg);
     tela('linha');
-  });
+  },ultimoCarimbo(id));
 }
 function linhaEtiquetas(id){
   const b=EST.cacheLinha[id];if(!b)return;
