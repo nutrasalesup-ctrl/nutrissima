@@ -1414,7 +1414,7 @@ async function tProg(){
       ?'<div class="calsec"><div class="calsec-h mel"><span>⚖ Pesagem do dia</span><b>'+fmt(totalPesagem,0)+' kg</b></div>'+gruposHTML(pesagemItens)+'</div>'
       :'<div class="calvazio">—</div>';
     const temCartao=itens.some(p=>p.status==='programado'||p.status==='pesado');
-    return '<div class="calday '+(d===hojeStr?'hoje':'')+'"><header><b>'+wname(d)+'</b>'+(temCartao?'<button class="calimp" title="Imprimir cartões de pesagem do dia" onclick="imprimirCartoesDia(\''+d+'\')">🖨️</button>':'')+'<span>'+dnum(d)+'</span></header>'+body+'</div>';
+    return '<div class="calday '+(d===hojeStr?'hoje':'')+'"><header><b>'+wname(d)+'</b>'+(temCartao?'<button class="calimp" title="Imprimir cartões de pesagem do dia" onclick="imprimirCartoesDia(\''+d+'\')">🖨️</button><button class="calimp" title="Imprimir etiquetas dos baldes do dia" onclick="imprimirEtiquetasDia(\''+d+'\')">🏷️</button>':'')+'<span>'+dnum(d)+'</span></header>'+body+'</div>';
   };
 
   document.getElementById('app').innerHTML=`
@@ -1436,6 +1436,7 @@ async function tProg(){
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       <button class="btnSec" onclick="imprimirProgSemana()" style="margin-bottom:0">🖨️ Imprimir programação da semana</button>
       <button class="btnSec" onclick="imprimirCartoesPesagem()" style="margin-bottom:0">🖨️ Cartões de pesagem da semana</button>
+      <button class="btnSec" onclick="imprimirEtiquetasPesagem()" style="margin-bottom:0;margin-top:8px">🏷️ Etiquetas dos baldes da semana</button>
     </div>
     <div class="calscroll">${dias.map(colHTML).join('')}</div>
     <div class="card" style="margin-top:14px"><b>＋ Programar produto</b>
@@ -1586,6 +1587,32 @@ function cartoesBatPrint(lista,obs){
   +'</body></html>';
   const w=window.open('','_blank');w.document.write(html);w.document.close();
   setTimeout(()=>{try{w.print()}catch(e){}},300);
+}
+
+function etiquetasLotePrint(lista){
+  if(!lista||!lista.length){msg('Nenhuma batelada pra etiquetar',true);return}
+  var all=[];Object.values((EST.progImpressao&&EST.progImpressao.porDia)||{}).forEach(function(a){all.push.apply(all,a)});
+  var corpo=lista.map(function(p){
+    var g=all.filter(function(x){return x.produto_id===p.produto_id&&x.equipamento_id===p.equipamento_id&&x.data===p.data})
+             .sort(function(a,b){return new Date(a.criado_em)-new Date(b.criado_em)});
+    var i=g.findIndex(function(x){return x.id===p.id});
+    return etiquetasHTML({produto:(p.produtos&&p.produtos.nome)||'—',moinho:(p.equipamentos&&p.equipamentos.nome)||'',
+      data:p.data,kg:Number(p.quantidade_kg),i:i>=0?i+1:1,n:g.length||1},p.lote||'');
+  }).join('');
+  abrirImpressao('Etiquetas de balde',corpo);
+}
+function imprimirEtiquetasDia(d){
+  var o=EST.progImpressao||{};
+  var lista=((o.porDia&&o.porDia[d])||[]).filter(function(p){return p.status==='programado'||p.status==='pesado'});
+  if(!lista.length){msg('Nenhuma batelada a pesar ou pesada neste dia',true);return}
+  etiquetasLotePrint(lista);
+}
+function imprimirEtiquetasPesagem(){
+  var o=EST.progImpressao||{};if(!o.dias)return;
+  var lista=[];
+  o.dias.forEach(function(d){(o.porDia[d]||[]).forEach(function(p){if(p.status==='programado'||p.status==='pesado')lista.push(p)})});
+  if(!lista.length){msg('Nenhuma batelada a pesar ou pesada nesta semana',true);return}
+  etiquetasLotePrint(lista);
 }
 function imprimirCartaoBat(id){
   const all=[];Object.values(EST.progImpressao?.porDia||{}).forEach(a=>all.push(...a));
@@ -3163,7 +3190,7 @@ function etiquetasHTML(d,lote){
   for(var k=1;k<=tot;k++){
     var marca=(k<=n)?(k+' de '+n):'extra';
     cels.push('<td class="et"><div class="top">Nutríssima · balde</div><div class="bal">'+marca+'</div>'
-      +'<div class="prod">'+escFicha(d.produto)+'</div><div class="lote">'+escFicha(lote)+'</div>'
+      +'<div class="prod">'+escFicha(d.produto)+'</div>'+(lote?('<div class="lote">'+escFicha(lote)+'</div>'):'<div class="lote" style="font-size:13pt;color:#B9AC99;border-bottom:1.4px solid #B9AC99">lote: ________</div>')
       +'<div class="meta">'+escFicha(d.moinho)+' · '+brData(d.data)+' · batelada '+d.i+' de '+d.n+'</div>'
       +'<table class="pesos"><tr><td class="lb">Peso líquido (kg)</td><td style="width:3mm"></td><td class="lb">Data / hora</td></tr>'
       +'<tr><td><div class="cxe"></div></td><td></td><td><div class="cxe"></div></td></tr></table></td>');
