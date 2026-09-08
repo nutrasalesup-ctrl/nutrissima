@@ -2172,6 +2172,24 @@ async function tVendas(){
   <b>Premissas:</b> kg por pote vem da receita do banco (mesma explosão que o Envase usa), sem descontar perda entre balde e pote; produção apenas <i>programada</i> não entra na conta, só o que já está pesado; embalagem e rótulo não entram.<br>
   <b>Cobertura:</b> ${semBaseTot>0?`<b style="color:#8A6B3D">${fmt(semBaseTot,0)} potes</b> em SKUs sem receita amarrada ficam fora da conta de creme`:'todos os SKUs em demanda têm base amarrada'}. Para SKU envasado direto da base (Avelã, Leite, Chocolate, Trufado de Leite), o saldo do balde hoje é ajustado à mão — a cobertura vale o que valer esse lançamento.<br>
   <b>Procedência:</b> vw_sku_bases (receita + estoque_balde + programação pesada) e demanda em aberto, lidos agora.</small></div>`;
+  /* consolidado do que está na tela agora, para a impressão */
+  EST.necImpr={titulo:'',canal:fv==='varejo'?'Varejo':(fv==='ecom'?'E-commerce':'Todos os canais'),itens:[]};
+  {
+    const cons={};
+    datasMostrar.forEach(dk=>Object.values(byData[dk]||{}).forEach(x=>{
+      const a=ALOC[x.pid+'|'+dk]||{pote:0,balde:0,pesado:0,falta:0};
+      if(!cons[x.pid])cons[x.pid]={nome:x.nome,dem:0,pote:0,semCreme:0,plats:{},datas:{}};
+      const c=cons[x.pid];
+      c.dem+=x.dem;c.pote+=a.pote;c.semCreme+=a.falta;
+      c.datas[dk]=(c.datas[dk]||0)+x.dem;
+      Object.entries(x.plats).forEach(([pl,q])=>c.plats[pl]=(c.plats[pl]||0)+q);
+    }));
+    EST.necImpr.itens=Object.values(cons).map(c=>({...c,aEnvasar:Math.max(0,c.dem-c.pote)}))
+      .filter(c=>c.aEnvasar>0).sort((a,b)=>b.aEnvasar-a.aEnvasar);
+    EST.necImpr.titulo=datasMostrar.length===1
+      ?(datasMostrar[0]==='sem-prazo'?'Sem prazo':dataBR(datasMostrar[0]))
+      :datasMostrar.map(d=>d==='sem-prazo'?'sem prazo':dataBR(d)).join(' + ');
+  }
   const secoesData=datasMostrar.map(dk=>{
     const dias=diasAte(dk==='sem-prazo'?null:dk);
     const [cor,tag]=corUrgencia(dias);
@@ -2243,6 +2261,8 @@ async function tVendas(){
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${chipsData}${selDatas.length?`<button onclick="EST.filtroDatasVendas=[];tela('vendas')" style="border:1.5px dashed var(--linha);background:#fff;color:var(--cacau);border-radius:20px;padding:7px 13px;font-weight:800;font-size:12px;min-height:36px">✕ limpar</button>`:''}</div>
       <small style="color:#7A6A57;display:block;margin-top:7px">toque em 2+ datas pra somar a demanda e ver se o estoque cobre o período combinado</small>
     </div>`:''}
+    <div class="card" style="padding:11px 13px"><button onclick="imprimirNecessidade()" style="width:100%;background:#22303A;color:#fff;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:800">🖨️ Imprimir necessidade de potes</button>
+      <div style="text-align:center;font-size:11.5px;color:#7A6A57;margin-top:5px">lista do que está na tela — ${datasMostrar.length===1?'a data escolhida':'as datas escolhidas'} e o canal do filtro</div></div>
     ${blocoBases}
     ${resumoCombo}
     ${datasOrdenadas.length?secoesData:`<div class="card"><div class="center">Sem demanda em aberto ${fv==='varejo'?'no varejo':(fv==='ecom'?'no e-commerce':'')}. 🛍️</div></div>`}
@@ -2910,6 +2930,63 @@ function imprimirCarteira(){
   setTimeout(()=>{w.focus();w.print();},800);
 }
 
+function imprimirNecessidade(){
+  const d=EST.necImpr;
+  if(!d||!d.itens.length)return msg('Nada a envasar nessa seleção',true);
+  const hj=new Date().toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const linhas=d.itens.map((it,i)=>'<tr>'
+    +'<td class="n">'+(i+1)+'</td>'
+    +'<td><b>'+it.nome+'</b>'+(Object.keys(it.plats).length?'<div class="sub">'+Object.entries(it.plats).sort((a,b)=>b[1]-a[1]).map(([p,q])=>p+' '+fmt(q,0)).join(' · ')+'</div>':'')+'</td>'
+    +'<td class="num">'+fmt(it.dem,0)+'</td>'
+    +'<td class="num">'+fmt(it.pote,0)+'</td>'
+    +'<td class="num big">'+fmt(it.aEnvasar,0)+'</td>'
+    +'<td class="num'+(it.semCreme>0?' alerta':'')+'">'+(it.semCreme>0?fmt(it.semCreme,0):'—')+'</td>'
+    +'<td class="chk"></td></tr>').join('');
+  const tot=d.itens.reduce((s,x)=>s+x.aEnvasar,0), totSem=d.itens.reduce((s,x)=>s+x.semCreme,0);
+  const w=window.open('','_blank');
+  if(!w)return msg('Libere os pop-ups pra imprimir',true);
+  w.document.write('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Necessidade de potes — '+d.titulo+'</title>'
+   +'<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">'
+   +'<style>*{box-sizing:border-box;margin:0;padding:0}'
+   +"body{font-family:Archivo,sans-serif;color:#33200F;background:#fff;padding:18px}"
+   +".mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}"
+   +'header{background:#22303A;color:#fff;border-radius:12px;padding:13px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:flex-end;gap:12px}'
+   +'h1{font-size:17px;font-weight:800}header p{font-size:12px;opacity:.75;margin-top:2px}'
+   +'.tot{text-align:right}.tot b{font-size:26px;font-family:\'IBM Plex Mono\',monospace;display:block;line-height:1}'
+   +'.tot small{font-size:10px;opacity:.75;letter-spacing:.08em}'
+   +'table{width:100%;border-collapse:collapse;font-size:13px}'
+   +'th{text-align:left;font-size:9.5px;letter-spacing:.1em;color:#7A6A57;border-bottom:2px solid #33200F;padding:5px 6px}'
+   +'td{padding:8px 6px;border-bottom:1px solid #E2D8C9;vertical-align:top}'
+   +'th.num,td.num{text-align:right;font-family:\'IBM Plex Mono\',monospace;font-variant-numeric:tabular-nums}'
+   +'td.n{color:#9A8A77;font-size:11px;width:22px}'
+   +'td.big{font-size:19px;font-weight:800}'
+   +'td.alerta{color:#C63A3A;font-weight:800}'
+   +'.sub{font-size:10.5px;color:#7A6A57;margin-top:1px}'
+   +'th.chk,td.chk{width:34px;border-left:1px solid #E2D8C9}'
+   +'td.chk{border-bottom:1px solid #E2D8C9}'
+   +'td.chk::before{content:"";display:block;width:17px;height:17px;border:2px solid #33200F;border-radius:4px;margin:1px auto}'
+   +'tfoot td{border-top:2px solid #33200F;border-bottom:none;font-weight:800;padding-top:9px}'
+   +'footer{margin-top:14px;font-size:10.5px;color:#7A6A57;line-height:1.6;border-top:1px solid #E2D8C9;padding-top:8px}'
+   +'.barra{position:fixed;bottom:0;left:0;right:0;background:#22303A;padding:10px;text-align:center}'
+   +'.barra button{background:#fff;border:none;border-radius:9px;padding:12px 22px;font-size:15px;font-weight:800}'
+   +'@media print{.barra{display:none}body{padding:0}}'
+   +'</style></head><body>'
+   +'<header><div><h1>Necessidade de potes — '+d.titulo+'</h1>'
+   +'<p>'+d.canal+' · '+d.itens.length+' produtos · impresso em '+hj+'</p></div>'
+   +'<div class="tot"><b>'+fmt(tot,0)+'</b><small>POTES A ENVASAR</small></div></header>'
+   +'<table><thead><tr><th></th><th>PRODUTO</th><th class="num">PEDIRAM</th><th class="num">POTE PRONTO</th><th class="num">A ENVASAR</th><th class="num">SEM CREME</th><th class="chk">OK</th></tr></thead>'
+   +'<tbody>'+linhas+'</tbody>'
+   +'<tfoot><tr><td></td><td>Total</td><td class="num">'+fmt(d.itens.reduce((s,x)=>s+x.dem,0),0)+'</td>'
+   +'<td class="num">'+fmt(d.itens.reduce((s,x)=>s+x.pote,0),0)+'</td>'
+   +'<td class="num big">'+fmt(tot,0)+'</td>'
+   +'<td class="num'+(totSem>0?' alerta':'')+'">'+(totSem>0?fmt(totSem,0):'—')+'</td><td class="chk"></td></tr></tfoot></table>'
+   +'<footer><b>Como ler.</b> A envasar = pediram − pote pronto, na fila por data: o pote que o dia anterior consumiu não aparece disponível aqui. '
+   +'<b>Sem creme</b> é quanto desse total não tem base em balde nem em refino/mistura — esses precisam de moagem antes do envase, não adianta mandar pra linha.'
+   +(totSem>0?' <b>Hoje '+fmt(totSem,0)+' potes estão nessa situação.</b>':'')
+   +'<br>Lista tirada da tela Vendas / Despacho com o filtro '+d.canal.toLowerCase()+'. Confira o creme por base na própria tela antes de programar o refino.</footer>'
+   +'<div class="barra"><button onclick="window.print()">🖨️ Imprimir</button></div></body></html>');
+  w.document.close();
+}
 function imprimirEnvase(){
   const hj=new Date().toLocaleDateString('pt-BR');
   // Pegar só a tabela de envase do DOM atual
