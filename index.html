@@ -3104,84 +3104,134 @@ async function confPesagem(progId){
 }
 
 
-/* ===== Ficha de refino — sai junto com o cartao de identificacao, depois da pesagem ===== */
+/* ===== Ficha de refino + etiquetas de balde — saem depois da pesagem confirmada ===== */
 const PS_APLIC={m1:['Masseira','46'],m2:['Dispersor','53']};
+const KG_POR_BALDE=20, ETIQ_EXTRA=1;
+function escFicha(t){return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function campoFicha(rot){
+  var lb='',cx='';
+  for(var i=0;i<rot.length;i++){lb+='<td class="lb">'+escFicha(rot[i])+'</td>';cx+='<td><div class="cx"></div></td>'}
+  return '<table><tr>'+lb+'</tr><tr>'+cx+'</tr></table>';
+}
 function fichaRefinoHTML(d,lote){
-  const esc=t=>String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const ap=PS_APLIC[moinhoTipo(d.moinho)];
-  const its=d.itens||[];
-  const duas=its.length>8, pad=duas?'0.8mm':'1.6mm', tfs=duas?'8.5pt':'9.5pt';
-  const row=(k,it)=>'<tr><td class="n">'+k+'</td><td>'+esc(it)+'</td><td class="esc2"></td><td class="chk">&#9744;</td></tr>';
-  let lista;
+  var ap=PS_APLIC[moinhoTipo(d.moinho)]||PS_APLIC.m1;
+  var its=d.itens||[], n=its.length, duas=n>8;
+  var pad=duas?'1.0mm':'1.5mm', tfs=duas?'8.5pt':'9.5pt', hh=duas?'6mm':'7mm';
+  var row=function(k,it){return '<tr><td class="n">'+k+'</td><td>'+escFicha(it)+'</td><td class="esc2"></td><td class="chk">&#9744;</td></tr>'};
+  var cab='<tr><th></th><th>Insumo</th><th style="width:26mm">Lote MP</th><th></th></tr>';
+  var lista;
   if(duas){
-    const meio=Math.ceil(its.length/2);
-    const cab='<tr><th></th><th>Insumo</th><th style="width:20mm">Lote MP</th><th></th></tr>';
-    lista='<div style="display:grid;grid-template-columns:1fr 1fr;gap:4mm"><table>'+cab
-      +its.slice(0,meio).map((it,k)=>row(k+1,it)).join('')+'</table><table>'+cab
-      +its.slice(meio).map((it,k)=>row(meio+k+1,it)).join('')+'</table></div>';
+    var m=Math.ceil(n/2), e='', dd='';
+    for(var i=0;i<m;i++) e+=row(i+1,its[i]);
+    for(var j=m;j<n;j++) dd+=row(j+1,its[j]);
+    lista='<table><tr><td style="width:49%;vertical-align:top"><table class="ins">'+cab+e+'</table></td>'
+         +'<td style="width:2%"></td><td style="vertical-align:top"><table class="ins">'+cab+dd+'</table></td></tr></table>';
   }else{
-    const cab='<tr><th></th><th>Insumo</th><th style="width:32mm">Lote do insumo</th><th></th></tr>';
-    lista='<table>'+cab+its.map((it,k)=>row(k+1,it)).join('')+'</table>';
+    var t='';for(var k=0;k<n;k++) t+=row(k+1,its[k]);
+    lista='<table class="ins">'+cab+t+'</table>';
   }
-  const cx=t=>'<div><div class="lb">'+t+'</div><div class="hora"></div></div>';
-  return '<div class="f" style="--pad:'+pad+';--tfs:'+tfs+'">'
-   +'<div class="hd"><div class="eb">Nutrissima &middot; refino &mdash; ficha da batelada</div>'
-   +'<div class="tt">'+esc(d.produto)+'</div>'
-   +'<div class="hsub">'+esc(d.moinho)+' &middot; '+brData(d.data)+' &middot; ficha '+d.i+' de '+d.n+' &middot; '+fmt(d.kg,0)+' kg</div></div>'
-   +'<div class="grid">'
-   +'<div class="cel"><div class="lb">Lote da pesagem</div><div class="vl">'+esc(lote)+'</div></div>'
-   +'<div class="cel"><div class="lb">Desta batelada</div><div class="vl">'+fmt(d.kg,0)+' kg</div></div>'
-   +'<div class="cel"><div class="lb">Operador</div><div class="esc"></div></div></div>'
-   +'<div class="blk" style="--tar:#3E7C45"><p class="bt">1 &middot; Sequencia &mdash; ordem da formulacao</p>'+lista+'</div>'
-   +'<div class="blk" style="--tar:#22303A"><p class="bt">2 &middot; Horarios</p><div class="g4">'
-   +cx('Entrou no moinho')+cx('Produto refinado')+cx('Saiu p/ o balde')+cx('kg real no balde')+'</div></div>'
-   +'<div class="blk ps"><p class="bt">3 &middot; PS 233 &mdash; '+ap[0]+', '+ap[1]+' &deg;C</p>'
-   +'<p class="bs">Derrete toda a quantidade no micro-ondas (~5 min). Com o agitador ligado, aplica aos poucos, misturando cada parte com um pouco de creme antes de jogar. Abaixo de '+ap[1]+' &deg;C, espera.</p>'
-   +'<div class="g4">'+cx('Temperatura lida')+cx('Hora que aplicou')+cx('Quem aplicou')+cx('Micro-ondas (min)')+'</div></div>'
-   +'<div class="rod"><b>Parou?</b> &#9744; esperando temperatura &#9744; falta de insumo &#9744; limpeza / troca &#9744; manutencao &#9744; moinho ocupado &#9744; outro: ____________<br>'
-   +'<b>Como ler:</b> a sequencia e a ordem cadastrada na formulacao; o lote e o mesmo do cartao de identificacao da pesagem. '
-   +'<b>Procedencia:</b> pesagem confirmada no app &middot; temperaturas informadas pela producao em 05/09/2026.</div></div>';
+  var lin=function(nome,opc){return '<tr><td class="cy">'+nome+(opc?' <span class="opc">'+opc+'</span>':'')+'</td>'
+    +'<td><div class="cx"></div></td><td><div class="cx"></div></td><td><div class="cx"></div></td>'
+    +'<td><div class="cx"></div></td><td><div class="cx"></div></td></tr>'};
+  var ciclos='<table class="cic"><tr><th></th><th style="width:20%">Início</th><th style="width:20%">Fim</th>'
+    +'<th style="width:16%">Micragem</th><th style="width:16%">Hora micragem</th><th style="width:18%">Quem fez</th></tr>'
+    +lin('Ciclo 1')+lin('Ciclo 2')+lin('Ciclo 3')+lin('Ciclo 4','se necessário')+'</table>';
+  return '<div class="f" style="--pad:'+pad+';--tfs:'+tfs+';--hh:'+hh+'">'
+   +'<div class="hd"><div class="eb">Nutríssima · refino — ficha da batelada</div>'
+   +'<div class="tt">'+escFicha(d.produto)+'</div>'
+   +'<div class="hsub">'+escFicha(d.moinho)+' · '+brData(d.data)+' · ficha '+d.i+' de '+d.n+' · '+fmt(d.kg,0)+' kg</div></div>'
+   +'<table style="margin-bottom:2.5mm"><tr>'
+   +'<td style="width:33%"><div class="cab"><div class="lb">Lote da pesagem</div><div class="vl">'+escFicha(lote)+'</div></div></td>'
+   +'<td style="width:2%"></td>'
+   +'<td style="width:22%"><div class="cab"><div class="lb">Desta batelada</div><div class="vl">'+fmt(d.kg,0)+' kg</div></div></td>'
+   +'<td style="width:2%"></td>'
+   +'<td><div class="cab"><div class="lb">Operador</div><div class="esc"></div></div></td></tr></table>'
+   +'<div class="blk" style="--tar:#3E7C45"><p class="bt">1 · Sequência — ordem da formulação</p>'+lista+'</div>'
+   +'<div class="blk" style="--tar:#22303A"><p class="bt">2 · Abastecimento e start de linha</p>'
+   +campoFicha(['Início abast. mexedor','Transferiu p/ o moinho','Micragem 0 (start linha)','Hora da micragem 0','Quem fez'])+'</div>'
+   +'<div class="blk" style="--tar:#2B6E8F"><p class="bt">3 · Ciclos de refino — micragem no fim de cada ciclo</p>'
+   +ciclos+'<div style="margin-top:2mm">'+campoFicha(['Saiu p/ o balde','kg real no balde'])+'</div></div>'
+   +'<div class="blk ps"><p class="bt">4 · PS 233 — '+ap[0]+', '+ap[1]+' °C</p>'
+   +'<p class="bs">Derrete toda a quantidade da fórmula de uma vez, no micro-ondas (~5 min). Com o agitador ligado, aplica aos poucos, misturando cada parte com um pouco de creme antes de jogar. Abaixo de '+ap[1]+' °C, espera.</p>'
+   +campoFicha(['Temperatura lida','Hora que aplicou','Quem aplicou','Micro-ondas (min)'])+'</div>'
+   +'<div class="rod"><b>Parou?</b> &#9744; esperando temperatura &#9744; falta de insumo &#9744; limpeza / troca &#9744; manutenção &#9744; moinho ocupado &#9744; outro: ____________<br>'
+   +'<b>Como ler:</b> a sequência é a ordem cadastrada na formulação; o lote é o mesmo do cartão de identificação da pesagem. A micragem 0 é a do start de linha, medida quando o creme sai do mexedor para o moinho. '
+   +'<b>Procedência:</b> pesagem confirmada no app · temperaturas e ciclos informados pela produção em 05/09/2026.</div></div>';
+}
+function etiquetasHTML(d,lote){
+  var n=Math.ceil(Number(d.kg||0)/KG_POR_BALDE), tot=n+ETIQ_EXTRA, cels=[];
+  for(var k=1;k<=tot;k++){
+    var marca=(k<=n)?(k+' de '+n):'extra';
+    cels.push('<td class="et"><div class="top">Nutríssima · balde</div><div class="bal">'+marca+'</div>'
+      +'<div class="prod">'+escFicha(d.produto)+'</div><div class="lote">'+escFicha(lote)+'</div>'
+      +'<div class="meta">'+escFicha(d.moinho)+' · '+brData(d.data)+' · batelada '+d.i+' de '+d.n+'</div>'
+      +'<table class="pesos"><tr><td class="lb">Peso líquido (kg)</td><td style="width:3mm"></td><td class="lb">Data / hora</td></tr>'
+      +'<tr><td><div class="cxe"></div></td><td></td><td><div class="cxe"></div></td></tr></table></td>');
+  }
+  var linhas='';
+  for(var i=0;i<cels.length;i+=2){
+    var a=cels[i], b=cels[i+1]||'<td></td>';
+    linhas+='<tr>'+a+'<td style="width:3mm"></td>'+b+'</tr><tr><td style="height:3mm"></td><td></td><td></td></tr>';
+  }
+  return '<div class="folha"><table style="width:100%">'+linhas+'</table></div>';
+}
+function cssFicha(){
+  return "*{box-sizing:border-box}body{margin:0;background:#EFE7DC;font-family:Archivo,system-ui,sans-serif;color:#33200F}"
+  +".f{background:#FFFDF9;width:194mm;margin:8px auto;padding:6mm;font-size:9.5pt;border:1px solid #DCD2C4}"
+  +".hd{background:#22303A;color:#FFFDF9;margin:-6mm -6mm 3.5mm;padding:4mm 6mm 3.5mm}"
+  +".eb{font-size:8.5pt;letter-spacing:.16em;text-transform:uppercase;opacity:.75}"
+  +".tt{font-size:16pt;font-weight:800;line-height:1.05;margin-top:1.5mm}"
+  +".hsub{font-size:9pt;margin-top:1mm;opacity:.85}"
+  +".blk{border-left:6px solid var(--tar,#3E7C45);border-top:1px solid #DCD2C4;border-right:1px solid #DCD2C4;border-bottom:1px solid #DCD2C4;background:#fff;padding:2.2mm 3mm;margin-bottom:2.5mm}"
+  +".bt{font-size:10pt;font-weight:700;margin:0 0 1.5mm}"
+  +".bs{font-size:8pt;color:#7A6A57;margin:0 0 2mm;line-height:1.3}"
+  +"table{width:100%;border-collapse:collapse}"
+  +".lb{font-size:7pt;letter-spacing:.06em;text-transform:uppercase;color:#7A6A57;padding-bottom:0.6mm}"
+  +".cx{border:1.4px solid #B9AC99;border-radius:5px;height:var(--hh,7mm)}"
+  +".cab{border:1.4px solid #DCD2C4;border-radius:7px;padding:1.5mm 2.5mm}"
+  +".cab .vl{font-family:'IBM Plex Mono',monospace;font-size:13pt;font-weight:600}"
+  +".cab .esc{border-bottom:1px solid #B9AC99;height:6mm}"
+  +".ins{font-size:var(--tfs,9.5pt)}"
+  +".ins td{padding:var(--pad,1.5mm) 1mm;border-bottom:1px solid #EDE5D9}"
+  +".ins th{font-size:7.5pt;letter-spacing:.06em;text-transform:uppercase;color:#7A6A57;text-align:left;padding-bottom:1mm}"
+  +".n{font-family:'IBM Plex Mono',monospace;color:#7A6A57;width:7mm}"
+  +".esc2{border-bottom:1px solid #B9AC99}.chk{width:7mm;text-align:center;font-size:11pt;color:#B9AC99}"
+  +".cic td{padding:0.7mm 0.8mm;vertical-align:bottom}"
+  +".cic th{font-size:7pt;letter-spacing:.06em;text-transform:uppercase;color:#7A6A57;text-align:left;padding-bottom:0.8mm}"
+  +".cy{font-size:8.5pt;font-weight:700;width:26mm}.opc{font-weight:500;color:#7A6A57;font-size:7pt}"
+  +".ps{background:#FAF3E3;border-left-color:#B8862B}"
+  +".rod{border-top:1px solid #DCD2C4;padding-top:1.8mm;font-size:7.5pt;color:#7A6A57;line-height:1.35}"
+  +".folha{background:#FFFDF9;width:194mm;margin:8px auto;padding:5mm;border:1px solid #DCD2C4}"
+  +".et{border:1.5px dashed #B9AC99;border-radius:8px;padding:3mm;height:63mm;vertical-align:top}"
+  +".top{font-size:7.5pt;letter-spacing:.14em;text-transform:uppercase;color:#7A6A57}"
+  +".prod{font-size:14pt;font-weight:800;line-height:1.1;margin:1mm 0 2mm}"
+  +".lote{font-family:'IBM Plex Mono',monospace;font-size:22pt;font-weight:600;line-height:1}"
+  +".meta{font-size:8.5pt;color:#7A6A57;margin-top:1.5mm}.pesos{margin-top:3mm}"
+  +".cxe{border:1.4px solid #B9AC99;border-radius:5px;height:9mm}"
+  +".bal{float:right;font-family:'IBM Plex Mono',monospace;font-size:11pt;font-weight:600;color:#7A6A57}"
+  +"@media print{body{background:#fff}.f,.folha{margin:0;border:0;width:auto;page-break-after:always}"
+  +".f:last-child,.folha:last-child{page-break-after:auto}}"
+  +"@page{size:A4;margin:8mm}";
+}
+function abrirImpressao(titulo,corpo){
+  var w=window.open('','_blank');
+  if(!w){msg('O navegador bloqueou a janela — libere o pop-up e toque de novo',true);return}
+  w.document.write("<!doctype html><html lang='pt-BR'><head><meta charset='utf-8'><title>"+titulo+"</title>"
+    +"<link rel='stylesheet' href='https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap'>"
+    +"<style>"+cssFicha()+"</style></head><body>"+corpo+"</body></html>");
+  w.document.close();
+  setTimeout(function(){try{w.print()}catch(e){}},500);
 }
 function fichaRefinoPrint(){
-  const d=EST.fichaRefino;
-  if(!d){msg('Ficha indisponivel — refaca a pesagem pela tela',true);return}
-  const css="@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap');"
-   +"*{box-sizing:border-box}body{margin:0;background:#EFE7DC;font-family:Archivo,system-ui,sans-serif;color:#33200F}"
-   +".f{background:#FFFDF9;width:190mm;min-height:262mm;margin:10px auto;padding:7mm;font-size:9.5pt;border:1px solid #DCD2C4;display:flex;flex-direction:column}"
-   +".hd{background:#22303A;color:#FFFDF9;margin:-7mm -7mm 4mm;padding:5mm 7mm 4mm}"
-   +".eb{font-size:9pt;letter-spacing:.16em;text-transform:uppercase;opacity:.75}"
-   +".tt{font-size:17pt;font-weight:800;line-height:1.05;margin-top:2mm}"
-   +".hsub{font-size:9.5pt;margin-top:1.5mm;opacity:.85}"
-   +".grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3mm;margin-bottom:3mm}"
-   +".cel{border:1.5px solid #DCD2C4;border-radius:8px;padding:1.5mm 2.5mm;min-height:11mm}"
-   +".cel .lb,.blk .lb{font-size:7.5pt;letter-spacing:.08em;text-transform:uppercase;color:#7A6A57}"
-   +".cel .vl{font-family:'IBM Plex Mono',monospace;font-size:13pt;font-weight:600;margin-top:1mm;font-variant-numeric:tabular-nums}"
-   +".cel .esc{border-bottom:1px solid #B9AC99;height:6.5mm}"
-   +".blk{border-left:7px solid var(--tar,#3E7C45);background:#fff;border-top:1px solid #DCD2C4;border-right:1px solid #DCD2C4;border-bottom:1px solid #DCD2C4;padding:2.5mm 3.5mm;margin-bottom:3mm}"
-   +".bt{font-size:10.5pt;font-weight:700;margin:0 0 1.5mm}"
-   +".bs{font-size:8.5pt;color:#7A6A57;margin:0 0 2mm;line-height:1.35}"
-   +"table{width:100%;border-collapse:collapse;font-size:var(--tfs,9.5pt)}"
-   +"th{font-size:8pt;letter-spacing:.08em;text-transform:uppercase;color:#7A6A57;text-align:left;font-weight:700;padding-bottom:1mm}"
-   +"td{padding:var(--pad,1.6mm) 1mm;border-bottom:1px solid #EDE5D9}"
-   +".n{font-family:'IBM Plex Mono',monospace;color:#7A6A57;width:8mm}"
-   +".chk{width:8mm;text-align:center;font-size:12pt;color:#B9AC99}"
-   +".esc2{border-bottom:1px solid #B9AC99}"
-   +".ps{background:#FAF3E3;border-left-color:#B8862B}"
-   +".g4{display:grid;grid-template-columns:repeat(4,1fr);gap:3mm}"
-   +".blk .lb{margin-bottom:1mm}"
-   +".hora{border:1.5px solid #B9AC99;border-radius:6px;height:7.5mm}"
-   +".rod{margin-top:auto;border-top:1px solid #DCD2C4;padding-top:2mm;font-size:7.5pt;color:#7A6A57;line-height:1.4}"
-   +"@media print{body{background:#fff}.f{margin:0;border:0;width:auto;min-height:0;page-break-after:always}}"
-   +"@page{size:A4;margin:8mm}";
-  const html='<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Ficha de refino '+d.produto+'</title><style>'+css+'</style></head><body>'
-   +fichaRefinoHTML(d,EST.fichaRefino.lote||'')+'</body></html>';
-  const w=window.open('','_blank');
-  if(!w){msg('O navegador bloqueou a janela — libere o pop-up e toque de novo',true);return}
-  w.document.write(html);w.document.close();
-  setTimeout(()=>{try{w.print()}catch(e){}},400);
+  var d=EST.fichaRefino;
+  if(!d){msg('Ficha indisponível — refaça a pesagem pela tela',true);return}
+  abrirImpressao('Ficha de refino '+d.produto,fichaRefinoHTML(d,d.lote||''));
 }
-
-
+function etiquetasBaldePrint(){
+  var d=EST.fichaRefino;
+  if(!d){msg('Etiquetas indisponíveis — refaça a pesagem pela tela',true);return}
+  abrirImpressao('Etiquetas de balde '+(d.lote||''),etiquetasHTML(d,d.lote||''));
+}
 function pesagemFim(lote){
   const d=EST.fichaRefino||{};
   document.getElementById('app').innerHTML=
@@ -3189,8 +3239,9 @@ function pesagemFim(lote){
    +'<main><div class="card" style="text-align:center;margin-top:0">'
    +'<span class="step-label">lote gerado</span>'
    +'<b class="mono" style="font-size:34px;display:block;margin:4px 0 10px">'+lote+'</b>'
-   +'<p style="color:#7A6A57;font-size:13px;margin:0 0 14px">Imprima a ficha e mande junto com o cartão de identificação — as duas com o mesmo lote.</p>'
+   +'<p style="color:#7A6A57;font-size:13px;margin:0 0 14px">Imprima a ficha e as etiquetas dos baldes — tudo sai com este mesmo lote. O peso do balde é escrito à mão.</p>'
    +'<button class="btnP" style="width:100%" onclick="fichaRefinoPrint()">🖨️ Imprimir ficha da mistura</button>'
+   +'<button class="btnP" style="width:100%;margin-top:10px" onclick="etiquetasBaldePrint()">🏷️ Imprimir etiquetas dos baldes</button>'
    +'<button class="btnSec" style="width:100%;margin-top:10px;min-height:44px" onclick="tela(\'programacao\')">Voltar para a programação</button>'
    +'</div></main>';
 }
