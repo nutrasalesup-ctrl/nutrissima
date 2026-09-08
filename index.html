@@ -1507,6 +1507,21 @@ function imprimirProgSemana(){
   const w=window.open('','_blank');w.document.write(html);w.document.close();
   setTimeout(()=>{try{w.print()}catch(e){}},300);
 }
+
+function cssEtiquetasEsc(){
+  return ".folha{background:#FFFDF9;width:100%;padding:0;margin:0 0 10px}"
+  +".folha table{width:100%;border-collapse:collapse}"
+  +".folha .et{border:1.5px dashed #B9AC99;border-radius:8px;padding:3mm;height:63mm;vertical-align:top}"
+  +".folha .top{font-size:7.5pt;letter-spacing:.14em;text-transform:uppercase;color:#7A6A57}"
+  +".folha .prod{font-size:14pt;font-weight:800;line-height:1.1;margin:1mm 0 2mm}"
+  +".folha .lote{font-family:'IBM Plex Mono',monospace;font-size:22pt;font-weight:600;line-height:1}"
+  +".folha .meta{font-size:8.5pt;color:#7A6A57;margin-top:1.5mm}"
+  +".folha .pesos{margin-top:3mm}"
+  +".folha .lb{font-size:7pt;letter-spacing:.06em;text-transform:uppercase;color:#7A6A57;padding-bottom:0.6mm}"
+  +".folha .cxe{border:1.4px solid #B9AC99;border-radius:5px;height:9mm}"
+  +".folha .bal{float:right;font-family:'IBM Plex Mono',monospace;font-size:11pt;font-weight:600;color:#7A6A57}"
+  +"@media print{.folha{page-break-before:always}}";
+}
 function cartoesBatPrint(lista,obs){
   if(!lista||!lista.length){msg('Nenhuma batelada pra imprimir',true);return}
   const obsEsc=(obs||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -1584,6 +1599,10 @@ function cartoesBatPrint(lista,obs){
   +'.geracao{font-size:10px;color:#7A6A57;text-align:right;margin-top:8px}'
   +'</style></head><body>'
   +pags.map((pg,i)=>'<div class="pg">'+pg+(i===pags.length-1?'<div class="geracao">gerado em '+agora+' · programacao_refino</div>':'')+'</div>').join('')
+  +'<style>'+cssEtiquetasEsc()+'</style>'
+  +lista.map(p=>{const par=idxDe(p);
+     return etiquetasHTML({produto:(p.produtos&&p.produtos.nome)||'—',moinho:(p.equipamentos&&p.equipamentos.nome)||'',
+       data:p.data,kg:Number(p.quantidade_kg),i:par[0],n:par[1]},p.lote||'')}).join('')
   +'</body></html>';
   const w=window.open('','_blank');w.document.write(html);w.document.close();
   setTimeout(()=>{try{w.print()}catch(e){}},300);
