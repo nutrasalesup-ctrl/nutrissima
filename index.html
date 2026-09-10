@@ -280,6 +280,17 @@ body{overflow-x:hidden}
 .qd-dia-barra div{height:100%}
 .qd-dia-pronto{font-size:13px;font-weight:700;margin-top:3px}
 .qd-hoje{display:block;font-size:13px;font-weight:800;color:#7ED957;white-space:nowrap}
+.qd-atr{background:#3A1414;border:2px solid #D93636;border-radius:16px;padding:12px 16px;margin-bottom:12px}
+.qd-atr h2{font-size:24px;margin:0 0 10px;color:#FFD2D2}
+.qd-atr-cont{font-size:15px;font-weight:700;color:#FF9C9C;margin-left:8px}
+.qd-atr-ped{border-top:1px solid #ffffff1f;padding:8px 0}
+.qd-atr-cab{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;font-size:18px;color:#FFFDF9}
+.qd-atr-cli{font-size:15px;color:#E8CFCF}
+.qd-atr-dias{font-size:15px;font-weight:900;color:#FF7B7B}
+.qd-atr-itens{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.qd-atr-item{font-size:14px;border-radius:10px;padding:5px 10px}
+.qd-atr-ok{color:#7ED957;font-size:15px;font-weight:800;margin-bottom:10px}
+.qd-selo-atr{display:inline-block;background:#D93636;color:#fff;font-size:11px;font-weight:900;border-radius:6px;padding:1px 6px;margin-right:6px;vertical-align:middle}
 </style>
 </head>
 <body>
@@ -290,7 +301,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-09-10-painel-envasados';
+const APP_VERSAO='2026-09-10-painel-atrasados';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -2016,7 +2027,7 @@ async function editarPedido(id){
 const QUADRO_MIN=5;
 const QD_COR={verm:['#D93636','#fff'],amar:['#F2B705','#3A2A00'],verde:['#2E8B47','#fff'],cinza:['#6F665C','#fff']};
 const QD_RANK={verm:3,amar:2,cinza:1,verde:0};
-function quadroMontar(C,hj,ultImport,envHoje){
+function quadroMontar(C,hj,ultImport,envHoje,atr){
   const diasAte=d=>{const dt=new Date(d+'T12:00'),h=new Date(hj+'T12:00');return Math.round((dt-h)/86400000)};
   const ddmm=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
   const semana=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR',{weekday:'short'}).replace('.','');
@@ -2029,6 +2040,43 @@ function quadroMontar(C,hj,ultImport,envHoje){
     if(!ult||m.criado_em>ult.criado_em)ult=m;});
   const hhmmQ=iso=>new Date(iso).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   const blocoEnv=`<div class="qd-env"><span class="qd-env-rot">🫙 Envasados hoje</span>${totEnv>0?`<b class="mono">${fmt(totEnv,0)}</b><span class="qd-env-un">potes</span><span class="qd-env-ult">último lançamento ${hhmmQ(ult.criado_em)} · ${(ult.produto_acabado||{}).nome||'—'} +${fmt(ult.quantidade,0)}</span>`:'<span class="qd-env-ult">nenhuma entrada de pote lançada ainda</span>'}${totAjuste>0?`<span class="qd-env-aj">+ ${fmt(totAjuste,0)} em ajuste de contagem (não conta como envase)</span>`:''}</div>`;
+  /* ---- pedidos atrasados (prazo antes de hoje e ainda em aberto) ---- */
+  const atrPed={};
+  ((atr||{}).vp||[]).forEach(r=>{
+    if(!r.entrega||r.entrega>=hj)return;
+    const q=Math.max(0,Number(r.qtd||0)-Number(r.qtd_separada||0));if(q<=0)return;
+    const k='V|'+r.canal+'|'+(r.pedido_numero||'?');
+    const p=atrPed[k]=atrPed[k]||{canal:r.canal,pedido:r.pedido_numero,cliente:r.cliente,prazo:r.entrega,itens:{}};
+    if(r.entrega<p.prazo)p.prazo=r.entrega;
+    const ik=(r.produto_acabado_id||'semsku')+'|'+r.entrega;
+    const it=p.itens[ik]=p.itens[ik]||{pid:r.produto_acabado_id,dk:r.entrega,nome:(r.produto_acabado||{}).nome||'código sem produto',q:0};it.q+=q;
+  });
+  ((atr||{}).dv||[]).forEach(r=>{
+    if(!r.data_despacho||r.data_despacho>=hj)return;
+    const q=Number(r.qtd_potes)||0;if(q<=0)return;
+    const k='M|'+r.plataforma+'|'+r.data_despacho;
+    const p=atrPed[k]=atrPed[k]||{canal:r.plataforma,pedido:null,cliente:null,prazo:r.data_despacho,itens:{}};
+    const ik=(r.produto_acabado_id||'semsku')+'|'+r.data_despacho;
+    const it=p.itens[ik]=p.itens[ik]||{pid:r.produto_acabado_id,dk:r.data_despacho,nome:(r.produto_acabado||{}).nome||'código sem produto',q:0};it.q+=q;
+  });
+  const statusItem=it=>{
+    const a=it.pid?C.ALOC[it.pid+'|'+it.dk]:null;
+    if(!it.pid||!a)return ['cinza','sem produto no cadastro'];
+    if(a.pote>=a.dem)return ['verde','tem pote — separar'];
+    if(a.semBase)return ['cinza','sem receita — conferir creme'];
+    if(a.falta>0)return ['verm','sem creme — faltam '+fmt(a.falta,0)];
+    return ['amar','envasar '+fmt(a.dem-a.pote,0)];
+  };
+  const listaAtr=Object.values(atrPed).map(p=>({...p,dias:-diasAte(p.prazo),itens:Object.values(p.itens)})).sort((a,b)=>b.dias-a.dias);
+  const pidsAtrasados=new Set();listaAtr.forEach(p=>p.itens.forEach(it=>{if(it.pid)pidsAtrasados.add(it.pid)}));
+  const MAXA=8;
+  const blocoAtr=listaAtr.length?`<div class="qd-atr"><h2>⏰ Pedidos atrasados <span class="qd-atr-cont">${listaAtr.length} pedido${listaAtr.length>1?'s':''} · ${pidsAtrasados.size} produto${pidsAtrasados.size!==1?'s':''}</span></h2>
+    ${listaAtr.slice(0,MAXA).map(p=>`<div class="qd-atr-ped">
+      <div class="qd-atr-cab"><b>${p.canal}${p.pedido?' · pedido '+p.pedido:''}</b>${p.cliente?`<span class="qd-atr-cli">${p.cliente}</span>`:''}<span class="qd-atr-dias">prazo ${ddmm(p.prazo)} · ${p.dias} dia${p.dias>1?'s':''} de atraso</span></div>
+      <div class="qd-atr-itens">${p.itens.map(it=>{const [k,t]=statusItem(it);const [bg,fg]=QD_COR[k];return `<span class="qd-atr-item" style="background:${bg};color:${fg}"><b>${it.nome}</b> · ${fmt(it.q,0)} un — ${t}</span>`}).join('')}</div>
+    </div>`).join('')}
+    ${listaAtr.length>MAXA?`<p class="qd-vazio">+ ${listaAtr.length-MAXA} pedidos atrasados — ver em Carteira / Vendas</p>`:''}
+  </div>`:'<div class="qd-atr-ok">✓ nenhum pedido atrasado</div>';
   /* ---- colunas de data ---- */
   const MAXD=5;
   const futuras=[...new Set(Object.keys(C.ALOC).map(k=>k.split('|')[1]).filter(dk=>dk!=='sem-prazo'&&diasAte(dk)>=0))].sort();
@@ -2109,12 +2157,12 @@ function quadroMontar(C,hj,ultImport,envHoje){
   const linhas=Object.entries(porPid).map(([pid,m])=>{
     let score=0,tot=0;
     colunas.forEach(c=>{const x=m[c];if(!x)return;const a=Math.max(0,x.dem-x.pote);tot+=a;const k=corCel(x);score=Math.max(score,QD_RANK[k]*10+(k==='verm'||k==='amar'?(99-Math.min(99,diasCol(c)+1))/100:0))});
-    return {pid,m,score,tot,nome:nomes[pid]||'—'};
-  }).filter(r=>r.tot>0).sort((a,b)=>b.score-a.score||b.tot-a.tot);
+    return {pid,m,score,tot,nome:nomes[pid]||'—',atr:pidsAtrasados.has(pid)};
+  }).filter(r=>r.tot>0).sort((a,b)=>(b.atr-a.atr)||b.score-a.score||b.tot-a.tot);
   const MAXL=30;
   const gridCols=`minmax(0,2.2fr) repeat(${colunas.length},minmax(0,1fr))`;
   const cab=`<div class="qd-row qd-cab" style="grid-template-columns:${gridCols}"><span></span>${colunas.map(c=>{const [r1,r2]=rotCol(c);return `<span><b>${r1}</b><br>${r2}</span>`}).join('')}</div>`;
-  const corpo=linhas.slice(0,MAXL).map(r=>`<div class="qd-row" style="grid-template-columns:${gridCols}"><span class="qd-nome">${r.nome}${envPorPid[r.pid]?`<small class="qd-hoje">+${fmt(envPorPid[r.pid],0)} envasados hoje</small>`:''}</span>${colunas.map(c=>{
+  const corpo=linhas.slice(0,MAXL).map(r=>`<div class="qd-row" style="grid-template-columns:${gridCols}"><span class="qd-nome">${r.atr?'<span class="qd-selo-atr">⏰ ATRASADO</span>':''}${r.nome}${envPorPid[r.pid]?`<small class="qd-hoje">+${fmt(envPorPid[r.pid],0)} envasados hoje</small>`:''}</span>${colunas.map(c=>{
       const x=r.m[c];if(!x)return '<span class="qd-cel qd-cel-vazia">·</span>';
       const a=Math.max(0,x.dem-x.pote), k=corCel(x), [bg,fg]=QD_COR[k];
       return `<span class="qd-cel mono" style="background:${bg};color:${fg}">${a>0?fmt(a,0):'✓'}</span>`;
@@ -2123,7 +2171,7 @@ function quadroMontar(C,hj,ultImport,envHoje){
   const semBaseTot=Object.values(C.ALOC).filter(a=>a.semBase).reduce((s,a)=>s+Math.max(0,a.dem-a.pote),0);
   const imp=ultImport?new Date(ultImport).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
   const impVelho=ultImport&&(Date.now()-new Date(ultImport).getTime())>20*3600000;
-  return {faixa,blocoBases,grade,semBaseTot,imp,impVelho,nLinhas:linhas.length,colunas,blocoEnv,totEnv,totAjuste};
+  return {faixa,blocoBases,grade,semBaseTot,imp,impVelho,nLinhas:linhas.length,colunas,blocoEnv,totEnv,totAjuste,blocoAtr,nAtr:listaAtr.length};
 }
 async function tQuadro(){
   if(EST.quadroTimer){clearInterval(EST.quadroTimer);EST.quadroTimer=null}
@@ -2141,14 +2189,16 @@ async function quadroRender(){
   let Q,erro=null;
   try{
     const iniISO=new Date(hj+'T00:00:00-03:00').toISOString(), fimISO=new Date(hj+'T23:59:59-03:00').toISOString();
-    const [C,i1,i2,env]=await Promise.all([
+    const [C,i1,i2,env,atrVp,atrDv]=await Promise.all([
       calcCobertura(),
       sb.from('atividades').select('criado_em').ilike('descricao','Demanda de vendas%').order('criado_em',{ascending:false}).limit(1),
       sb.from('atividades').select('criado_em').ilike('descricao','Carteira Varejo%').order('criado_em',{ascending:false}).limit(1),
-      sb.from('produto_acabado_movimentos').select('produto_acabado_id,quantidade,lote,criado_em,produto_acabado(nome)').eq('tipo','entrada').gte('criado_em',iniISO).lte('criado_em',fimISO)
+      sb.from('produto_acabado_movimentos').select('produto_acabado_id,quantidade,lote,criado_em,produto_acabado(nome)').eq('tipo','entrada').gte('criado_em',iniISO).lte('criado_em',fimISO),
+      sb.from('vendas_pedidos').select('pedido_numero,cliente,canal,entrega,qtd,qtd_separada,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').in('canal',['Varejo','Shopee Full']).lt('entrega',hj),
+      sb.from('demanda_vendas').select('plataforma,data_despacho,qtd_potes,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').neq('origem','import_varejo').lt('data_despacho',hj)
     ]);
     const ts=[(i1.data||[])[0],(i2.data||[])[0]].filter(Boolean).map(r=>r.criado_em).sort();
-    Q=quadroMontar(C,hj,ts.length?ts[ts.length-1]:null,env.data||[]);
+    Q=quadroMontar(C,hj,ts.length?ts[ts.length-1]:null,env.data||[],{vp:atrVp.data||[],dv:atrDv.data||[]});
   }catch(e){erro=e&&e.message?e.message:String(e)}
   if(!document.getElementById('quadro'))return;
   quadroAcordado();
@@ -2165,6 +2215,7 @@ async function quadroRender(){
   document.getElementById('quadro').innerHTML=cab+`
     <div class="qd-legenda"><span style="background:${QD_COR.verde[0]}">verde · tem pote ou creme no balde</span><span style="background:${QD_COR.amar[0]};color:${QD_COR.amar[1]}">amarelo · depende do moinho ou dá tempo de moer</span><span style="background:${QD_COR.verm[0]}">vermelho · falta creme em até 2 dias</span></div>
     <div class="qd-aviso${Q.impVelho?' velho':''}">pedidos importados pela última vez em <b>${Q.imp}</b>${Q.impVelho?' — mais de 20 h atrás: o painel pode estar desatualizado':''}</div>
+    ${Q.blocoAtr}
     ${Q.blocoEnv}
     <div class="qd-faixa">${Q.faixa||'<p class="qd-vazio">Sem pedidos em aberto.</p>'}</div>
     <div class="qd-dash">
@@ -2172,6 +2223,7 @@ async function quadroRender(){
       <div class="qd-card"><h2>🫙 Potes a envasar por dia de despacho</h2>${Q.grade}</div>
     </div>
     <div class="qd-rodape"><b>Como ler.</b> O número grande é quantos potes faltam envasar para os pedidos daquela data, já descontado o pote pronto; a barra embaixo dele é quanto desses pedidos já tem pote, e cresce conforme as entradas no estoque são lançadas. <b>Envasados hoje</b> soma as entradas de pote do dia (Entrada no estoque e Envase); ajuste de contagem fica fora, por isso pode dar menos que o Relatório de Produção. A conta é a mesma da tela Vendas / Despacho: cada data consome primeiro o pote pronto, depois o balde, depois o que está no moinho — o mesmo creme não é prometido a duas datas. A cor é calculada: vermelho quando falta creme e o despacho é em até 2 dias (ou já passou); amarelo quando só fecha com o moinho ou falta creme com 3 dias ou mais de prazo; verde quando tem pote pronto ou creme no balde; cinza quando o produto não tem receita amarrada. Na barra do creme, a parte cheia é o balde e a parte clara é o moinho.<br>
+    <b>Pedidos atrasados</b> são os que têm prazo de despacho antes de hoje e ainda não foram separados (Varejo e Shopee Full pela carteira; marketplaces pela última planilha, agrupados por plataforma e prazo, sem número de pedido). A cor de cada produto diz o que falta para liberar: verde tem pote pronto e é só separar, amarelo precisa envasar, vermelho falta creme. Os produtos desses pedidos sobem para o topo da grade com o selo ⏰.<br>
     <b>Premissas.</b> O saldo do balde vale o que foi lançado; a demanda vale a última importação.${Q.semBaseTot>0?` ${fmt(Q.semBaseTot,0)} potes são de produtos sem receita amarrada e ficam fora da conta de creme.`:''}<br>
     <b>Procedência.</b> demanda_vendas + vendas_pedidos (em aberto) e vw_sku_bases, lidos agora. Para deixar fixo no tablet ou na TV: ${location.origin+location.pathname}#quadro</div>`;
 }
