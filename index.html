@@ -240,6 +240,36 @@ body{overflow-x:hidden}
 }
 .print-only { display:none; }
 
+.qd-topo{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap}
+.qd-sub{color:#C9B99F;font-size:16px;font-weight:700;margin-top:2px}
+.qd-legenda{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 8px}
+.qd-legenda span{color:#fff;font-weight:800;font-size:14px;border-radius:20px;padding:5px 12px}
+.qd-aviso{color:#C9B99F;font-size:14px;margin-bottom:12px}
+.qd-aviso.velho{color:#FFB3B3;font-weight:800}
+.qd-faixa{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.qd-dia{border-radius:16px;padding:12px 14px}
+.qd-dia-rot{font-size:22px;font-weight:900;letter-spacing:.02em}
+.qd-dia-data{font-size:15px;font-weight:700;opacity:.9}
+.qd-dia-num{font-size:46px;font-weight:900;line-height:1.05;margin-top:6px}
+.qd-dia-sub{font-size:13px;font-weight:700;opacity:.9}
+.qd-dia-frase{font-size:14px;font-weight:800;margin-top:6px}
+.qd-dash{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.6fr);gap:16px}
+@media(max-width:900px){.qd-dash{grid-template-columns:minmax(0,1fr)}}
+.qd-card{background:#ffffff0d;border:1px solid #ffffff1f;border-radius:16px;padding:14px 16px}
+.qd-card h2{font-size:22px;margin:0 0 12px;color:#FFFDF9}
+.qd-base{border-left:8px solid;padding:4px 0 4px 12px;margin-bottom:14px}
+.qd-base-top{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:19px}
+.qd-tag{font-size:13px;font-weight:900;border-radius:20px;padding:4px 10px;white-space:nowrap}
+.qd-barra{display:flex;height:22px;background:#ffffff1a;border-radius:6px;overflow:hidden;margin:7px 0 5px}
+.qd-base-txt{font-size:16px;color:#F0E6D6}
+.qd-base-conta{font-size:13px;color:#9C8B76;margin-top:2px}
+.qd-row{display:grid;gap:6px;align-items:center;margin-bottom:6px}
+.qd-cab span{text-align:center;font-size:13px;color:#C9B99F;line-height:1.2}
+.qd-nome{font-size:16px;font-weight:700;color:#F0E6D6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qd-cel{text-align:center;border-radius:8px;padding:8px 0;font-size:20px;font-weight:900}
+.qd-cel-vazia{color:#ffffff33;background:transparent}
+.qd-vazio{color:#9C8B76;font-size:15px}
+.qd-rodape{color:#9C8B76;font-size:13px;line-height:1.5;margin-top:16px;max-width:120ch}
 </style>
 </head>
 <body>
@@ -250,7 +280,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-08-12-trava-estoque';
+const APP_VERSAO='2026-09-10-painel-producao';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -295,7 +325,7 @@ async function boot(){
   sb=window.supabase.createClient(SUPA_URL,key);
   const {data:{session}}=await sb.auth.getSession();
   if(!session){return telaLogin()}
-  tela(location.hash==='#tv'?'tv':'inicio');
+  tela(location.hash==='#tv'?'tv':(location.hash==='#quadro'?'quadro':'inicio'));
 }
 function telaConfig(){
   document.getElementById('app').innerHTML=`
@@ -595,7 +625,7 @@ async function sepConferirEan(l,cod,diz){
   return 'segue';
 }
 
-const TELAS={inicio:tInicio,linha:tLinha,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao,treinamento:tTreinamento,separacao:tSeparacao,relComercial:tRelComercial};
+const TELAS={inicio:tInicio,linha:tLinha,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao,treinamento:tTreinamento,separacao:tSeparacao,relComercial:tRelComercial,quadro:tQuadro};
 function tela(n,arg){TELAS[n](arg)}
 
 /* ================= MISTURA & REFINO (área da linha) ================= */
@@ -921,6 +951,7 @@ async function tInicio(){
       <button onclick="tela('linha')"><span class="ico" style="background:#F6ECD6">🌀</span><span><b>Mistura & Refino</b><small>PS, ciclos e balde — um botão por vez</small></span></button>
       <button onclick="tela('mrp')"><span class="ico" style="background:#FBEAEA">🛒</span><span><b>Compras / MRP</b><small>O que comprar, quanto e até quando</small></span></button>
       <button onclick="tela('vendas')"><span class="ico" style="background:#EAF3EA">🛍️</span><span><b>Vendas / Despacho</b><small>Demanda dos marketplaces — o que envasar</small></span></button>
+      <button onclick="tela('quadro')"><span class="ico" style="background:#FDECEC">🚦</span><span><b>Painel da produção</b><small>Cremes e potes a envasar em cores — fica na parede</small></span></button>
       <button onclick="tela('carteira')"><span class="ico" style="background:#E4EDF2">📑</span><span><b>Carteira de pedidos</b><small>Quem está esperando, o que venceu e o que trava</small></span></button>
       <button onclick="tela('relComercial')"><span class="ico" style="background:#E4EDF2">📊</span><span><b>Relatório comercial</b><small>Ritmo, cobrança, concentração e mix — Varejo (LBR)</small></span></button>
       <button onclick="tela('separacao')"><span class="ico" style="background:#EAF3EA">✅</span><span><b>Separar pedidos</b><small>Check no que foi pra caixa — baixa o estoque na hora</small></span></button>
@@ -1967,18 +1998,170 @@ async function editarPedido(id){
   tela('mrp');
 }
 /* ================= VENDAS / DESPACHO ================= */
-async function tVendas(){
-  document.getElementById('app').innerHTML=topo('Vendas / Despacho','carregando demanda…')+'<main><div class="center">Carregando…</div></main>';
+/* ================= PAINEL DA PRODUÇÃO (tela de parede) =================
+   Mesma conta da Vendas/Despacho (calcCobertura). Atualiza a cada 5 min.
+   Cor calculada: vermelho = falta creme com despacho em até 2 dias (ou atrasado);
+   amarelo = só fecha com o moinho, ou falta creme com 3+ dias de prazo;
+   verde = pote pronto ou creme no balde. Cinza = produto sem receita amarrada. */
+const QUADRO_MIN=5;
+const QD_COR={verm:['#D93636','#fff'],amar:['#F2B705','#3A2A00'],verde:['#2E8B47','#fff'],cinza:['#6F665C','#fff']};
+const QD_RANK={verm:3,amar:2,cinza:1,verde:0};
+function quadroMontar(C,hj,ultImport){
+  const diasAte=d=>{const dt=new Date(d+'T12:00'),h=new Date(hj+'T12:00');return Math.round((dt-h)/86400000)};
+  const ddmm=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+  const semana=d=>new Date(d+'T12:00').toLocaleDateString('pt-BR',{weekday:'short'}).replace('.','');
+  const kg=v=>fmt(Math.round(v),0)+' kg';
+  /* ---- colunas de data ---- */
+  const MAXD=5;
+  const futuras=[...new Set(Object.keys(C.ALOC).map(k=>k.split('|')[1]).filter(dk=>dk!=='sem-prazo'&&diasAte(dk)>=0))].sort();
+  const mostradas=futuras.slice(0,MAXD);
+  const colDe=dk=>{
+    if(dk==='sem-prazo')return 'depois';
+    const d=diasAte(dk);
+    if(d<0)return 'atrasado';
+    return mostradas.includes(dk)?dk:'depois';
+  };
+  const cols={};
+  Object.entries(C.ALOC).forEach(([k,a])=>{
+    const [pid,dk]=k.split('|'), c=colDe(dk);
+    const key=pid+'|'+c;
+    if(!cols[key])cols[key]={pid,col:c,dem:0,pote:0,balde:0,pesado:0,falta:0,semBase:a.semBase};
+    const x=cols[key];x.dem+=a.dem;x.pote+=a.pote;x.balde+=a.balde;x.pesado+=a.pesado;x.falta+=a.falta;
+  });
+  const temCol=c=>Object.values(cols).some(x=>x.col===c&&x.dem-x.pote>0);
+  const colunas=[...(temCol('atrasado')?['atrasado']:[]),...mostradas,...(temCol('depois')?['depois']:[])];
+  const diasCol=c=>c==='atrasado'?-1:(c==='depois'?99:diasAte(c));
+  const rotCol=c=>{
+    if(c==='atrasado')return ['ATRASADO','pedidos vencidos'];
+    if(c==='depois')return ['DEPOIS',futuras.length>MAXD?'próximas datas':'sem data'];
+    const d=diasAte(c);
+    return [d===0?'HOJE':(d===1?'AMANHÃ':semana(c).toUpperCase()),ddmm(c)];
+  };
+  const corCel=x=>{
+    const aEnv=Math.max(0,x.dem-x.pote);
+    if(aEnv<=0)return 'verde';
+    if(x.semBase)return 'cinza';
+    if(x.falta>0)return diasCol(x.col)<=2?'verm':'amar';
+    if(x.pesado>0)return 'amar';
+    return 'verde';
+  };
+  /* ---- nome do produto ---- */
+  const nomes={};(C.todos||[]).forEach(d=>{if(d.produto_acabado_id&&d.produto_acabado)nomes[d.produto_acabado_id]=d.produto_acabado.nome});
+  /* ---- faixa do topo: um bloco por data ---- */
+  const faixa=colunas.map(c=>{
+    const cel=Object.values(cols).filter(x=>x.col===c);
+    const aEnv=cel.reduce((s,x)=>s+Math.max(0,x.dem-x.pote),0);
+    let pior='verde';cel.forEach(x=>{const k=corCel(x);if(k!=='cinza'&&QD_RANK[k]>QD_RANK[pior])pior=k});
+    const nVerm=cel.filter(x=>corCel(x)==='verm').length, nAmar=cel.filter(x=>corCel(x)==='amar').length;
+    const semRec=cel.filter(x=>corCel(x)==='cinza').reduce((s,x)=>s+Math.max(0,x.dem-x.pote),0);
+    const [bg,fg]=QD_COR[pior];const [r1,r2]=rotCol(c);
+    const pl=n=>n+' produto'+(n>1?'s':'');
+    let frase=nVerm?pl(nVerm)+' sem creme':(nAmar?pl(nAmar)+' — moer ou esperar o moinho':(aEnv-semRec>0?'tem creme — é só envasar':'tudo em pote pronto'));
+    if(semRec>0)frase+='<br>'+fmt(semRec,0)+' potes sem receita (fora da conta)';
+    return `<div class="qd-dia" style="background:${bg};color:${fg}"><div class="qd-dia-rot">${r1}</div><div class="qd-dia-data">${r2}</div><div class="qd-dia-num mono">${fmt(aEnv,0)}</div><div class="qd-dia-sub">potes a envasar</div><div class="qd-dia-frase">${frase}</div></div>`;
+  }).join('');
+  /* ---- cremes por base ---- */
+  const bases=Object.values(C.baseInfo).filter(i=>Object.keys(i.skus).length&&(i.precisaKg||0)>0.05).map(i=>{
+    const prec=i.precisaKg||0, balde=Math.max(0,i.balde), proc=Math.max(0,i.pesado);
+    let cor,tag,txt;
+    if(i.quebraEm){
+      const d=i.quebraEm==='sem-prazo'?99:diasAte(i.quebraEm);
+      cor=d<=2?'verm':'amar';tag=d<=2?'MOER JÁ':'PROGRAMAR MOAGEM';
+      txt=(i.quebraEm==='sem-prazo'?'falta nos pedidos sem data':(d<0?'já falta nos pedidos atrasados':'falta a partir do despacho de '+ddmm(i.quebraEm)))+' · faltam <b>'+kg(i.faltaKg)+'</b>';
+    }else if((i.usoPesado||0)>0.05){
+      cor='amar';tag='DEPENDE DO MOINHO';txt='só fecha com os <b>'+kg(proc)+'</b> que estão no moinho';
+    }else{
+      cor='verde';tag='AGUENTA';txt='cobre todos os pedidos · sobra <b>'+kg(Math.max(0,balde+proc-prec))+'</b>';
+    }
+    const pB=Math.min(100,prec>0?balde/prec*100:100), pP=Math.min(100-pB,prec>0?proc/prec*100:0);
+    return {cor,tag,txt,nome:i.nome,prec,balde,proc,pB,pP,rank:QD_RANK[cor]*1e6+(i.faltaKg||0)};
+  }).sort((a,b)=>b.rank-a.rank);
+  const blocoBases=bases.length?bases.map(b=>{const [bg,fg]=QD_COR[b.cor];
+    return `<div class="qd-base" style="border-left-color:${bg}">
+      <div class="qd-base-top"><b>${b.nome}</b><span class="qd-tag" style="background:${bg};color:${fg}">${b.tag}</span></div>
+      <div class="qd-barra"><div style="width:${b.pB.toFixed(1)}%;background:${bg}"></div><div style="width:${b.pP.toFixed(1)}%;background:${bg};opacity:.45"></div></div>
+      <div class="qd-base-txt">${b.txt}</div>
+      <div class="qd-base-conta mono">precisa ${kg(b.prec)} · balde ${kg(b.balde)}${b.proc>0.5?' · moinho '+kg(b.proc):''}</div>
+    </div>`;}).join(''):'<p class="qd-vazio">Nenhum creme em demanda.</p>';
+  /* ---- grade produto × data ---- */
+  const porPid={};
+  Object.values(cols).forEach(x=>{(porPid[x.pid]=porPid[x.pid]||{})[x.col]=x});
+  const linhas=Object.entries(porPid).map(([pid,m])=>{
+    let score=0,tot=0;
+    colunas.forEach(c=>{const x=m[c];if(!x)return;const a=Math.max(0,x.dem-x.pote);tot+=a;const k=corCel(x);score=Math.max(score,QD_RANK[k]*10+(k==='verm'||k==='amar'?(99-Math.min(99,diasCol(c)+1))/100:0))});
+    return {pid,m,score,tot,nome:nomes[pid]||'—'};
+  }).filter(r=>r.tot>0).sort((a,b)=>b.score-a.score||b.tot-a.tot);
+  const MAXL=30;
+  const gridCols=`minmax(0,2.2fr) repeat(${colunas.length},minmax(0,1fr))`;
+  const cab=`<div class="qd-row qd-cab" style="grid-template-columns:${gridCols}"><span></span>${colunas.map(c=>{const [r1,r2]=rotCol(c);return `<span><b>${r1}</b><br>${r2}</span>`}).join('')}</div>`;
+  const corpo=linhas.slice(0,MAXL).map(r=>`<div class="qd-row" style="grid-template-columns:${gridCols}"><span class="qd-nome">${r.nome}</span>${colunas.map(c=>{
+      const x=r.m[c];if(!x)return '<span class="qd-cel qd-cel-vazia">·</span>';
+      const a=Math.max(0,x.dem-x.pote), k=corCel(x), [bg,fg]=QD_COR[k];
+      return `<span class="qd-cel mono" style="background:${bg};color:${fg}">${a>0?fmt(a,0):'✓'}</span>`;
+    }).join('')}</div>`).join('');
+  const grade=linhas.length?cab+corpo+(linhas.length>MAXL?`<p class="qd-vazio">+ ${linhas.length-MAXL} produtos — ver em Vendas / Despacho</p>`:''):'<p class="qd-vazio">Nada a envasar nos pedidos em aberto.</p>';
+  const semBaseTot=Object.values(C.ALOC).filter(a=>a.semBase).reduce((s,a)=>s+Math.max(0,a.dem-a.pote),0);
+  const imp=ultImport?new Date(ultImport).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'—';
+  const impVelho=ultImport&&(Date.now()-new Date(ultImport).getTime())>20*3600000;
+  return {faixa,blocoBases,grade,semBaseTot,imp,impVelho,nLinhas:linhas.length,colunas};
+}
+async function tQuadro(){
+  if(EST.quadroTimer){clearInterval(EST.quadroTimer);EST.quadroTimer=null}
+  if(EST.quadroRelogio){clearInterval(EST.quadroRelogio);EST.quadroRelogio=null}
+  document.getElementById('app').innerHTML='<div class="tv" id="quadro"><h1>Painel da produção</h1><p style="color:#C9B99F;font-size:20px">carregando…</p></div>';
+  await quadroRender();
+  EST.quadroTimer=setInterval(()=>{if(document.getElementById('quadro'))quadroRender();else{clearInterval(EST.quadroTimer);EST.quadroTimer=null}},QUADRO_MIN*60000);
+  EST.quadroRelogio=setInterval(()=>{const r=document.getElementById('qdClock');if(r)r.textContent=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});else{clearInterval(EST.quadroRelogio);EST.quadroRelogio=null}},20000);
+}
+async function quadroAcordado(){
+  try{if(navigator.wakeLock&&(!EST.quadroWake||EST.quadroWake.released))EST.quadroWake=await navigator.wakeLock.request('screen')}catch(e){}
+}
+async function quadroRender(){
+  const hj=hojeLocal();
+  let Q,erro=null;
+  try{
+    const [C,i1,i2]=await Promise.all([
+      calcCobertura(),
+      sb.from('atividades').select('criado_em').ilike('descricao','Demanda de vendas%').order('criado_em',{ascending:false}).limit(1),
+      sb.from('atividades').select('criado_em').ilike('descricao','Carteira Varejo%').order('criado_em',{ascending:false}).limit(1)
+    ]);
+    const ts=[(i1.data||[])[0],(i2.data||[])[0]].filter(Boolean).map(r=>r.criado_em).sort();
+    Q=quadroMontar(C,hj,ts.length?ts[ts.length-1]:null);
+  }catch(e){erro=e&&e.message?e.message:String(e)}
+  if(!document.getElementById('quadro'))return;
+  quadroAcordado();
+  const agora=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  const cab=`<div class="qd-topo">
+      <div><h1>🏭 Painel da produção</h1><div class="qd-sub">${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'})} · atualizado às ${agora} · atualiza a cada ${QUADRO_MIN} min</div></div>
+      <div style="display:flex;gap:12px;align-items:center"><span class="relogio" id="qdClock">${agora}</span>
+      <button onclick="tela('inicio')" style="border:1px solid #ffffff33;background:transparent;color:#C9B99F;border-radius:10px;padding:8px 14px;cursor:pointer">sair</button></div>
+    </div>`;
+  if(erro){
+    document.getElementById('quadro').innerHTML=cab+`<div class="qd-card" style="border-left:8px solid #D93636"><b style="font-size:22px">Não consegui carregar os dados agora.</b><p style="color:#C9B99F">${erro} — tento de novo em ${QUADRO_MIN} min.</p></div>`;
+    return;
+  }
+  document.getElementById('quadro').innerHTML=cab+`
+    <div class="qd-legenda"><span style="background:${QD_COR.verde[0]}">verde · tem pote ou creme no balde</span><span style="background:${QD_COR.amar[0]};color:${QD_COR.amar[1]}">amarelo · depende do moinho ou dá tempo de moer</span><span style="background:${QD_COR.verm[0]}">vermelho · falta creme em até 2 dias</span></div>
+    <div class="qd-aviso${Q.impVelho?' velho':''}">pedidos importados pela última vez em <b>${Q.imp}</b>${Q.impVelho?' — mais de 20 h atrás: o painel pode estar desatualizado':''}</div>
+    <div class="qd-faixa">${Q.faixa||'<p class="qd-vazio">Sem pedidos em aberto.</p>'}</div>
+    <div class="qd-dash">
+      <div class="qd-card"><h2>🪣 Cremes — até quando o balde aguenta</h2>${Q.blocoBases}</div>
+      <div class="qd-card"><h2>🫙 Potes a envasar por dia de despacho</h2>${Q.grade}</div>
+    </div>
+    <div class="qd-rodape"><b>Como ler.</b> O número é quantos potes faltam envasar para os pedidos daquela data, já descontado o pote pronto. A conta é a mesma da tela Vendas / Despacho: cada data consome primeiro o pote pronto, depois o balde, depois o que está no moinho — o mesmo creme não é prometido a duas datas. A cor é calculada: vermelho quando falta creme e o despacho é em até 2 dias (ou já passou); amarelo quando só fecha com o moinho ou falta creme com 3 dias ou mais de prazo; verde quando tem pote pronto ou creme no balde; cinza quando o produto não tem receita amarrada. Na barra do creme, a parte cheia é o balde e a parte clara é o moinho.<br>
+    <b>Premissas.</b> O saldo do balde vale o que foi lançado; a demanda vale a última importação.${Q.semBaseTot>0?` ${fmt(Q.semBaseTot,0)} potes são de produtos sem receita amarrada e ficam fora da conta de creme.`:''}<br>
+    <b>Procedência.</b> demanda_vendas + vendas_pedidos (em aberto) e vw_sku_bases, lidos agora. Para deixar fixo no tablet ou na TV: ${location.origin+location.pathname}#quadro</div>`;
+}
+
+/* ================= COBERTURA DE CREME (conta única) =================
+   Usada pela tela Vendas/Despacho e pelo Painel da produção. Não duplicar esta conta. */
+async function calcCobertura(){
   const [dem,pa,vp,vb]=await Promise.all([
     sb.from('demanda_vendas').select('produto_acabado_id,qtd_potes,data_despacho,plataforma,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto').neq('origem','import_varejo'),
     sb.from('produto_acabado').select('id,nome').eq('ativo',true).order('nome'),
     sb.from('vendas_pedidos').select('produto_acabado_id,canal,entrega,qtd,qtd_separada,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto').in('canal',['Varejo','Shopee Full']),
     sb.from('vw_sku_bases').select('produto_acabado_id,base_id,base_nome,kg_por_pote,origem,saldo_balde_kg,kg_pesado,kg_mistura,kg_refino,kg_a_pesar')
   ]);
-  EST.cache.paLista=pa.data||[];
-  if(!EST.filtroVendas)EST.filtroVendas='varejo';
-  const ehVarejo=d=>String(d.plataforma||'').toLowerCase().includes('varejo');
-  const ehShopee=d=>String(d.plataforma||'').toLowerCase().includes('shopee full');
   // Varejo e Shopee Full vêm direto da Carteira (vendas_pedidos), não da foto congelada do import:
   // demanda real = qtd - qtd_separada (o que a Sabrina já separou não conta mais como necessidade).
   const vpDemanda=(vp.data||[]).filter(r=>r.produto_acabado_id).map(r=>({
@@ -2044,6 +2227,15 @@ async function tVendas(){
       bases:bs.map(b=>({nome:b.nome,kg:b.kg,livre:Math.max(0,baldeDisp[b.id]||0),moinho:somaProc(procDisp[b.id]),
         fases:Object.assign({aPesar:((baseInfo[b.id]||{}).fases||{}).aPesar||0,pesado:((baseInfo[b.id]||{}).fases||{}).pesado||0},procDisp[b.id]),balde:(baseInfo[b.id]||{}).balde||0}))};
   });
+  return {pa,todos,basesPa,baseInfo,ALOC,DIA};
+}
+async function tVendas(){
+  document.getElementById('app').innerHTML=topo('Vendas / Despacho','carregando demanda…')+'<main><div class="center">Carregando…</div></main>';
+  const {pa,todos,basesPa,baseInfo,ALOC,DIA}=await calcCobertura();
+  EST.cache.paLista=pa.data||[];
+  if(!EST.filtroVendas)EST.filtroVendas='varejo';
+  const ehVarejo=d=>String(d.plataforma||'').toLowerCase().includes('varejo');
+  const ehShopee=d=>String(d.plataforma||'').toLowerCase().includes('shopee full');
   const somaP=arr=>arr.reduce((s,d)=>s+(Number(d.qtd_potes)||0),0);
   const totV=somaP(todos.filter(ehVarejo)), totE=somaP(todos.filter(d=>!ehVarejo(d)&&!ehShopee(d))), totS=somaP(todos.filter(ehShopee));
   const fv=EST.filtroVendas;
