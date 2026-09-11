@@ -265,7 +265,7 @@ body{overflow-x:hidden}
 .qd-base-conta{font-size:13px;color:#9C8B76;margin-top:2px}
 .qd-row{display:grid;gap:6px;align-items:center;margin-bottom:6px}
 .qd-cab span{text-align:center;font-size:13px;color:#C9B99F;line-height:1.2}
-.qd-nome{font-size:16px;font-weight:700;color:#F0E6D6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qd-nome{font-size:16px;font-weight:700;color:#F0E6D6;line-height:1.2;overflow-wrap:anywhere}
 .qd-cel{text-align:center;border-radius:8px;padding:8px 0;font-size:20px;font-weight:900}
 .qd-cel-vazia{color:#ffffff33;background:transparent}
 .qd-vazio{color:#9C8B76;font-size:15px}
@@ -290,7 +290,7 @@ body{overflow-x:hidden}
 .qd-atr-itens{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
 .qd-atr-item{font-size:14px;border-radius:10px;padding:5px 10px}
 .qd-atr-ok{color:#7ED957;font-size:15px;font-weight:800;margin-bottom:10px}
-.qd-selo-atr{display:inline-block;background:#D93636;color:#fff;font-size:11px;font-weight:900;border-radius:6px;padding:1px 6px;margin-right:6px;vertical-align:middle}
+.qd-selo-atr{display:block;width:fit-content;background:#D93636;color:#fff;font-size:11px;font-weight:900;border-radius:6px;padding:1px 6px;margin-bottom:3px;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -2068,7 +2068,9 @@ function quadroMontar(C,hj,ultImport,envHoje,atr){
     return ['amar','envasar '+fmt(a.dem-a.pote,0)];
   };
   const listaAtr=Object.values(atrPed).map(p=>({...p,dias:-diasAte(p.prazo),itens:Object.values(p.itens)})).sort((a,b)=>b.dias-a.dias);
-  const pidsAtrasados=new Set();listaAtr.forEach(p=>p.itens.forEach(it=>{if(it.pid)pidsAtrasados.add(it.pid)}));
+  const pidsAtrasados=new Set(), atrPior={};listaAtr.forEach(p=>p.itens.forEach(it=>{if(!it.pid)return;pidsAtrasados.add(it.pid);const k=statusItem(it)[0];if(atrPior[it.pid]===undefined||QD_RANK[k]>QD_RANK[atrPior[it.pid]])atrPior[it.pid]=k;}));
+  const SELO_TXT={verde:'só separar',amar:'envasar',verm:'sem creme',cinza:'conferir'};
+  const seloAtr=pid=>{const k=atrPior[pid]||'verm';const [bg,fg]=QD_COR[k];return `<span class="qd-selo-atr" style="background:${bg};color:${fg}">⏰ ATRASADO · ${SELO_TXT[k]}</span>`;};
   const MAXA=8;
   const blocoAtr=listaAtr.length?`<div class="qd-atr"><h2>⏰ Pedidos atrasados <span class="qd-atr-cont">${listaAtr.length} pedido${listaAtr.length>1?'s':''} · ${pidsAtrasados.size} produto${pidsAtrasados.size!==1?'s':''}</span></h2>
     ${listaAtr.slice(0,MAXA).map(p=>`<div class="qd-atr-ped">
@@ -2162,7 +2164,7 @@ function quadroMontar(C,hj,ultImport,envHoje,atr){
   const MAXL=30;
   const gridCols=`minmax(0,2.2fr) repeat(${colunas.length},minmax(0,1fr))`;
   const cab=`<div class="qd-row qd-cab" style="grid-template-columns:${gridCols}"><span></span>${colunas.map(c=>{const [r1,r2]=rotCol(c);return `<span><b>${r1}</b><br>${r2}</span>`}).join('')}</div>`;
-  const corpo=linhas.slice(0,MAXL).map(r=>`<div class="qd-row" style="grid-template-columns:${gridCols}"><span class="qd-nome">${r.atr?'<span class="qd-selo-atr">⏰ ATRASADO</span>':''}${r.nome}${envPorPid[r.pid]?`<small class="qd-hoje">+${fmt(envPorPid[r.pid],0)} envasados hoje</small>`:''}</span>${colunas.map(c=>{
+  const corpo=linhas.slice(0,MAXL).map(r=>`<div class="qd-row" style="grid-template-columns:${gridCols}"><span class="qd-nome">${r.atr?seloAtr(r.pid):''}${r.nome}${envPorPid[r.pid]?`<small class="qd-hoje">+${fmt(envPorPid[r.pid],0)} envasados hoje</small>`:''}</span>${colunas.map(c=>{
       const x=r.m[c];if(!x)return '<span class="qd-cel qd-cel-vazia">·</span>';
       const a=Math.max(0,x.dem-x.pote), k=corCel(x), [bg,fg]=QD_COR[k];
       return `<span class="qd-cel mono" style="background:${bg};color:${fg}">${a>0?fmt(a,0):'✓'}</span>`;
@@ -2223,7 +2225,7 @@ async function quadroRender(){
       <div class="qd-card"><h2>🫙 Potes a envasar por dia de despacho</h2>${Q.grade}</div>
     </div>
     <div class="qd-rodape"><b>Como ler.</b> O número grande é quantos potes faltam envasar para os pedidos daquela data, já descontado o pote pronto; a barra embaixo dele é quanto desses pedidos já tem pote, e cresce conforme as entradas no estoque são lançadas. <b>Envasados hoje</b> soma as entradas de pote do dia (Entrada no estoque e Envase); ajuste de contagem fica fora, por isso pode dar menos que o Relatório de Produção. A conta é a mesma da tela Vendas / Despacho: cada data consome primeiro o pote pronto, depois o balde, depois o que está no moinho — o mesmo creme não é prometido a duas datas. A cor é calculada: vermelho quando falta creme e o despacho é em até 2 dias (ou já passou); amarelo quando só fecha com o moinho ou falta creme com 3 dias ou mais de prazo; verde quando tem pote pronto ou creme no balde; cinza quando o produto não tem receita amarrada. Na barra do creme, a parte cheia é o balde e a parte clara é o moinho.<br>
-    <b>Pedidos atrasados</b> são os que têm prazo de despacho antes de hoje e ainda não foram separados (Varejo e Shopee Full pela carteira; marketplaces pela última planilha, agrupados por plataforma e prazo, sem número de pedido). A cor de cada produto diz o que falta para liberar: verde tem pote pronto e é só separar, amarelo precisa envasar, vermelho falta creme. Os produtos desses pedidos sobem para o topo da grade com o selo ⏰.<br>
+    <b>Pedidos atrasados</b> são os que têm prazo de despacho antes de hoje e ainda não foram separados (Varejo e Shopee Full pela carteira; marketplaces pela última planilha, agrupados por plataforma e prazo, sem número de pedido). A cor de cada produto diz o que falta para liberar: verde tem pote pronto e é só separar, amarelo precisa envasar, vermelho falta creme. Os produtos desses pedidos sobem para o topo da grade com o selo ⏰ ATRASADO, na cor do que falta para liberar o pedido vencido: verde só separar, amarelo envasar, vermelho sem creme. O selo fala só do pedido vencido; as células da grade continuam sendo os dias de despacho.<br>
     <b>Premissas.</b> O saldo do balde vale o que foi lançado; a demanda vale a última importação.${Q.semBaseTot>0?` ${fmt(Q.semBaseTot,0)} potes são de produtos sem receita amarrada e ficam fora da conta de creme.`:''}<br>
     <b>Procedência.</b> demanda_vendas + vendas_pedidos (em aberto) e vw_sku_bases, lidos agora. Para deixar fixo no tablet ou na TV: ${location.origin+location.pathname}#quadro</div>`;
 }
