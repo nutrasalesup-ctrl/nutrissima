@@ -2196,7 +2196,7 @@ async function quadroRender(){
       sb.from('atividades').select('criado_em').ilike('descricao','Demanda de vendas%').order('criado_em',{ascending:false}).limit(1),
       sb.from('atividades').select('criado_em').ilike('descricao','Carteira Varejo%').order('criado_em',{ascending:false}).limit(1),
       sb.from('produto_acabado_movimentos').select('produto_acabado_id,quantidade,lote,criado_em,produto_acabado(nome)').eq('tipo','entrada').gte('criado_em',iniISO).lte('criado_em',fimISO),
-      sb.from('vendas_pedidos').select('pedido_numero,cliente,canal,entrega,qtd,qtd_separada,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').in('canal',['Varejo','Shopee Full']).lt('entrega',hj),
+      sb.from('vendas_pedidos').select('pedido_numero,cliente,canal,entrega,qtd,qtd_separada,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').in('canal',['Varejo','Shopee Full','Mercado Livre Full']).lt('entrega',hj),
       sb.from('demanda_vendas').select('plataforma,data_despacho,qtd_potes,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').neq('origem','import_varejo').lt('data_despacho',hj)
     ]);
     const ts=[(i1.data||[])[0],(i2.data||[])[0]].filter(Boolean).map(r=>r.criado_em).sort();
@@ -2225,7 +2225,7 @@ async function quadroRender(){
       <div class="qd-card"><h2>🫙 Potes a envasar por dia de despacho</h2>${Q.grade}</div>
     </div>
     <div class="qd-rodape"><b>Como ler.</b> O número grande é quantos potes faltam envasar para os pedidos daquela data, já descontado o pote pronto; a barra embaixo dele é quanto desses pedidos já tem pote, e cresce conforme as entradas no estoque são lançadas. <b>Envasados hoje</b> soma as entradas de pote do dia (Entrada no estoque e Envase); ajuste de contagem fica fora, por isso pode dar menos que o Relatório de Produção. A conta é a mesma da tela Vendas / Despacho: cada data consome primeiro o pote pronto, depois o balde, depois o que está no moinho — o mesmo creme não é prometido a duas datas. A cor é calculada: vermelho quando falta creme e o despacho é em até 2 dias (ou já passou); amarelo quando só fecha com o moinho ou falta creme com 3 dias ou mais de prazo; verde quando tem pote pronto ou creme no balde; cinza quando o produto não tem receita amarrada. Na barra do creme, a parte cheia é o balde e a parte clara é o moinho.<br>
-    <b>Pedidos atrasados</b> são os que têm prazo de despacho antes de hoje e ainda não foram separados (Varejo e Shopee Full pela carteira; marketplaces pela última planilha, agrupados por plataforma e prazo, sem número de pedido). A cor de cada produto diz o que falta para liberar: verde tem pote pronto e é só separar, amarelo precisa envasar, vermelho falta creme. Os produtos desses pedidos sobem para o topo da grade com o selo ⏰ ATRASADO, na cor do que falta para liberar o pedido vencido: verde só separar, amarelo envasar, vermelho sem creme. O selo fala só do pedido vencido; as células da grade continuam sendo os dias de despacho.<br>
+    <b>Pedidos atrasados</b> são os que têm prazo de despacho antes de hoje e ainda não foram separados (Varejo, Shopee Full e Mercado Livre Full pela carteira; demais marketplaces pela última planilha, agrupados por plataforma e prazo, sem número de pedido). A cor de cada produto diz o que falta para liberar: verde tem pote pronto e é só separar, amarelo precisa envasar, vermelho falta creme. Os produtos desses pedidos sobem para o topo da grade com o selo ⏰ ATRASADO, na cor do que falta para liberar o pedido vencido: verde só separar, amarelo envasar, vermelho sem creme. O selo fala só do pedido vencido; as células da grade continuam sendo os dias de despacho.<br>
     <b>Premissas.</b> O saldo do balde vale o que foi lançado; a demanda vale a última importação.${Q.semBaseTot>0?` ${fmt(Q.semBaseTot,0)} potes são de produtos sem receita amarrada e ficam fora da conta de creme.`:''}<br>
     <b>Procedência.</b> demanda_vendas + vendas_pedidos (em aberto) e vw_sku_bases, lidos agora. Para deixar fixo no tablet ou na TV: ${location.origin+location.pathname}#quadro</div>`;
 }
@@ -2236,7 +2236,7 @@ async function calcCobertura(){
   const [dem,pa,vp,vb]=await Promise.all([
     sb.from('demanda_vendas').select('produto_acabado_id,qtd_potes,data_despacho,plataforma,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto').neq('origem','import_varejo'),
     sb.from('produto_acabado').select('id,nome').eq('ativo',true).order('nome'),
-    sb.from('vendas_pedidos').select('produto_acabado_id,canal,entrega,qtd,qtd_separada,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto').in('canal',['Varejo','Shopee Full']),
+    sb.from('vendas_pedidos').select('produto_acabado_id,canal,entrega,qtd,qtd_separada,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto').in('canal',['Varejo','Shopee Full','Mercado Livre Full']),
     sb.from('vw_sku_bases').select('produto_acabado_id,base_id,base_nome,kg_por_pote,origem,saldo_balde_kg,kg_pesado,kg_mistura,kg_refino,kg_a_pesar')
   ]);
   // Varejo e Shopee Full vêm direto da Carteira (vendas_pedidos), não da foto congelada do import:
@@ -2313,11 +2313,14 @@ async function tVendas(){
   if(!EST.filtroVendas)EST.filtroVendas='varejo';
   const ehVarejo=d=>String(d.plataforma||'').toLowerCase().includes('varejo');
   const ehShopee=d=>String(d.plataforma||'').toLowerCase().includes('shopee full');
+  const ehMLFull=d=>String(d.plataforma||'').toLowerCase().includes('mercado livre full');
+  const ehFull=d=>ehShopee(d)||ehMLFull(d);
   const somaP=arr=>arr.reduce((s,d)=>s+(Number(d.qtd_potes)||0),0);
-  const totV=somaP(todos.filter(ehVarejo)), totE=somaP(todos.filter(d=>!ehVarejo(d)&&!ehShopee(d))), totS=somaP(todos.filter(ehShopee));
+  const totV=somaP(todos.filter(ehVarejo)), totE=somaP(todos.filter(d=>!ehVarejo(d)&&!ehFull(d))), totS=somaP(todos.filter(ehShopee)), totM=somaP(todos.filter(ehMLFull));
   const fv=EST.filtroVendas;
-  const linhas=fv==='todos'?todos:(fv==='varejo'?todos.filter(ehVarejo):(fv==='shopee'?todos.filter(ehShopee):todos.filter(d=>!ehVarejo(d)&&!ehShopee(d))));
-  const ocultos=fv==='varejo'?totE+totS:(fv==='ecom'?totV+totS:(fv==='shopee'?totV+totE:0));
+  const linhas=fv==='todos'?todos:(fv==='varejo'?todos.filter(ehVarejo):(fv==='shopee'?todos.filter(ehShopee):(fv==='mlfull'?todos.filter(ehMLFull):todos.filter(d=>!ehVarejo(d)&&!ehFull(d)))));
+  const totGeral=totV+totE+totS+totM;
+  const ocultos=fv==='todos'?0:totGeral-somaP(linhas);
   const byPa={};
   linhas.forEach(d=>{
     const pid=d.produto_acabado_id, info=d.produto_acabado||{};
@@ -2565,7 +2568,7 @@ async function tVendas(){
     <div class="card" style="padding:10px 14px">
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
         <small style="color:#7A6A57;font-weight:700;letter-spacing:.02em;margin-right:4px">MOSTRANDO</small>
-        ${[['varejo','Varejo',totV],['ecom','E-commerce',totE],['shopee','🛍️ Shopee Full',totS],['todos','Todos',totV+totE+totS]].map(([k,rot,q])=>`<button onclick="EST.filtroVendas='${k}';tela('vendas')" style="border:1.5px solid ${fv===k?'var(--cacau)':'var(--linha)'};background:${fv===k?'var(--cacau)':'#fff'};color:${fv===k?'#fff':'var(--cacau)'};border-radius:20px;padding:6px 14px;font-weight:800;font-size:12.5px;min-height:36px">${rot} · ${fmt(q,0)}</button>`).join('')}
+        ${[['varejo','Varejo',totV],['ecom','E-commerce',totE],['shopee','🛍️ Shopee Full',totS],['mlfull','📦 Mercado Livre Full',totM],['todos','Todos',totGeral]].map(([k,rot,q])=>`<button onclick="EST.filtroVendas='${k}';tela('vendas')" style="border:1.5px solid ${fv===k?'var(--cacau)':'var(--linha)'};background:${fv===k?'var(--cacau)':'#fff'};color:${fv===k?'#fff':'var(--cacau)'};border-radius:20px;padding:6px 14px;font-weight:800;font-size:12.5px;min-height:36px">${rot} · ${fmt(q,0)}</button>`).join('')}
       </div>
       ${ocultos?`<small style="color:#7A6A57;display:block;margin-top:7px">⚠️ ${fmt(ocultos,0)} potes do outro canal estão fora desta conta</small>`:''}
     </div>
