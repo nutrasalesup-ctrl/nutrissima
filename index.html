@@ -2359,7 +2359,9 @@ async function tVendas(){
   const datasOrdenadas=Object.keys(byData).filter(k=>k!=='sem-prazo').sort();
   if(byData['sem-prazo'])datasOrdenadas.push('sem-prazo');
   if(!EST.filtroDatasVendas)EST.filtroDatasVendas=[];
-  const selDatas=EST.filtroDatasVendas.filter(d=>datasOrdenadas.includes(d));
+  /* ordem CRONOLOGICA, nao a ordem em que o usuario tocou os chips: o resumo combinado
+     tira o "tem" da abertura da PRIMEIRA data da selecao, e a fila consome por data. */
+  const selDatas=datasOrdenadas.filter(d=>EST.filtroDatasVendas.includes(d));
   const datasMostrar=selDatas.length?selDatas:datasOrdenadas;
   const kgTxt=v=>fmt(Math.round(v*10)/10,1)+' kg';
   const linhaLista=(rot,val,cor,neg)=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:1px 0"><span style="color:#7A6A57">${neg?'<span style="color:#B8A894">−</span> ':''}${rot}</span><b class="mono" style="color:${cor}">${val}</b></div>`;
