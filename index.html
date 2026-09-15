@@ -301,7 +301,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-09-10-painel-atrasados';
+const APP_VERSAO='2026-09-15 06:20 · compras';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -356,7 +356,7 @@ function telaConfig(){
     <div style="background:#FBF1E6;border-left:4px solid #B0510F;border-radius:8px;padding:9px 11px;margin:8px 0;font-size:12.5px;line-height:1.5">Use a chave que <b>começa com <span class="mono">eyJ</span></b>. A do formato novo (<span class="mono">sb_publishable_…</span>) devolve <b>"Invalid API key"</b> no login deste app.</div>
     <label>Chave</label><input id="cfgKey" placeholder="eyJ…">
     <button class="btnP" onclick="salvarCfg()">Salvar e continuar</button>
-  </div><div style="text-align:center;color:#B8A894;font-size:11px;margin-top:22px">versão ${APP_VERSAO}</div></main>`;
+  </div></main>`;
 }
 function salvarCfg(){const k=document.getElementById('cfgKey').value.trim();if(k.length<20)return msg('Chave inválida',true);localStorage.setItem('nf_key',k);boot()}
 function telaLogin(){
@@ -957,7 +957,6 @@ function imprimirEtiquetasBalde(lote,produto,kg){
 }
 
 /* ================= INÍCIO ================= */
-const APP_VERSAO='2026-09-15 06:20';
 async function tInicio(){
   const {data:ops}=await sb.from('operadores').select('nome').eq('ativo',true).order('nome');
   document.getElementById('app').innerHTML=`
