@@ -356,7 +356,7 @@ function telaConfig(){
     <div style="background:#FBF1E6;border-left:4px solid #B0510F;border-radius:8px;padding:9px 11px;margin:8px 0;font-size:12.5px;line-height:1.5">Use a chave que <b>começa com <span class="mono">eyJ</span></b>. A do formato novo (<span class="mono">sb_publishable_…</span>) devolve <b>"Invalid API key"</b> no login deste app.</div>
     <label>Chave</label><input id="cfgKey" placeholder="eyJ…">
     <button class="btnP" onclick="salvarCfg()">Salvar e continuar</button>
-  </div></main>`;
+  </div><div style="text-align:center;color:#B8A894;font-size:11px;margin-top:22px">versão ${APP_VERSAO}</div></main>`;
 }
 function salvarCfg(){const k=document.getElementById('cfgKey').value.trim();if(k.length<20)return msg('Chave inválida',true);localStorage.setItem('nf_key',k);boot()}
 function telaLogin(){
@@ -957,6 +957,7 @@ function imprimirEtiquetasBalde(lote,produto,kg){
 }
 
 /* ================= INÍCIO ================= */
+const APP_VERSAO='2026-09-15 06:20';
 async function tInicio(){
   const {data:ops}=await sb.from('operadores').select('nome').eq('ativo',true).order('nome');
   document.getElementById('app').innerHTML=`
