@@ -301,7 +301,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-09-15 08:35 · compras';
+const APP_VERSAO='2026-09-15 09:05 · compras+cotacao';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -2058,6 +2058,94 @@ async function pcPrecoSugerido(itemId,cnpj,forns){
   const base=mesmo.length?mesmo:comPreco.slice().sort((a,b)=>a.d2<b.d2?1:-1);
   return {preco:base[0].preco,data:base[0].d2,mesmoForn:mesmo.length>0};
 }
+async function pcCotacoesDoItem(itemId){
+  const {data,error}=await sb.rpc('fn_cotacoes_item',{p_item:itemId,p_pin:EST.pinGestor||null});
+  if(error){console.warn('fn_cotacoes_item',error.message);return []}
+  return (data||[]).map(function(r){return{
+    id:r.id,nome:r.fornecedor_nome,fid:r.fornecedor_id,un:r.unidade,unCot:r.unidade_cotada,
+    fat:Number(r.fator||1),
+    preco:r.preco_kg===null?null:Number(r.preco_kg),
+    custo:r.custo_kg===null?null:Number(r.custo_kg),
+    icms:r.icms_kg===null?null:Number(r.icms_kg),
+    aliq:r.aliq_icms===null?null:Number(r.aliq_icms),
+    pc:r.pc_kg===null?null:Number(r.pc_kg),
+    regime:r.pc_regime,
+    liq:r.liquido_kg===null?null:Number(r.liquido_kg),
+    validade:r.validade,vencida:r.vencida,obs:r.observacao,completa:r.completa};});
+}
+function painelCots(l,i){
+  const C=l.cots||[];
+  let h='<div style="margin-top:9px;background:#EEF3F6;border:1.5px dashed #9FB6C4;border-radius:9px;padding:10px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;gap:8px">'
+    +'<div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#4D6B7C;font-weight:700">📋 Cotações em aberto ('+C.length+') — oferta, não é nota</div>'
+    +'<button onclick="cotForm('+i+')" style="border:1px solid #9FB6C4;background:#fff;border-radius:8px;padding:5px 9px;font-size:11.5px;white-space:nowrap">➕ Cotação</button></div>';
+  const melhor=C.filter(function(c){return c.liq!==null}).reduce(function(a,c){return (a===null||c.liq<a)?c.liq:a},null);
+  C.forEach(function(c){
+    h+='<div style="border-top:1px solid #D5E0E7;padding:8px 0">'
+      +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">'
+      +'<div style="min-width:0"><b style="font-size:13px">'+c.nome+'</b>'
+      +(c.liq!==null&&c.liq===melhor&&C.length>1?' <span class="chip" style="background:#E3EDF3;color:#2F5B72;font-weight:700">MELHOR COTAÇÃO</span>':'')
+      +'<div style="font-size:11px;color:'+(c.vencida?'#C63A3A':'#4D6B7C')+'">'
+      +(c.validade?(c.vencida?'VENCIDA em ':'vale até ')+brData(c.validade):'sem validade informada')
+      +' · 1 '+c.unCot+' = '+fmt(c.fat)+' '+c.un+'</div></div>'
+      +'<button onclick="cotDescartar(\''+c.id+'\')" style="border:1px solid #D5E0E7;background:#fff;border-radius:8px;padding:5px 9px;font-size:11.5px">✕</button></div>'
+      +'<div style="margin-top:6px">'
+      +linhaConta('preço por '+c.un, c.preco===null?'R$&nbsp;—':'R$ '+fmt(c.preco,2))
+      +((c.custo!==null&&c.preco!==null&&Math.abs(c.custo-c.preco)>0.005)?linhaConta('+ IPI / ST por '+c.un,'R$ '+fmt(c.custo-c.preco,2),'#D9772B'):'')
+      +linhaConta('− ICMS '+(c.aliq===null?'não informado':fmt(c.aliq,2)+'%'), c.icms===null?'R$&nbsp;—':'R$ '+fmt(c.icms,2), c.aliq===null?'#B8A894':'#3E7C45')
+      +linhaConta('− PIS/COFINS '+(c.regime==='tributado'?'9,25%':(c.regime==='sem_credito'?'sem crédito':(c.regime==='simples'?'Simples, fora':'não informado'))),
+                  c.pc===null?'R$&nbsp;—':'R$ '+fmt(c.pc,2), c.regime==='tributado'?'#3E7C45':'#B8A894')
+      +linhaConta('= custo líquido por '+c.un, c.liq===null?'R$&nbsp;—':'R$ '+fmt(c.liq,2), '#2F5B72', true)
+      +'</div>'
+      +(c.completa?'':'<div style="margin-top:5px;font-size:11px;color:#C63A3A">⚠ imposto não informado — esta comparação está em bruto e pode enganar</div>')
+      +(c.obs?'<div style="margin-top:4px;font-size:11px;color:#4D6B7C">'+c.obs+'</div>':'')
+      +'</div>';
+  });
+  if(!C.length)h+='<div style="font-size:11.5px;color:#4D6B7C;padding-top:6px">Nenhuma cotação lançada. Use o botão acima para comparar uma proposta com o que já se compra.</div>';
+  h+='<div style="border-top:1px solid #D5E0E7;margin-top:6px;padding-top:6px;font-size:10.5px;color:#4D6B7C;line-height:1.45">'
+    +'Cotação é <b>oferta</b>: não entra no histórico de preço pago nem vira preço sugerido no pedido. Os impostos são os que o comprador informou, não os de uma nota — confira contra a proposta do fornecedor.'
+    +'</div></div>';
+  return h;
+}
+function cotForm(i){
+  const l=EST.pc.linhas[i]; if(!l)return;
+  const nome=prompt('Fornecedor da cotação (razão social):'); if(!nome)return;
+  const un=prompt('Unidade cotada (kg, balde, caixa, saca...):','kg'); if(!un)return;
+  const fat=prompt('1 '+un+' equivale a quantos '+(l.forns&&l.forns[0]?l.forns[0].un:'kg')+'?','1'); if(fat===null)return;
+  const pr=prompt('Preço por '+un+' (R$):'); if(pr===null)return;
+  const al=prompt('Alíquota de ICMS da proposta, em % (deixe vazio se não souber):','');
+  const rg=prompt('PIS/COFINS: digite 1 para tributado (credita 9,25%), 2 para sem crédito, 3 para fornecedor do Simples, vazio se não souber:','');
+  const val=prompt('Validade da proposta (AAAA-MM-DD, vazio se não tiver):','');
+  const obs=prompt('Observação (opcional):','');
+  cotSalvar(l,{nome:nome,un:un,fat:fat,pr:pr,al:al,rg:rg,val:val,obs:obs});
+}
+async function cotSalvar(l,d){
+  if(precisaOperador())return;
+  const fat=parseNumBR(d.fat)||0, pr=parseNumBR(d.pr)||0;
+  if(!(fat>0))return msg('Fator de conversão precisa ser maior que zero',true);
+  if(!(pr>0))return msg('Preço precisa ser maior que zero',true);
+  const regime={'1':'tributado','2':'sem_credito','3':'simples'}[String(d.rg||'').trim()]||'indefinido';
+  const al=String(d.al||'').trim()?parseNumBR(d.al):null;
+  const val=/^\d{4}-\d{2}-\d{2}$/.test(String(d.val||'').trim())?d.val.trim():null;
+  const {error}=await sb.from('cotacoes_compra').insert({
+    item_id:l.item_id, fornecedor_nome:d.nome.trim(), unidade_cotada:d.un.trim(),
+    fator_conversao:fat, preco_unitario:pr, aliquota_icms:al, pc_regime:regime,
+    validade:val, observacao:(d.obs||'').trim()||null, criado_por:EST.operador});
+  if(error)return msg(error.message,true);
+  await sb.from('atividades').insert({tipo:'compra',
+    descricao:'Cotação lançada: '+l.nome+' — '+d.nome.trim()+' R$ '+fmt(pr,2)+'/'+d.un.trim(),responsavel:EST.operador});
+  l.cots=await pcCotacoesDoItem(l.item_id);
+  msg('✅ Cotação lançada');
+  tela('pedidoCompra');
+}
+async function cotDescartar(id){
+  if(precisaOperador())return;
+  if(!confirm('Descartar esta cotação?'))return;
+  const {error}=await sb.from('cotacoes_compra').update({status:'descartada'}).eq('id',id);
+  if(error)return msg(error.message,true);
+  for(const l of EST.pc.linhas){ l.cots=await pcCotacoesDoItem(l.item_id); }
+  tela('pedidoCompra');
+}
 function linhaConta(rot,val,cor,peso){
   return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:1px 0">'
     +'<span style="color:#7A6A57">'+rot+'</span>'
@@ -2220,6 +2308,7 @@ async function tPedidoCompra(pre){
         +'</label></div>'
         +(l.dica?'<small style="color:#7A6A57;display:block;margin-top:5px">'+l.dica+'</small>':'')
         +painelForns(l,i)
+        +painelCots(l,i)
         +'<div style="text-align:right;margin-top:6px;font-size:14px">Subtotal <b class="mono">'+rsC(sub)+'</b></div>'
         +'</div>';
     });
@@ -2252,6 +2341,7 @@ async function pcTrocaForn(id){
 }
 async function pcAplicarPreco(l){
   l.forns=await pcFornecedoresDoItem(l.item_id);
+  l.cots=await pcCotacoesDoItem(l.item_id);
   const s=await pcPrecoSugerido(l.item_id,EST.pc.forn?EST.pc.forn.cnpj:null,l.forns);
   if(!s){l.dica='';return}
   if(!l.preco)l.preco=s.preco;
