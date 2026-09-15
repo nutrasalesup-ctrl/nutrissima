@@ -1269,31 +1269,143 @@ async function ajuste(btn){
 
 /* ================= RECEBER ================= */
 async function tReceber(sel){
-  const {data:compras}=await sb.from('compras').select('*, itens(nome,unidade)').eq('status','liberado').order('data_prevista_entrega');
+  const {data:compras}=await sb.from('compras').select('*, itens(nome,unidade,categoria)')
+    .eq('status','liberado').order('data_prevista_entrega');
+  EST.cache.compras=compras||[];
+  /* agrupa por pedido: cinco linhas do mesmo pedido chegam juntas, nao uma a uma */
+  const ped={};
+  (compras||[]).forEach(c=>{
+    const k=c.pedido_numero||('#'+c.id);
+    if(!ped[k])ped[k]={chave:k,num:c.pedido_numero,forn:c.fornecedor_nome||'—',prev:c.data_prevista_entrega,linhas:[]};
+    ped[k].linhas.push(c);
+    if(c.data_prevista_entrega&&(!ped[k].prev||c.data_prevista_entrega<ped[k].prev))ped[k].prev=c.data_prevista_entrega;
+  });
+  EST.cache.pedRec=ped;
+  const hj=hojeLocal();
   if(!sel){
-    document.getElementById('app').innerHTML=`
-    ${trilha('Receber')}${topo('Receber','toque no pedido que chegou')}
-    <main>${(compras&&compras.length)?compras.map(c=>`
-      <button class="card" style="width:100%;text-align:left;cursor:pointer;font-family:inherit" onclick="tela('receber','${c.id}')">
-        <b style="font-size:18px">${c.itens.nome} — ${fmt(c.quantidade_solicitada)} ${c.itens.unidade}</b>
-        <p style="font-size:14.5px;color:#7A6A57;margin-top:4px">${c.fornecedor_nome||''} · entrega ${c.data_prevista_entrega?new Date(c.data_prevista_entrega+'T12:00').toLocaleDateString('pt-BR'):'—'} <span class="chip azul">Liberado</span></p>
-      </button>`).join(''):'<div class="center">Nenhuma compra liberada aguardando recebimento. 🎉</div>'}
-    </main>`;
-    EST.cache.compras=compras||[];return;
+    const lista=Object.values(ped).sort((a,b)=>((a.prev||'9')<(b.prev||'9')?-1:1));
+    document.getElementById('app').innerHTML=
+      trilha('Receber')+topo('Receber','toque no pedido que chegou')+'<main>'
+      +(lista.length?lista.map(P=>{
+        const atras=P.prev&&P.prev<hj;
+        return '<button class="card" style="width:100%;text-align:left;cursor:pointer;font-family:inherit;border-left:5px solid '+(atras?'#C63A3A':'#3E7C45')+'" onclick="tela(\'receber\',\''+P.chave+'\')">'
+          +'<b style="font-size:17px">'+P.forn+'</b>'
+          +'<p style="font-size:14px;color:#7A6A57;margin-top:4px">'+(P.num||'sem número')+' · '+P.linhas.length+' item(ns) · entrega '
+          +(P.prev?brData(P.prev):'—')+(atras?' <span class="chip" style="background:#FDECEC;color:#C63A3A;font-weight:700">ATRASADO</span>':'')+'</p>'
+          +P.linhas.slice(0,4).map(l=>'<div style="font-size:13px;color:#5A4C3C;margin-top:3px">• '+l.itens.nome+' — <span class="mono">'+fmt(l.quantidade_solicitada)+' '+(l.itens.unidade||'')+'</span></div>').join('')
+          +(P.linhas.length>4?'<div style="font-size:13px;color:#7A6A57;margin-top:3px">+ '+(P.linhas.length-4)+' item(ns)</div>':'')
+          +'</button>';
+      }).join(''):'<div class="center">Nenhuma compra liberada aguardando recebimento. 🎉</div>')
+      +'</main>';
+    return;
   }
-  const c=EST.cache.compras.find(x=>x.id===sel);
-  document.getElementById('app').innerHTML=`
-  ${trilha('Receber')}${topo('Receber','operador: '+(EST.operador||'—'))}
-  <main>
-    <div class="card"><b style="font-size:19px">${c.itens.nome}</b><p style="color:#7A6A57;font-size:14.5px">${c.fornecedor_nome||''} · pedido: ${fmt(c.quantidade_solicitada)} ${c.itens.unidade}</p></div>
-    <div class="card"><label>1 · Quanto chegou? (${c.itens.unidade})</label>
-      <input class="campoG" id="rQtd" inputmode="decimal" value="${c.quantidade_solicitada}">
-      <p style="font-size:13.5px;color:#7A6A57;margin:6px 2px 2px">Se chegou menos que o pedido, o app pergunta se o saldo continua pendente com o fornecedor.</p>
-      <label>2 · Lote do fornecedor (opcional)</label>
-      <input id="rLote" class="mono" placeholder="ex.: USI-260713-A">
-      <button class="btnP" onclick="confReceber('${c.id}')">Confirmar entrada no estoque</button>
-    </div>
-  </main>`;
+  const P=ped[sel]; if(!P)return msg('Pedido não encontrado',true);
+  EST.recSel=sel;
+  const inp='width:100%;padding:12px;border:1.5px solid var(--linha);border-radius:10px;font-size:16px;background:#fff';
+  let h=trilha('Receber')+topo('Conferir recebimento','operador: '+(EST.operador||'—'));
+  h+='<main>';
+  h+='<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b>Valores</b>'+seloPIN('receber')+'</div>';
+  h+='<div class="card"><b style="font-size:18px">'+P.forn+'</b>'
+    +'<p style="color:#7A6A57;font-size:14px;margin-top:3px">'+(P.num||'sem número')+' · entrega prevista '+(P.prev?brData(P.prev):'—')+'</p></div>';
+  h+='<div class="card"><b>1 · Nota fiscal</b>'
+    +'<div style="display:flex;gap:8px;margin-top:8px">'
+    +'<label style="flex:1"><small style="color:#7A6A57">Número da NF</small><input id="rNF" class="mono" style="'+inp+'"></label>'
+    +'<label style="flex:1"><small style="color:#7A6A57">Validade</small><input id="rVal" type="date" style="'+inp+'"></label></div>'
+    +'<small style="color:#7A6A57;display:block;margin-top:6px">Shopee e Mercado Livre exigem 90 dias de validade na data do envio.</small></div>';
+  P.linhas.forEach((l,i)=>{
+    const un=(l.itens&&l.itens.unidade)||'';
+    const mp=(l.itens&&l.itens.categoria)==='materia_prima';
+    h+='<div class="card"><b style="font-size:16px">'+l.itens.nome+'</b>'
+      +'<p style="color:#7A6A57;font-size:13.5px;margin-top:2px">pedido: <b class="mono">'+fmt(l.quantidade_solicitada)+' '+un+'</b>'
+      +(Number(l.preco_unitario)>0?' · preço combinado <b class="mono">'+rsC(l.preco_unitario)+'</b>':' · sem preço no pedido')+'</p>'
+      +'<div style="display:flex;gap:8px;margin-top:8px">'
+      +'<label style="flex:1"><small style="color:#7A6A57">Chegou ('+un+')</small>'
+      +'<input id="rQ'+i+'" inputmode="decimal" value="'+fmt(l.quantidade_solicitada)+'" oninput="recConferir('+i+')" style="'+inp+'"></label>'
+      +'<label style="flex:1"><small style="color:#7A6A57">Preço da nota</small>'
+      +(EST.gestor===true
+        ? '<input id="rP'+i+'" inputmode="decimal" value="'+(Number(l.preco_unitario)>0?fmt(l.preco_unitario,2):'')+'" oninput="recConferir('+i+')" style="'+inp+'">'
+        : '<input disabled value="R$ —" style="'+inp+';color:#B8A894">')
+      +'</label></div>'
+      +'<label style="display:block;margin-top:8px"><small style="color:#7A6A57">Lote do fornecedor'+(mp?' <b style="color:#C63A3A">(obrigatório)</b>':' (opcional)')+'</small>'
+      +'<input id="rL'+i+'" class="mono" placeholder="ex.: USI-260713-A" style="'+inp+'"></label>'
+      +'<div id="rAviso'+i+'" style="margin-top:7px"></div>'
+      +'</div>';
+  });
+  h+='<div class="card"><label><small style="color:#7A6A57">Justificativa (obrigatória se houver divergência)</small>'
+    +'<input id="rJust" placeholder="ex.: fornecedor avisou que faltou uma caixa" style="'+inp+'"></label>'
+    +'<button class="btnP" style="min-height:52px;font-size:17px" onclick="recConfirmar(\''+sel+'\')">Confirmar entrada no estoque</button>'
+    +'<button class="btnSec" onclick="tela(\'receber\')">Voltar</button></div>';
+  h+='</main>';
+  document.getElementById('app').innerHTML=h;
+  P.linhas.forEach((l,i)=>recConferir(i));
+}
+/* aviso de divergencia em tempo real — a trava e suave: avisa, nao impede */
+function recConferir(i){
+  const P=EST.cache.pedRec[EST.recSel]; if(!P)return;
+  const l=P.linhas[i]; if(!l)return;
+  const box=document.getElementById('rAviso'+i); if(!box)return;
+  const un=(l.itens&&l.itens.unidade)||'';
+  const q=parseNumBR((document.getElementById('rQ'+i)||{}).value)||0;
+  const ped=Number(l.quantidade_solicitada)||0;
+  const pPed=Number(l.preco_unitario)||0;
+  const pNota=EST.gestor===true?(parseNumBR((document.getElementById('rP'+i)||{}).value)||0):pPed;
+  let a='';
+  const dq=Math.round((q-ped)*1000)/1000;
+  if(dq<0)a+='<div style="color:#C63A3A;font-size:13px">⚠ faltaram <b class="mono">'+fmt(-dq)+' '+un+'</b> — o saldo segue pendente com o fornecedor</div>';
+  else if(dq>0)a+='<div style="color:#D9772B;font-size:13px">⚠ chegou <b class="mono">'+fmt(dq)+' '+un+'</b> a mais que o pedido</div>';
+  if(pPed>0&&pNota>0){
+    const dv=(pNota-pPed)/pPed*100;
+    if(Math.abs(dv)>=1)a+='<div style="color:'+(dv>0?'#C63A3A':'#3E7C45')+';font-size:13px">'+(dv>0?'⚠ preço acima':'✓ preço abaixo')+' do combinado: <b class="mono">'+(dv>0?'+':'')+fmt(dv,1)+'%</b></div>';
+  }
+  box.innerHTML=a;
+}
+async function recConfirmar(chave){
+  if(precisaOperador())return;
+  const P=(EST.cache.pedRec||{})[chave]; if(!P)return msg('Pedido não encontrado',true);
+  const nf=(document.getElementById('rNF')||{}).value||'';
+  const val=(document.getElementById('rVal')||{}).value||'';
+  const just=((document.getElementById('rJust')||{}).value||'').trim();
+  const plano=[];
+  for(let i=0;i<P.linhas.length;i++){
+    const l=P.linhas[i], un=(l.itens&&l.itens.unidade)||'';
+    const q=parseNumBR((document.getElementById('rQ'+i)||{}).value)||0;
+    if(!(q>0))return msg('Informe quanto chegou de '+l.itens.nome,true);
+    const lote=((document.getElementById('rL'+i)||{}).value||'').trim();
+    if((l.itens&&l.itens.categoria)==='materia_prima'&&!lote)
+      return msg('Lote do fornecedor é obrigatório para '+l.itens.nome,true);
+    const pNota=EST.gestor===true?(parseNumBR((document.getElementById('rP'+i)||{}).value)||0):(Number(l.preco_unitario)||0);
+    const ped=Number(l.quantidade_solicitada)||0, pPed=Number(l.preco_unitario)||0;
+    const divQ=Math.abs(q-ped)>0.001;
+    const divP=pPed>0&&pNota>0&&Math.abs((pNota-pPed)/pPed)>=0.01;
+    plano.push({l:l,q:q,lote:lote||null,pNota:pNota||null,falta:Math.round((ped-q)*1000)/1000,divQ:divQ,divP:divP,un:un});
+  }
+  const divergentes=plano.filter(x=>x.divQ||x.divP);
+  if(divergentes.length&&!just)
+    return msg('Há divergência em '+divergentes.length+' item(ns) — escreva a justificativa antes de confirmar',true);
+  if(!await travaEstoque())return;
+  const pend=[];
+  for(const x of plano){
+    if(x.falta>0.001){
+      const {error}=await sb.rpc('confirmar_recebimento_parcial',
+        {p_compra:x.l.id,p_qtd:x.q,p_lote:x.lote,p_responsavel:EST.operador,p_data_saldo:null});
+      if(error)return msg(x.l.itens.nome+': '+error.message,true);
+    }else{
+      const {error}=await sb.rpc('confirmar_recebimento',
+        {p_compra:x.l.id,p_qtd:x.q,p_lote:x.lote,p_responsavel:EST.operador});
+      if(error)return msg(x.l.itens.nome+': '+error.message,true);
+    }
+    await sb.from('compras').update({
+      nota_numero:nf||null, validade:val||null, preco_recebido:x.pNota,
+      observacao:(x.divQ||x.divP)?('DIVERGÊNCIA: '+just):x.l.observacao
+    }).eq('id',x.l.id);
+    if(x.divQ||x.divP)pend.push(x.l.itens.nome+(x.divQ?' (qtd)':'')+(x.divP?' (preço)':''));
+  }
+  await sb.from('atividades').insert({tipo:'recebimento',
+    descricao:'Pedido '+(P.num||chave)+' recebido de '+P.forn+' — '+plano.length+' item(ns)'
+      +(nf?' · NF '+nf:'')+(pend.length?' · PENDÊNCIA: '+pend.join(', ')+' — '+just:''),
+    lote:(plano[0]&&plano[0].lote)||null, responsavel:EST.operador});
+  msg(pend.length?('✅ Entrada feita — '+pend.length+' divergência(s) registrada(s)'):'✅ Entrada feita no estoque');
+  tela('receber');
 }
 async function confReceber(id){
   if(precisaOperador())return;
