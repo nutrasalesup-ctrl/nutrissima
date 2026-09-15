@@ -646,7 +646,7 @@ async function sepConferirEan(l,cod,diz){
   return 'segue';
 }
 
-const TELAS={inicio:tInicio,linha:tLinha,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao,treinamento:tTreinamento,separacao:tSeparacao,relComercial:tRelComercial,quadro:tQuadro};
+const TELAS={inicio:tInicio,linha:tLinha,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao,treinamento:tTreinamento,separacao:tSeparacao,relComercial:tRelComercial,quadro:tQuadro,pedidoCompra:tPedidoCompra,cockpitCompras:tCockpitCompras,relCompras:tRelCompras};
 function tela(n,arg){TELAS[n](arg)}
 
 /* ================= MISTURA & REFINO (área da linha) ================= */
@@ -1873,6 +1873,333 @@ async function mudarEntrega(id,nome,atual){
 }
 
 
+/* ================= PEDIDO DE COMPRA · COCKPIT · RELATÓRIOS =================
+   Valores em R$ seguem o mesmo mecanismo do Relatório comercial: EST.gestor,
+   liberado pela RPC verificar_pin com o PIN do 'Gestor'. Sem PIN, dinheiro
+   aparece como "R$ —"; quantidade, prazo e dias continuam visíveis. */
+function rsC(v){return EST.gestor===true?('R$&nbsp;'+fmt(Number(v)||0,2)):'R$&nbsp;—'}
+function seloPIN(volta){
+  return EST.gestor===true
+    ? '<span style="background:#3E7C45;color:#fff;padding:5px 10px;border-radius:6px;font-size:10px;font-weight:800;letter-spacing:.08em">🔓 R$ LIBERADO</span>'
+    : '<button onclick="destravarPINValores(\''+volta+'\')" style="background:#B8862B;color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:12px;font-weight:700">🔒 Mostrar valores em R$</button>';
+}
+async function destravarPINValores(volta){
+  const pin=prompt('PIN do gestor para ver valores em R$:');
+  if(pin==null)return;
+  const {data:ok,error}=await sb.rpc('verificar_pin',{p_nome:'Gestor',p_pin:String(pin).trim()});
+  if(error)return msg(error.message,true);
+  if(!ok)return msg('PIN do gestor incorreto',true);
+  EST.gestor=true; tela(volta||'cockpitCompras');
+}
+/* CFOP de amostra, brinde e devolucao NAO vira preco de referencia:
+   a Doremus mandou aroma por R$ 0,08 e isso viraria "preco do aroma". */
+const CFOP_FORA_PRECO=['5911','5923','5929','6911'];
+function precoValido(cfop){
+  const c=String(cfop||'');
+  return !CFOP_FORA_PRECO.includes(c) && c[0]!=='1' && c[0]!=='2';
+}
+async function pcPrecoSugerido(itemId,cnpj){
+  if(!itemId)return null;
+  const {data}=await sb.from('nota_fiscal_compra_item')
+    .select('valor_unitario,cfop,nota_fiscal_compra!inner(emitente_cnpj,data_emissao)')
+    .eq('item_id',itemId).limit(80);
+  if(!data||!data.length)return null;
+  const bons=data.filter(r=>precoValido(r.cfop)&&Number(r.valor_unitario)>0);
+  if(!bons.length)return null;
+  const mesmo=cnpj?bons.filter(r=>r.nota_fiscal_compra.emitente_cnpj===cnpj):[];
+  const base=(mesmo.length?mesmo:bons).slice().sort((a,b)=>
+    a.nota_fiscal_compra.data_emissao<b.nota_fiscal_compra.data_emissao?1:-1);
+  return {preco:Number(base[0].valor_unitario),data:base[0].nota_fiscal_compra.data_emissao,mesmoForn:mesmo.length>0};
+}
+/* ---------- rascunho do pedido (memoria; nada vai ao banco ate "Criar pedido") ---------- */
+function pcNovo(){EST.pc={forn:null,cond:'',prazo:'',entrega:'',obs:'',linhas:[]}}
+function pcColetar(){
+  const p=EST.pc; if(!p)return;
+  const g=id=>{const e=document.getElementById(id);return e?e.value:''};
+  p.cond=g('pcCond'); p.prazo=g('pcPrazo'); p.entrega=g('pcEntrega'); p.obs=g('pcObs');
+  p.linhas.forEach((l,i)=>{
+    const q=document.getElementById('pcQ'+i), pr=document.getElementById('pcP'+i);
+    if(q)l.qtd=parseNumBR(q.value)||0;
+    if(pr&&EST.gestor===true)l.preco=parseNumBR(pr.value)||0;
+  });
+}
+async function tPedidoCompra(pre){
+  if(!EST.pc)pcNovo();
+  if(pre&&pre.item_id&&!EST.pc.linhas.some(l=>l.item_id===pre.item_id)){
+    EST.pc.linhas.push({item_id:pre.item_id,nome:pre.nome,unidade:pre.unidade||'',qtd:Number(pre.qtd)||0,preco:0,dica:''});
+  }
+  if(!(EST.cache.forns||[]).length){
+    const f=await sb.from('fornecedores').select('id,nome,cnpj').order('nome');
+    EST.cache.forns=f.data||[];
+  }
+  const p=EST.pc, forns=EST.cache.forns||[];
+  const total=p.linhas.reduce((s,l)=>s+(Number(l.qtd)||0)*(Number(l.preco)||0),0);
+  const inp='width:100%;padding:12px;border:1.5px solid var(--linha);border-radius:10px;font-size:16px;background:#fff';
+  let h=trilha('Compra')+topo('Novo pedido de compra','fornecedor, itens, preço e prazo');
+  h+='<main>';
+  h+='<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px">'
+    +'<b>Valores</b>'+seloPIN('pedidoCompra')+'</div>';
+  /* fornecedor */
+  h+='<div class="card"><b>1 · Fornecedor</b>'
+    +'<select id="pcForn" onchange="pcTrocaForn(this.value)" style="'+inp+';margin-top:8px">'
+    +'<option value="">— escolher —</option>'
+    +forns.map(f=>'<option value="'+f.id+'"'+(p.forn&&p.forn.id===f.id?' selected':'')+'>'+f.nome+'</option>').join('')
+    +'</select>'
+    +(p.forn&&p.forn.cnpj?'<small style="color:#7A6A57;display:block;margin-top:6px">CNPJ '+p.forn.cnpj+'</small>':'')
+    +'</div>';
+  /* itens */
+  h+='<div class="card"><b>2 · Itens do pedido ('+p.linhas.length+')</b>';
+  h+='<div style="display:flex;gap:8px;margin:8px 0">'
+    +'<input id="pcBusca" placeholder="buscar item pelo nome" style="'+inp+'">'
+    +'<button class="btnSec" style="margin:0;white-space:nowrap" onclick="pcBuscar()">Buscar</button></div>';
+  h+='<div id="pcRes"></div>';
+  if(!p.linhas.length){
+    h+='<div class="center" style="padding:14px 0;color:#7A6A57">Nenhum item ainda. Busque acima ou venha pelo botão da sugestão do MRP.</div>';
+  }else{
+    p.linhas.forEach((l,i)=>{
+      const sub=(Number(l.qtd)||0)*(Number(l.preco)||0);
+      h+='<div style="border-top:1px solid var(--linha);padding:11px 0">'
+        +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">'
+        +'<b style="font-size:15px">'+l.nome+'</b>'
+        +'<button onclick="pcRemover('+i+')" style="border:1px solid var(--linha);background:#fff;border-radius:8px;padding:6px 10px">✕</button></div>'
+        +'<div style="display:flex;gap:8px;margin-top:8px">'
+        +'<label style="flex:1"><small style="color:#7A6A57">Quantidade'+(l.unidade?' ('+l.unidade+')':'')+'</small>'
+        +'<input id="pcQ'+i+'" inputmode="decimal" value="'+fmt(l.qtd)+'" style="'+inp+'"></label>'
+        +'<label style="flex:1"><small style="color:#7A6A57">Preço unitário</small>'
+        +(EST.gestor===true
+          ? '<input id="pcP'+i+'" inputmode="decimal" value="'+(l.preco?fmt(l.preco,2):'')+'" style="'+inp+'">'
+          : '<input disabled value="R$ —" style="'+inp+';color:#B8A894">')
+        +'</label></div>'
+        +(l.dica?'<small style="color:#7A6A57;display:block;margin-top:5px">'+l.dica+'</small>':'')
+        +'<div style="text-align:right;margin-top:6px;font-size:14px">Subtotal <b class="mono">'+rsC(sub)+'</b></div>'
+        +'</div>';
+    });
+    h+='<div style="border-top:2px solid var(--linha);margin-top:8px;padding-top:10px;display:flex;justify-content:space-between;font-size:17px">'
+      +'<b>Total do pedido</b><b class="mono">'+rsC(total)+'</b></div>';
+  }
+  h+='</div>';
+  /* condicoes */
+  h+='<div class="card"><b>3 · Prazo e pagamento</b>'
+    +'<label style="display:block;margin-top:8px"><small style="color:#7A6A57">Previsão de entrega</small>'
+    +'<input id="pcEntrega" type="date" value="'+(p.entrega||'')+'" style="'+inp+'"></label>'
+    +'<div style="display:flex;gap:8px;margin-top:8px">'
+    +'<label style="flex:1"><small style="color:#7A6A57">Condição</small>'
+    +'<input id="pcCond" value="'+(p.cond||'')+'" placeholder="ex.: boleto 28ddl" style="'+inp+'"></label>'
+    +'<label style="flex:1"><small style="color:#7A6A57">Prazo (dias)</small>'
+    +'<input id="pcPrazo" inputmode="numeric" value="'+(p.prazo||'')+'" style="'+inp+'"></label></div>'
+    +'<label style="display:block;margin-top:8px"><small style="color:#7A6A57">Observação</small>'
+    +'<input id="pcObs" value="'+(p.obs||'')+'" style="'+inp+'"></label>'
+    +'</div>';
+  h+='<div class="card"><button class="btnP" style="min-height:52px;font-size:17px" onclick="pcSalvar()">Criar pedido</button>'
+    +'<button class="btnSec" onclick="pcCancelar()">Descartar rascunho</button></div>';
+  h+='</main>';
+  document.getElementById('app').innerHTML=h;
+}
+async function pcTrocaForn(id){
+  pcColetar();
+  EST.pc.forn=(EST.cache.forns||[]).find(f=>f.id===id)||null;
+  for(const l of EST.pc.linhas){ await pcAplicarPreco(l); }
+  tela('pedidoCompra');
+}
+async function pcAplicarPreco(l){
+  const s=await pcPrecoSugerido(l.item_id,EST.pc.forn?EST.pc.forn.cnpj:null);
+  if(!s){l.dica='sem preço anterior em nota — digite o combinado';return}
+  if(!l.preco)l.preco=s.preco;
+  l.dica='último pago '+(s.mesmoForn?'a este fornecedor':'(outro fornecedor)')+' em '+brData(s.data)+(EST.gestor===true?': R$ '+fmt(s.preco,2):'');
+}
+async function pcBuscar(){
+  const e=document.getElementById('pcBusca'); const termo=(e&&e.value||'').trim();
+  if(!termo)return msg('Digite parte do nome do item',true);
+  const {data,error}=await sb.from('itens').select('id,nome,unidade').ilike('nome','%'+termo+'%').order('nome').limit(15);
+  if(error)return msg(error.message,true);
+  const box=document.getElementById('pcRes');
+  if(!data||!data.length){box.innerHTML='<div class="center" style="color:#7A6A57;padding:8px">Nenhum item com esse nome.</div>';return}
+  box.innerHTML=data.map(i=>'<div class="item-row"><span>'+i.nome+(i.unidade?' <small style="color:#7A6A57">('+i.unidade+')</small>':'')+'</span>'
+    +'<button class="btnP" style="min-height:auto;padding:8px 14px;font-size:13px;margin:0" onclick="pcAdicionar(\''+i.id+'\',\''+i.nome.replace(/'/g,"\\'")+'\',\''+(i.unidade||'')+'\')">Adicionar</button></div>').join('');
+}
+async function pcAdicionar(id,nome,un){
+  pcColetar();
+  if(EST.pc.linhas.some(l=>l.item_id===id))return msg('Esse item já está no pedido',true);
+  const l={item_id:id,nome:nome,unidade:un,qtd:0,preco:0,dica:''};
+  await pcAplicarPreco(l);
+  EST.pc.linhas.push(l);
+  tela('pedidoCompra');
+}
+function pcRemover(i){pcColetar();EST.pc.linhas.splice(i,1);tela('pedidoCompra')}
+function pcCancelar(){if(!confirm('Descartar este rascunho?'))return;pcNovo();tela('mrp')}
+async function pcSalvar(){
+  if(precisaOperador())return;
+  pcColetar();
+  const p=EST.pc;
+  if(!p.forn)return msg('Escolha o fornecedor',true);
+  if(!p.linhas.length)return msg('Adicione pelo menos um item',true);
+  if(p.linhas.some(l=>!(Number(l.qtd)>0)))return msg('Toda linha precisa de quantidade maior que zero',true);
+  if(!p.entrega)return msg('Informe a previsão de entrega',true);
+  const num='PC-'+hojeLocal().replace(/-/g,'')+'-'+Math.random().toString(36).slice(2,5).toUpperCase();
+  const rows=p.linhas.map(l=>({
+    pedido_numero:num,item_id:l.item_id,fornecedor_id:p.forn.id,fornecedor_nome:p.forn.nome,
+    quantidade_solicitada:Number(l.qtd),preco_unitario:Number(l.preco)||null,
+    condicao_pagamento:p.cond||null,prazo_pagamento_dias:p.prazo?Number(p.prazo):null,
+    status:'liberado',data_pedido:hojeLocal(),data_prevista_entrega:p.entrega,observacao:p.obs||null}));
+  const {error}=await sb.from('compras').insert(rows);
+  if(error)return msg(error.message,true);
+  await sb.from('atividades').insert({tipo:'compra',
+    descricao:'Pedido '+num+' criado — '+rows.length+' item(ns) · '+p.forn.nome,responsavel:EST.operador});
+  pcNovo();
+  msg('✅ Pedido '+num+' criado');
+  tela('cockpitCompras');
+}
+/* ---------- COCKPIT: agrupado pela decisão, não pelo status do banco ---------- */
+async function tCockpitCompras(){
+  document.getElementById('app').innerHTML=trilha('Compra')+topo('Acompanhamento de compras','carregando…')+'<main><div class="center">Carregando…</div></main>';
+  const {data,error}=await sb.from('compras')
+    .select('*, itens(nome,unidade,saldo_atual,estoque_minimo)')
+    .in('status',['pendente','aguardando_pagamento','liberado'])
+    .order('data_prevista_entrega');
+  if(error)return msg(error.message,true);
+  const hj=hojeLocal();
+  const ped={};
+  (data||[]).forEach(c=>{
+    const k=c.pedido_numero||('#'+c.id);
+    if(!ped[k])ped[k]={num:c.pedido_numero,chave:k,forn:c.fornecedor_nome||'—',prev:c.data_prevista_entrega,
+      status:c.status,cond:c.condicao_pagamento,linhas:[],total:0,ids:[]};
+    const P=ped[k];
+    P.linhas.push(c); P.ids.push(c.id);
+    P.total+=(Number(c.quantidade_solicitada)||0)*(Number(c.preco_unitario)||0);
+    if(c.data_prevista_entrega&&(!P.prev||c.data_prevista_entrega<P.prev))P.prev=c.data_prevista_entrega;
+  });
+  const lista=Object.values(ped);
+  const dias=d=>d?Math.round((new Date(d+'T12:00')-new Date(hj+'T12:00'))/864e5):null;
+  lista.forEach(P=>{
+    P.d=dias(P.prev);
+    /* urgencia CALCULADA: atraso da entrega cruzado com falta do item, nao o status do banco */
+    const faltando=P.linhas.some(l=>l.itens&&l.itens.estoque_minimo!=null&&Number(l.itens.saldo_atual)<Number(l.itens.estoque_minimo));
+    if(P.d!=null&&P.d<0){P.g=1;P.cor='#C63A3A';P.bg='#FDECEC';P.tag='ATRASADO '+Math.abs(P.d)+'d'}
+    else if(P.status==='aguardando_pagamento'){P.g=2;P.cor='#D9772B';P.bg='#FBEEE2';P.tag='AGUARDA PAGAMENTO'}
+    else if(P.d!=null&&P.d<=1){P.g=3;P.cor='#B8862B';P.bg='#FBF3E0';P.tag=P.d===0?'CHEGA HOJE':'CHEGA AMANHÃ'}
+    else {P.g=4;P.cor='#3E7C45';P.bg='#EAF3EA';P.tag='COM FOLGA'}
+    if(faltando&&P.g>1){P.g=1.5;P.cor='#C63A3A';P.bg='#FDECEC';P.tag=P.tag+' · ITEM EM FALTA'}
+  });
+  lista.sort((a,b)=>a.g-b.g||((a.prev||'9')<(b.prev||'9')?-1:1));
+  const grupos=[[1,'Atrasados'],[1.5,'Item já em falta'],[2,'Aguardando pagamento'],[3,'Chegam hoje ou amanhã'],[4,'Com folga']];
+  const totAtraso=lista.filter(P=>P.g<=1.5).length;
+  let h=trilha('Compra')+topo('Acompanhamento de compras',lista.length+' pedido(s) em aberto · '+totAtraso+' exigindo cobrança');
+  h+='<main>';
+  h+='<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b>Valores</b>'+seloPIN('cockpitCompras')+'</div>';
+  h+='<div class="card"><button class="btnP" onclick="pcNovo();tela(\'pedidoCompra\')">➕ Novo pedido de compra</button>'
+    +'<button class="btnSec" onclick="tela(\'mrp\')">Ver sugestões do MRP</button>'
+    +'<button class="btnSec" onclick="tela(\'relCompras\')">📊 Relatórios de compras</button></div>';
+  if(!lista.length)h+='<div class="card"><div class="center">Nenhum pedido em aberto.</div></div>';
+  grupos.forEach(([g,rot])=>{
+    const sub=lista.filter(P=>P.g===g); if(!sub.length)return;
+    h+='<div class="card"><b>'+rot+' ('+sub.length+')</b>';
+    sub.forEach(P=>{
+      h+='<div style="border-top:1px solid var(--linha);border-left:4px solid '+P.cor+';padding:11px 0 11px 11px;margin-top:2px">'
+        +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:center">'
+        +'<b style="font-size:15.5px">'+P.forn+'</b>'
+        +'<span class="chip" style="background:'+P.bg+';color:'+P.cor+';font-weight:700">'+P.tag+'</span></div>'
+        +'<div style="font-size:12px;color:#7A6A57;margin-top:3px">'+(P.num||'sem número')+' · previsão '+(P.prev?brData(P.prev):'—')+(P.cond?' · '+P.cond:'')+'</div>'
+        +P.linhas.map(l=>'<div style="display:flex;justify-content:space-between;gap:8px;font-size:13.5px;margin-top:5px">'
+          +'<span>'+(l.itens?l.itens.nome:'item')+'</span>'
+          +'<span class="mono">'+fmt(l.quantidade_solicitada)+' '+(l.itens?l.itens.unidade||'':'')
+          +(Number(l.preco_unitario)>0?' · '+rsC(Number(l.quantidade_solicitada)*Number(l.preco_unitario)):'')+'</span></div>').join('')
+        +(P.total>0?'<div style="text-align:right;margin-top:6px;font-size:13.5px">Total <b class="mono">'+rsC(P.total)+'</b></div>':'')
+        +'<div style="display:flex;gap:7px;margin-top:9px;flex-wrap:wrap">'
+        +'<button class="btnSec" style="margin:0;padding:9px 13px;font-size:13px" onclick="tela(\'receber\')">📦 Receber</button>'
+        +'<button class="btnSec" style="margin:0;padding:9px 13px;font-size:13px" onclick="pcReagendar(\''+P.chave+'\')">📅 Reagendar</button>'
+        +'<button class="btnSec" style="margin:0;padding:9px 13px;font-size:13px" onclick="pcCancelarPedido(\''+P.chave+'\')">✕ Cancelar</button>'
+        +'</div></div>';
+    });
+    h+='</div>';
+  });
+  h+='</main>';
+  EST.cache.cockpit=ped;
+  document.getElementById('app').innerHTML=h;
+}
+async function pcReagendar(chave){
+  if(precisaOperador())return;
+  const P=(EST.cache.cockpit||{})[chave]; if(!P)return msg('Pedido não encontrado',true);
+  const v=prompt('Nova previsão de entrega (AAAA-MM-DD):',P.prev||hojeLocal());
+  if(v==null||!/^\d{4}-\d{2}-\d{2}$/.test(v.trim()))return;
+  const {error}=await sb.from('compras').update({data_prevista_entrega:v.trim()}).in('id',P.ids);
+  if(error)return msg(error.message,true);
+  await sb.from('atividades').insert({tipo:'compra',descricao:'Pedido '+(P.num||chave)+' reagendado para '+brData(v.trim()),responsavel:EST.operador});
+  msg('✅ Reagendado');tela('cockpitCompras');
+}
+async function pcCancelarPedido(chave){
+  if(precisaOperador())return;
+  const P=(EST.cache.cockpit||{})[chave]; if(!P)return msg('Pedido não encontrado',true);
+  if(!confirm('Cancelar o pedido inteiro ('+P.linhas.length+' item(ns)) de '+P.forn+'?'))return;
+  const {error}=await sb.from('compras').update({status:'cancelado'}).in('id',P.ids);
+  if(error)return msg(error.message,true);
+  await sb.from('atividades').insert({tipo:'compra',descricao:'Pedido '+(P.num||chave)+' cancelado — '+P.forn,responsavel:EST.operador});
+  msg('Pedido cancelado');tela('cockpitCompras');
+}
+/* ---------- RELATÓRIOS ---------- */
+async function tRelCompras(){
+  document.getElementById('app').innerHTML=trilha('Compra')+topo('Relatórios de compras','carregando…')+'<main><div class="center">Carregando…</div></main>';
+  const [abertos,notas]=await Promise.all([
+    sb.from('compras').select('*, itens(nome,unidade)').in('status',['pendente','aguardando_pagamento','liberado']),
+    sb.from('nota_fiscal_compra_item').select('item_id,valor_unitario,quantidade,cfop,itens(nome,unidade),nota_fiscal_compra!inner(emitente_nome,data_emissao)').not('item_id','is',null).limit(400)
+  ]);
+  const hj=hojeLocal();
+  /* 1 · em aberto por fornecedor */
+  const porF={};
+  (abertos.data||[]).forEach(c=>{
+    const f=c.fornecedor_nome||'—';
+    if(!porF[f])porF[f]={itens:0,total:0,atraso:0,prox:null};
+    porF[f].itens++;
+    porF[f].total+=(Number(c.quantidade_solicitada)||0)*(Number(c.preco_unitario)||0);
+    if(c.data_prevista_entrega&&c.data_prevista_entrega<hj)porF[f].atraso++;
+    if(c.data_prevista_entrega&&(!porF[f].prox||c.data_prevista_entrega<porF[f].prox))porF[f].prox=c.data_prevista_entrega;
+  });
+  const fs=Object.entries(porF).sort((a,b)=>b[1].atraso-a[1].atraso||b[1].total-a[1].total);
+  /* 2 · preço por item: primeiro x último, so com CFOP de compra */
+  const porI={};
+  (notas.data||[]).forEach(r=>{
+    if(!precoValido(r.cfop)||!(Number(r.valor_unitario)>0))return;
+    const k=r.item_id;
+    if(!porI[k])porI[k]={nome:r.itens?r.itens.nome:'item',un:r.itens?r.itens.unidade||'':'',regs:[]};
+    porI[k].regs.push({v:Number(r.valor_unitario),d:r.nota_fiscal_compra.data_emissao,f:r.nota_fiscal_compra.emitente_nome});
+  });
+  const its=Object.values(porI).map(o=>{
+    o.regs.sort((a,b)=>a.d<b.d?-1:1);
+    const pri=o.regs[0], ult=o.regs[o.regs.length-1];
+    o.pri=pri;o.ult=ult;o.n=o.regs.length;
+    o.var=pri.v>0?((ult.v-pri.v)/pri.v*100):0;
+    return o;
+  }).filter(o=>o.n>1).sort((a,b)=>b.var-a.var);
+  let h=trilha('Compra')+topo('Relatórios de compras','em aberto por fornecedor · preço pago por item');
+  h+='<main>';
+  h+='<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b>Valores</b>'+seloPIN('relCompras')+'</div>';
+  h+='<div class="card"><b>Em aberto por fornecedor</b>'
+    +'<small style="color:#7A6A57;display:block;margin-bottom:6px">quem você precisa cobrar primeiro — ordenado por linhas atrasadas, depois por valor</small>';
+  h+=fs.length?fs.map(([f,o])=>'<div class="item-row"><span>'+f
+    +'<br><small style="color:'+(o.atraso?'#C63A3A':'#7A6A57')+'">'+o.itens+' linha(s)'
+    +(o.atraso?' · <b>'+o.atraso+' atrasada(s)</b>':'')+' · próxima '+(o.prox?brData(o.prox):'—')+'</small></span>'
+    +'<b class="mono">'+rsC(o.total)+'</b></div>').join(''):'<div class="center">Nenhum pedido em aberto.</div>';
+  h+='</div>';
+  h+='<div class="card"><b>Preço pago por item</b>'
+    +'<small style="color:#7A6A57;display:block;margin-bottom:6px">primeira contra última nota de compra · amostra, brinde e devolução ficam fora da conta</small>';
+  h+=its.length?its.slice(0,25).map(o=>{
+    const cor=o.var>10?'#C63A3A':(o.var>0?'#D9772B':'#3E7C45');
+    return '<div style="border-top:1px solid var(--linha);padding:9px 0">'
+      +'<div style="display:flex;justify-content:space-between;gap:8px"><b style="font-size:14.5px">'+o.nome+'</b>'
+      +'<b class="mono" style="color:'+cor+'">'+(o.var>=0?'+':'')+fmt(o.var,1)+'%</b></div>'
+      +'<div style="font-size:12.5px;color:#7A6A57;margin-top:3px">'
+      +brData(o.pri.d)+' <span class="mono">'+rsC(o.pri.v)+'</span> → '+brData(o.ult.d)+' <span class="mono">'+rsC(o.ult.v)+'</span>'
+      +' · '+o.n+' notas · último: '+o.ult.f+'</div></div>';
+  }).join(''):'<div class="center">Ainda não há item com duas ou mais notas de compra.</div>';
+  h+='</div>';
+  h+='<div class="card"><small style="color:#7A6A57"><b>Como ler.</b> "Em aberto" é pedido criado e ainda não recebido; o valor só aparece se o preço foi informado no pedido. '
+    +'A variação de preço compara a primeira com a última nota fiscal de compra do item, e ignora CFOP de amostra, brinde e devolução — sem esse filtro, uma amostra de R$ 0,08 viraria o preço do aroma. '
+    +'Item comprado de fornecedores diferentes mistura os dois na mesma linha; o nome do último fornecedor aparece ao lado.'
+    +(EST.gestor!==true?'<br><br><b>Sem PIN do gestor:</b> valores em R$ ficam ocultos. Quantidades, prazos e percentuais continuam visíveis.':'')
+    +'</small></div>';
+  h+='</main>';
+  document.getElementById('app').innerHTML=h;
+}
+
 /* ================= COMPRAS / MRP ================= */
 async function tMRP(){
   document.getElementById('app').innerHTML=trilha('Compra')+topo('Compras / MRP','calculando a partir da programação…')+'<main><div class="center">Calculando…</div></main>';
@@ -1909,7 +2236,7 @@ async function tMRP(){
   ${trilha('Compra')}${topo('Compras / MRP','necessidade calculada da programação dos moinhos')}
   <main>
     <div class="card"><b>➕ Pedido avulso</b><small style="color:#7A6A57;display:block;margin-bottom:8px">pra pedidos que não vêm da sugestão do MRP — ex.: programação de potes com o fornecedor, reposição combinada, etc.</small>
-      <button class="btnSec" onclick="criarPedidoAvulso()">Criar pedido avulso</button>
+      <button class="btnP" onclick="pcNovo();tela('pedidoCompra')">➕ Novo pedido de compra</button><button class="btnSec" onclick="tela('cockpitCompras')">🎯 Acompanhar pedidos</button><button class="btnSec" onclick="tela('relCompras')">📊 Relatórios de compras</button>
     </div>
     <div class="card"><b>Sugestões de compra</b><small style="color:#7A6A57;display:block;margin-bottom:6px">demanda dos refinos + reposição do mínimo − saldo · ordenado por criticidade: <b style="color:#C63A3A">falta produzir</b> › <b style="color:#D9772B">atrasado</b> › <b style="color:#B8862B">esta semana</b> › <b style="color:#3E7C45">com folga</b></small>
     ${sug.length?sug.map(m=>{const g=grade(m);const u=m.unidade||'';return `
@@ -1971,6 +2298,13 @@ async function escolherFornecedor(rotulo){
   return fi;
 }
 async function novoPedido(itemId,nome,qtd){
+  if(precisaOperador())return;
+  /* rota nova: tela de pedido com varias linhas, preco e condicao (14/09/2026). */
+  if(!EST.pc)pcNovo();
+  const it=await sb.from('itens').select('unidade').eq('id',itemId).single();
+  return tela('pedidoCompra',{item_id:itemId,nome:nome,unidade:(it.data&&it.data.unidade)||'',qtd:qtd});
+}
+async function novoPedidoAntigo(itemId,nome,qtd){
   if(precisaOperador())return;
   const fi=await escolherFornecedor('Fornecedor para '+nome); if(!fi)return;
   const q=prompt('Quantidade a pedir:',qtd); if(q==null)return;
