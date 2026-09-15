@@ -301,7 +301,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-09-15 08:10 · compras';
+const APP_VERSAO='2026-09-15 08:35 · compras';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -2035,7 +2035,9 @@ async function pcFornecedoresDoItem(itemId){
     pc:r.pc_kg===null?null:Number(r.pc_kg),
     regime:r.pc_regime,
     liq:r.liquido_kg===null?null:Number(r.liquido_kg),
-    var:r.variacao_pct===null?null:Number(r.variacao_pct),
+    varAnt:r.var_anterior===null?null:Number(r.var_anterior),
+    varPri:r.var_primeira===null?null:Number(r.var_primeira),
+    ultimas:r.ultimas||[],
     nf:{num:r.nf_numero,qtd:r.nf_qtd===null?null:Number(r.nf_qtd),vu:r.nf_valor_unit===null?null:Number(r.nf_valor_unit),
         vt:r.nf_valor_total===null?null:Number(r.nf_valor_total),icms:r.nf_icms===null?null:Number(r.nf_icms),
         ipi:r.nf_ipi===null?null:Number(r.nf_ipi),st:r.nf_st===null?null:Number(r.nf_st),
@@ -2071,13 +2073,15 @@ function painelForns(l,i){
     +'<div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#7A6A57;font-weight:700;margin-bottom:6px">Fornecedores deste item ('+l.forns.length+') · ordenado pelo custo líquido</div>';
   l.forns.forEach(function(o){
     const atual=EST.pc.forn&&EST.pc.forn.cnpj===o.cnpj;
-    const corV=(o.var||0)>10?'#C63A3A':((o.var||0)>0?'#D9772B':'#3E7C45');
+    const corV=(o.varAnt||0)>10?'#C63A3A':((o.varAnt||0)>0?'#D9772B':'#3E7C45');
     h+='<div style="border-top:1px solid var(--linha);padding:8px 0">'
       +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">'
       +'<div style="min-width:0"><b style="font-size:13px">'+o.nome+'</b>'
       +(o.melhor?' <span class="chip" style="background:#EAF3EA;color:#3E7C45;font-weight:700">MENOR CUSTO</span>':'')
-      +'<div style="font-size:11px;color:#7A6A57">última '+brData(o.d2)+' · '+o.n+' nota(s)'
-      +(o.var===null?'':' · <span style="color:'+corV+'">'+(o.var>=0?'+':'')+fmt(o.var,1)+'%</span>')+'</div></div>'
+      +'<div style="font-size:11px;color:#7A6A57">'+o.n+' nota(s)'
+      +(o.varAnt===null?'':' · <span style="color:'+corV+'">'+(o.varAnt>=0?'+':'')+fmt(o.varAnt,1)+'% vs compra anterior</span>')
+      +(o.varPri===null?'':' · <span style="color:#7A6A57">'+(o.varPri>=0?'+':'')+fmt(o.varPri,1)+'% desde a 1ª</span>')
+      +'</div></div>'
       +(atual?'<span style="font-size:11px;color:#3E7C45;font-weight:700;white-space:nowrap">selecionado</span>'
         :(o.fid?'<button onclick="pcUsarForn(\''+o.fid+'\')" style="border:1px solid var(--linha);background:#fff;border-radius:8px;padding:5px 9px;font-size:11.5px;white-space:nowrap">Usar</button>'
               :'<span style="font-size:11px;color:#B8A894;white-space:nowrap">não cadastrado</span>'))
@@ -2091,6 +2095,20 @@ function painelForns(l,i){
                   o.pc===null?'R$&nbsp;—':'R$ '+fmt(o.pc,2), o.regime==='tributado'?'#3E7C45':'#B8A894')
       +linhaConta('= custo líquido por '+un, o.liq===null?'R$&nbsp;—':'R$ '+fmt(o.liq,2), '#33200F', true)
       +'</div>'
+      +((o.ultimas&&o.ultimas.length>1)
+        ? '<div style="margin-top:7px;border-top:1px dashed var(--linha);padding-top:6px">'
+          +'<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#7A6A57;font-weight:700;margin-bottom:3px">Últimas compras — líquido por '+un+'</div>'
+          +o.ultimas.map(function(u,k){
+              const ant=o.ultimas[k+1];
+              const dv=(ant&&ant.liq>0&&u.liq!==null)?((u.liq-ant.liq)/ant.liq*100):null;
+              return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;padding:1px 0">'
+                +'<span style="color:#7A6A57">'+brData(u.d)+(u.nf?' · NF '+u.nf:'')+'</span>'
+                +'<span><b class="mono">'+(u.liq===null?'R$&nbsp;—':'R$ '+fmt(u.liq,2))+'</b>'
+                +(dv===null?'':' <span class="mono" style="font-size:10.5px;color:'+(dv>0?'#C63A3A':'#3E7C45')+'">'+(dv>=0?'+':'')+fmt(dv,1)+'%</span>')
+                +'</span></div>';
+            }).join('')
+          +'</div>'
+        : '')
       +'<details style="margin-top:6px"><summary style="font-size:11px;color:#7A6A57;cursor:pointer">conferir contra a nota</summary>'
       +'<div style="font-size:11px;color:#7A6A57;line-height:1.5;margin-top:4px">'
       +'NF '+(o.nf.num||'—')+' de '+brData(o.d2)+'<br>'
