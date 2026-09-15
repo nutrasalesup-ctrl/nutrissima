@@ -2012,7 +2012,14 @@ function precoValido(cfop){
 }
 /* fornecedores que ja venderam este item, com ultimo preco e variacao.
    So CFOP de compra: amostra/brinde/devolucao ficam fora (ver §9.3 da Controladoria). */
+async function temAcessoFiscal(){
+  if(EST.fiscalOk!==undefined)return EST.fiscalOk;
+  const {data,error}=await sb.rpc('eh_controladoria');
+  EST.fiscalOk=(!error&&data===true);
+  return EST.fiscalOk;
+}
 async function pcFornecedoresDoItem(itemId){
+  if(!await temAcessoFiscal())return null;
   const {data}=await sb.from('nota_fiscal_compra_item')
     .select('valor_unitario,quantidade,cfop,nota_fiscal_compra!inner(emitente_cnpj,emitente_nome,data_emissao)')
     .eq('item_id',itemId).limit(150);
@@ -2036,6 +2043,7 @@ async function pcFornecedoresDoItem(itemId){
   return out.sort((a,b)=>a.ult.v-b.ult.v);
 }
 function painelForns(l,i){
+  if(l.forns===null)return '<div style="margin-top:8px;font-size:12.5px;color:#7A6A57;background:#F6F1E9;border-radius:9px;padding:9px">🔒 O histórico de preços fica com a controladoria — este login não acessa nota fiscal. Digite o preço combinado.</div>';
   if(!l.forns)return '';
   if(!l.forns.length)return '<div style="margin-top:8px;font-size:12.5px;color:#7A6A57;background:#F6F1E9;border-radius:9px;padding:9px">Sem histórico de compra em nota para este item — digite o preço combinado.</div>';
   let h='<div style="margin-top:9px;background:#F6F1E9;border-radius:9px;padding:9px">'
@@ -2058,6 +2066,7 @@ function painelForns(l,i){
 }
 async function pcPrecoSugerido(itemId,cnpj){
   if(!itemId)return null;
+  if(!await temAcessoFiscal())return null;
   const {data}=await sb.from('nota_fiscal_compra_item')
     .select('valor_unitario,cfop,nota_fiscal_compra!inner(emitente_cnpj,data_emissao)')
     .eq('item_id',itemId).limit(80);
@@ -2070,7 +2079,19 @@ async function pcPrecoSugerido(itemId,cnpj){
   return {preco:Number(base[0].valor_unitario),data:base[0].nota_fiscal_compra.data_emissao,mesmoForn:mesmo.length>0};
 }
 /* ---------- rascunho do pedido (memoria; nada vai ao banco ate "Criar pedido") ---------- */
-function pcNovo(){EST.pc={forn:null,cond:'',prazo:'',entrega:'',obs:'',linhas:[]}}
+function pcNovo(){EST.pc={forn:null,cond:'',prazo:'',entrega:'',obs:'',linhas:[],abertoEm:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}}
+function pcZerar(){
+  if(EST.pc&&EST.pc.linhas.length&&!confirm('Apagar os '+EST.pc.linhas.length+' item(ns) do rascunho e começar do zero?'))return;
+  pcEntrar();
+}
+/* entrada limpa: se ja existe rascunho, pergunta em vez de decidir sozinho */
+function pcEntrar(){
+  if(EST.pc&&EST.pc.linhas.length){
+    if(confirm('Existe um rascunho com '+EST.pc.linhas.length+' item(ns).\n\nOK = continuar esse rascunho\nCancelar = começar um pedido novo'))return tela('pedidoCompra');
+    pcNovo();
+  }else if(!EST.pc)pcNovo();
+  tela('pedidoCompra');
+}
 function pcColetar(){
   const p=EST.pc; if(!p)return;
   const g=id=>{const e=document.getElementById(id);return e?e.value:''};
@@ -2084,7 +2105,10 @@ function pcColetar(){
 async function tPedidoCompra(pre){
   if(!EST.pc)pcNovo();
   if(pre&&pre.item_id&&!EST.pc.linhas.some(l=>l.item_id===pre.item_id)){
-    EST.pc.linhas.push({item_id:pre.item_id,nome:pre.nome,unidade:pre.unidade||'',qtd:Number(pre.qtd)||0,preco:0,dica:''});
+    const nl={item_id:pre.item_id,nome:pre.nome,unidade:pre.unidade||'',qtd:Number(pre.qtd)||0,preco:0,dica:''};
+    await pcAplicarPreco(nl);
+    EST.pc.linhas.push(nl);
+    EST.pc.abertoEm=EST.pc.abertoEm||new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   }
   if(!(EST.cache.forns||[]).length){
     const f=await sb.from('fornecedores').select('id,nome,cnpj').order('nome');
@@ -2097,6 +2121,13 @@ async function tPedidoCompra(pre){
   h+='<main>';
   h+='<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px">'
     +'<b>Valores</b>'+seloPIN('pedidoCompra')+'</div>';
+  if(p.linhas.length){
+    h+='<div class="card" style="border-left:5px solid #B8862B;background:#FBF3E0">'
+      +'<b>✏️ Rascunho em andamento</b>'
+      +'<p style="font-size:13.5px;color:#7A6A57;margin-top:3px">'+p.linhas.length+' item(ns) já adicionado(s)'
+      +(p.abertoEm?' · começado às '+p.abertoEm:'')+'. Não foi enviado ao banco.</p>'
+      +'<button class="btnSec" style="margin-top:8px" onclick="pcZerar()">🗑 Começar do zero</button></div>';
+  }
   /* fornecedor */
   h+='<div class="card"><b>1 · Fornecedor</b><small style="color:#7A6A57;display:block">pode deixar para depois: ao adicionar o item, o painel mostra quem já vendeu e por quanto</small>'
     +'<select id="pcForn" onchange="pcTrocaForn(this.value)" style="'+inp+';margin-top:8px">'
@@ -2163,7 +2194,7 @@ async function pcTrocaForn(id){
 async function pcAplicarPreco(l){
   l.forns=await pcFornecedoresDoItem(l.item_id);
   const s=await pcPrecoSugerido(l.item_id,EST.pc.forn?EST.pc.forn.cnpj:null);
-  if(!s){l.dica='sem preço anterior em nota — digite o combinado';return}
+  if(!s){l.dica=(l.forns===null?'':'sem preço anterior em nota — digite o combinado');return}
   if(!l.preco)l.preco=s.preco;
   l.dica='último pago '+(s.mesmoForn?'a este fornecedor':'(outro fornecedor)')+' em '+brData(s.data)+(EST.gestor===true?': R$ '+fmt(s.preco,2):'');
 }
@@ -2266,7 +2297,7 @@ async function tCockpitCompras(){
   let h=trilha('Compra')+topo('Acompanhamento de compras',lista.length+' pedido(s) em aberto · '+totAtraso+' exigindo cobrança');
   h+='<main>';
   h+='<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px"><b>Valores</b>'+seloPIN('cockpitCompras')+'</div>';
-  h+='<div class="card"><button class="btnP" onclick="pcNovo();tela(\'pedidoCompra\')">➕ Novo pedido de compra</button>'
+  h+='<div class="card"><button class="btnP" onclick="pcEntrar()">➕ Novo pedido de compra</button>'
     +'<button class="btnSec" onclick="tela(\'mrp\')">Ver sugestões do MRP</button>'
     +'<button class="btnSec" onclick="tela(\'relCompras\')">📊 Relatórios de compras</button></div>';
   if(!lista.length)h+='<div class="card"><div class="center">Nenhum pedido em aberto.</div></div>';
@@ -2416,7 +2447,7 @@ async function tMRP(){
   ${trilha('Compra')}${topo('Compras / MRP','necessidade calculada da programação dos moinhos')}
   <main>
     <div class="card"><b>➕ Pedido avulso</b><small style="color:#7A6A57;display:block;margin-bottom:8px">pra pedidos que não vêm da sugestão do MRP — ex.: programação de potes com o fornecedor, reposição combinada, etc.</small>
-      <button class="btnP" onclick="pcNovo();tela('pedidoCompra')">➕ Novo pedido de compra</button><button class="btnSec" onclick="tela('cockpitCompras')">🎯 Acompanhar pedidos</button><button class="btnSec" onclick="tela('relCompras')">📊 Relatórios de compras</button>
+      <button class="btnP" onclick="pcEntrar()">➕ Novo pedido de compra</button><button class="btnSec" onclick="tela('cockpitCompras')">🎯 Acompanhar pedidos</button><button class="btnSec" onclick="tela('relCompras')">📊 Relatórios de compras</button>
     </div>
     <div class="card"><b>Sugestões de compra</b><small style="color:#7A6A57;display:block;margin-bottom:6px">demanda dos refinos + reposição do mínimo − saldo · ordenado por criticidade: <b style="color:#C63A3A">falta produzir</b> › <b style="color:#D9772B">atrasado</b> › <b style="color:#B8862B">esta semana</b> › <b style="color:#3E7C45">com folga</b></small>
     ${sug.length?sug.map(m=>{const g=grade(m);const u=m.unidade||'';return `
