@@ -2010,6 +2010,52 @@ function precoValido(cfop){
   const c=String(cfop||'');
   return !CFOP_FORA_PRECO.includes(c) && c[0]!=='1' && c[0]!=='2';
 }
+/* fornecedores que ja venderam este item, com ultimo preco e variacao.
+   So CFOP de compra: amostra/brinde/devolucao ficam fora (ver §9.3 da Controladoria). */
+async function pcFornecedoresDoItem(itemId){
+  const {data}=await sb.from('nota_fiscal_compra_item')
+    .select('valor_unitario,quantidade,cfop,nota_fiscal_compra!inner(emitente_cnpj,emitente_nome,data_emissao)')
+    .eq('item_id',itemId).limit(150);
+  const por={};
+  (data||[]).forEach(r=>{
+    if(!precoValido(r.cfop)||!(Number(r.valor_unitario)>0))return;
+    const n=r.nota_fiscal_compra, k=n.emitente_cnpj;
+    if(!por[k])por[k]={cnpj:k,nome:n.emitente_nome,regs:[]};
+    por[k].regs.push({v:Number(r.valor_unitario),d:n.data_emissao});
+  });
+  const out=Object.values(por).map(o=>{
+    o.regs.sort((a,b)=>a.d<b.d?-1:1);
+    o.pri=o.regs[0]; o.ult=o.regs[o.regs.length-1]; o.n=o.regs.length;
+    o.var=o.pri.v>0?((o.ult.v-o.pri.v)/o.pri.v*100):0;
+    const f=(EST.cache.forns||[]).find(x=>x.cnpj===o.cnpj);
+    o.fid=f?f.id:null;
+    return o;
+  });
+  const melhor=out.length?Math.min.apply(null,out.map(o=>o.ult.v)):0;
+  out.forEach(o=>{o.melhor=(o.ult.v===melhor)});
+  return out.sort((a,b)=>a.ult.v-b.ult.v);
+}
+function painelForns(l,i){
+  if(!l.forns)return '';
+  if(!l.forns.length)return '<div style="margin-top:8px;font-size:12.5px;color:#7A6A57;background:#F6F1E9;border-radius:9px;padding:9px">Sem histórico de compra em nota para este item — digite o preço combinado.</div>';
+  let h='<div style="margin-top:9px;background:#F6F1E9;border-radius:9px;padding:9px">'
+    +'<div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#7A6A57;font-weight:700;margin-bottom:5px">Fornecedores deste item ('+l.forns.length+')</div>';
+  l.forns.forEach(o=>{
+    const atual=EST.pc.forn&&EST.pc.forn.cnpj===o.cnpj;
+    const corV=o.var>10?'#C63A3A':(o.var>0?'#D9772B':'#3E7C45');
+    h+='<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--linha)">'
+      +'<div style="min-width:0"><b style="font-size:13px">'+o.nome+'</b>'
+      +(o.melhor&&l.forns.length>1?' <span class="chip" style="background:#EAF3EA;color:#3E7C45;font-weight:700">MENOR</span>':'')
+      +'<div style="font-size:11.5px;color:#7A6A57">último '+brData(o.ult.d)+' · '+o.n+' nota(s) · <span style="color:'+corV+'">'+(o.var>=0?'+':'')+fmt(o.var,1)+'%</span></div></div>'
+      +'<div style="text-align:right;white-space:nowrap"><b class="mono" style="font-size:13px">'+rsC(o.ult.v)+'</b>'
+      +(atual?'<div style="font-size:11px;color:#3E7C45;font-weight:700">selecionado</div>'
+        :(o.fid?'<div><button onclick="pcUsarForn(\''+o.fid+'\')" style="border:1px solid var(--linha);background:#fff;border-radius:8px;padding:5px 9px;font-size:11.5px;margin-top:3px">Usar</button></div>'
+              :'<div style="font-size:11px;color:#B8A894">não cadastrado</div>'))
+      +'</div></div>';
+  });
+  h+='</div>';
+  return h;
+}
 async function pcPrecoSugerido(itemId,cnpj){
   if(!itemId)return null;
   const {data}=await sb.from('nota_fiscal_compra_item')
@@ -2052,7 +2098,7 @@ async function tPedidoCompra(pre){
   h+='<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:10px">'
     +'<b>Valores</b>'+seloPIN('pedidoCompra')+'</div>';
   /* fornecedor */
-  h+='<div class="card"><b>1 · Fornecedor</b>'
+  h+='<div class="card"><b>1 · Fornecedor</b><small style="color:#7A6A57;display:block">pode deixar para depois: ao adicionar o item, o painel mostra quem já vendeu e por quanto</small>'
     +'<select id="pcForn" onchange="pcTrocaForn(this.value)" style="'+inp+';margin-top:8px">'
     +'<option value="">— escolher —</option>'
     +forns.map(f=>'<option value="'+f.id+'"'+(p.forn&&p.forn.id===f.id?' selected':'')+'>'+f.nome+'</option>').join('')
@@ -2083,6 +2129,7 @@ async function tPedidoCompra(pre){
           : '<input disabled value="R$ —" style="'+inp+';color:#B8A894">')
         +'</label></div>'
         +(l.dica?'<small style="color:#7A6A57;display:block;margin-top:5px">'+l.dica+'</small>':'')
+        +painelForns(l,i)
         +'<div style="text-align:right;margin-top:6px;font-size:14px">Subtotal <b class="mono">'+rsC(sub)+'</b></div>'
         +'</div>';
     });
@@ -2114,10 +2161,17 @@ async function pcTrocaForn(id){
   tela('pedidoCompra');
 }
 async function pcAplicarPreco(l){
+  l.forns=await pcFornecedoresDoItem(l.item_id);
   const s=await pcPrecoSugerido(l.item_id,EST.pc.forn?EST.pc.forn.cnpj:null);
   if(!s){l.dica='sem preço anterior em nota — digite o combinado';return}
   if(!l.preco)l.preco=s.preco;
   l.dica='último pago '+(s.mesmoForn?'a este fornecedor':'(outro fornecedor)')+' em '+brData(s.data)+(EST.gestor===true?': R$ '+fmt(s.preco,2):'');
+}
+async function pcUsarForn(fid){
+  const f=(EST.cache.forns||[]).find(x=>x.id===fid); if(!f)return msg('Fornecedor não encontrado',true);
+  if(EST.pc.forn&&EST.pc.forn.id!==fid&&EST.pc.linhas.length>1
+     &&!confirm('O pedido já é de '+EST.pc.forn.nome+'. Trocar para '+f.nome+'? Um pedido tem um fornecedor só.'))return;
+  await pcTrocaForn(fid);
 }
 async function pcBuscar(){
   const e=document.getElementById('pcBusca'); const termo=(e&&e.value||'').trim();
@@ -2126,8 +2180,22 @@ async function pcBuscar(){
   if(error)return msg(error.message,true);
   const box=document.getElementById('pcRes');
   if(!data||!data.length){box.innerHTML='<div class="center" style="color:#7A6A57;padding:8px">Nenhum item com esse nome.</div>';return}
-  box.innerHTML=data.map(i=>'<div class="item-row"><span>'+i.nome+(i.unidade?' <small style="color:#7A6A57">('+i.unidade+')</small>':'')+'</span>'
-    +'<button class="btnP" style="min-height:auto;padding:8px 14px;font-size:13px;margin:0" onclick="pcAdicionar(\''+i.id+'\',\''+i.nome.replace(/'/g,"\\'")+'\',\''+(i.unidade||'')+'\')">Adicionar</button></div>').join('');
+  /* uma consulta so para os N resultados, nao uma por item */
+  const resumo={};
+  const nfi=await sb.from('nota_fiscal_compra_item')
+    .select('item_id,valor_unitario,cfop,nota_fiscal_compra!inner(emitente_cnpj,data_emissao)')
+    .in('item_id',data.map(i=>i.id)).limit(300);
+  (nfi.data||[]).forEach(r=>{
+    if(!precoValido(r.cfop)||!(Number(r.valor_unitario)>0))return;
+    const k=r.item_id; if(!resumo[k])resumo[k]={cnpjs:{},ult:null};
+    resumo[k].cnpjs[r.nota_fiscal_compra.emitente_cnpj]=1;
+    if(!resumo[k].ult||r.nota_fiscal_compra.data_emissao>resumo[k].ult.d)
+      resumo[k].ult={v:Number(r.valor_unitario),d:r.nota_fiscal_compra.data_emissao};
+  });
+  box.innerHTML=data.map(i=>{const R=resumo[i.id];const nf=R?Object.keys(R.cnpjs).length:0;
+    return '<div class="item-row"><span>'+i.nome+(i.unidade?' <small style="color:#7A6A57">('+i.unidade+')</small>':'')
+    +'<br><small style="color:#7A6A57">'+(nf?nf+' fornecedor(es) · último '+rsC(R.ult.v)+' em '+brData(R.ult.d):'sem histórico em nota')+'</small></span>'
+    +'<button class="btnP" style="min-height:auto;padding:8px 14px;font-size:13px;margin:0" onclick="pcAdicionar(\''+i.id+'\',\''+i.nome.replace(/'/g,"\\'")+'\',\''+(i.unidade||'')+'\')">Adicionar</button></div>'}).join('');
 }
 async function pcAdicionar(id,nome,un){
   pcColetar();
