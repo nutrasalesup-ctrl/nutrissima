@@ -301,7 +301,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-09-15 06:48 · compras';
+const APP_VERSAO='2026-09-15 07:30 · compras';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -2019,53 +2019,94 @@ async function temAcessoFiscal(){
   return EST.fiscalOk;
 }
 async function pcFornecedoresDoItem(itemId){
-  /* RPC fn_precos_item: janela estreita na nota fiscal, que e restrita a controladoria.
-     Sem o PIN do Gestor a funcao devolve fornecedor e datas com os precos em null —
-     a trava mora no banco, nao so na tela. */
+  /* RPC fn_precos_item: janela estreita na nota fiscal (restrita a controladoria).
+     Sem o PIN do Gestor a funcao zera todo campo de dinheiro no proprio servidor;
+     fornecedor, datas, aliquota efetiva e CST continuam vindo. */
   const {data,error}=await sb.rpc('fn_precos_item',{p_item:itemId,p_pin:EST.pinGestor||null});
-  if(error){console.warn('fn_precos_item',error.message);return null}
+  if(error){console.warn('fn_precos_item',error.message);return {erro:error.message}}
   const out=(data||[]).map(r=>({
     cnpj:r.fornecedor_cnpj,nome:r.fornecedor_nome,fid:r.fornecedor_id,n:r.notas,
-    ult:{v:r.ultimo_preco===null?null:Number(r.ultimo_preco),d:r.ultima_data},
-    pri:{d:r.primeira_data},
-    var:r.variacao_pct===null?null:Number(r.variacao_pct)
+    un:r.unidade,fat:Number(r.fator||1),unNota:r.unidade_nota,obs:r.fator_observacao,
+    d1:r.primeira_data,d2:r.ultima_data,
+    preco:r.preco_kg===null?null:Number(r.preco_kg),
+    custo:r.custo_kg===null?null:Number(r.custo_kg),
+    icms:r.icms_kg===null?null:Number(r.icms_kg),
+    aliq:r.aliq_efetiva===null?null:Number(r.aliq_efetiva),
+    pc:r.pc_kg===null?null:Number(r.pc_kg),
+    regime:r.pc_regime,
+    liq:r.liquido_kg===null?null:Number(r.liquido_kg),
+    var:r.variacao_pct===null?null:Number(r.variacao_pct),
+    nf:{num:r.nf_numero,qtd:r.nf_qtd===null?null:Number(r.nf_qtd),vu:r.nf_valor_unit===null?null:Number(r.nf_valor_unit),
+        vt:r.nf_valor_total===null?null:Number(r.nf_valor_total),icms:r.nf_icms===null?null:Number(r.nf_icms),
+        ipi:r.nf_ipi===null?null:Number(r.nf_ipi),st:r.nf_st===null?null:Number(r.nf_st),
+        cst:r.nf_cst,pis:r.nf_pis_cst}
   }));
-  const cp=out.filter(o=>o.ult.v!==null);
-  const melhor=cp.length?Math.min.apply(null,cp.map(o=>o.ult.v)):null;
-  out.forEach(o=>{o.melhor=(melhor!==null&&o.ult.v===melhor)});
+  const cp=out.filter(o=>o.liq!==null);
+  const melhor=cp.length?Math.min.apply(null,cp.map(o=>o.liq)):null;
+  out.forEach(o=>{o.melhor=(melhor!==null&&o.liq===melhor&&out.length>1)});
   return out;
-}
-function painelForns(l,i){
-  if(l.forns===null)return '<div style="margin-top:8px;font-size:12.5px;color:#7A6A57;background:#F6F1E9;border-radius:9px;padding:9px">🔒 O histórico de preços fica com a controladoria — este login não acessa nota fiscal. Digite o preço combinado.</div>';
-  if(!l.forns)return '';
-  if(!l.forns.length)return '<div style="margin-top:8px;font-size:12.5px;color:#7A6A57;background:#F6F1E9;border-radius:9px;padding:9px">Sem histórico de compra em nota para este item — digite o preço combinado.</div>';
-  let h='<div style="margin-top:9px;background:#F6F1E9;border-radius:9px;padding:9px">'
-    +'<div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#7A6A57;font-weight:700;margin-bottom:5px">Fornecedores deste item ('+l.forns.length+')</div>';
-  l.forns.forEach(o=>{
-    const atual=EST.pc.forn&&EST.pc.forn.cnpj===o.cnpj;
-    const corV=(o.var||0)>10?'#C63A3A':((o.var||0)>0?'#D9772B':'#3E7C45');
-    h+='<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--linha)">'
-      +'<div style="min-width:0"><b style="font-size:13px">'+o.nome+'</b>'
-      +(o.melhor&&l.forns.length>1?' <span class="chip" style="background:#EAF3EA;color:#3E7C45;font-weight:700">MENOR</span>':'')
-      +'<div style="font-size:11.5px;color:#7A6A57">último '+brData(o.ult.d)+' · '+o.n+' nota(s)'
-      +(o.var===null?'':' · <span style="color:'+corV+'">'+(o.var>=0?'+':'')+fmt(o.var,1)+'%</span>')+'</div></div>'
-      +'<div style="text-align:right;white-space:nowrap"><b class="mono" style="font-size:13px">'+(o.ult.v===null?'R$&nbsp;—':rsC(o.ult.v))+'</b>'
-      +(atual?'<div style="font-size:11px;color:#3E7C45;font-weight:700">selecionado</div>'
-        :(o.fid?'<div><button onclick="pcUsarForn(\''+o.fid+'\')" style="border:1px solid var(--linha);background:#fff;border-radius:8px;padding:5px 9px;font-size:11.5px;margin-top:3px">Usar</button></div>'
-              :'<div style="font-size:11px;color:#B8A894">não cadastrado</div>'))
-      +'</div></div>';
-  });
-  h+='</div>';
-  return h;
 }
 async function pcPrecoSugerido(itemId,cnpj,forns){
   const L=forns||await pcFornecedoresDoItem(itemId);
-  if(!L||!L.length)return null;
-  const comPreco=L.filter(o=>o.ult.v!==null);
+  if(!L||L.erro||!L.length)return null;
+  /* sugere o preco POR UNIDADE NOSSA (kg), coerente com a quantidade que o MRP pede */
+  const comPreco=L.filter(o=>o.preco!==null);
   if(!comPreco.length)return null;
   const mesmo=cnpj?comPreco.filter(o=>o.cnpj===cnpj):[];
-  const base=mesmo.length?mesmo:comPreco.slice().sort((a,b)=>a.ult.d<b.ult.d?1:-1);
-  return {preco:base[0].ult.v,data:base[0].ult.d,mesmoForn:mesmo.length>0};
+  const base=mesmo.length?mesmo:comPreco.slice().sort((a,b)=>a.d2<b.d2?1:-1);
+  return {preco:base[0].preco,data:base[0].d2,mesmoForn:mesmo.length>0};
+}
+function linhaConta(rot,val,cor,peso){
+  return '<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:1px 0">'
+    +'<span style="color:#7A6A57">'+rot+'</span>'
+    +'<b class="mono" style="color:'+(cor||'#33200F')+(peso?';font-size:13.5px':'')+'">'+val+'</b></div>';
+}
+function painelForns(l,i){
+  if(l.forns&&l.forns.erro)
+    return '<div style="margin-top:8px;font-size:12.5px;color:#C63A3A;background:#FDECEC;border-radius:9px;padding:9px">Não consegui consultar o histórico de preços: '+l.forns.erro+'. Digite o preço combinado e me avise.</div>';
+  if(!l.forns)return '';
+  if(!l.forns.length)return '<div style="margin-top:8px;font-size:12.5px;color:#7A6A57;background:#F6F1E9;border-radius:9px;padding:9px">Sem histórico de compra em nota para este item — digite o preço combinado.</div>';
+  const un=l.forns[0].un||'un';
+  let h='<div style="margin-top:9px;background:#F6F1E9;border-radius:9px;padding:10px">'
+    +'<div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#7A6A57;font-weight:700;margin-bottom:6px">Fornecedores deste item ('+l.forns.length+') · ordenado pelo custo líquido</div>';
+  l.forns.forEach(function(o){
+    const atual=EST.pc.forn&&EST.pc.forn.cnpj===o.cnpj;
+    const corV=(o.var||0)>10?'#C63A3A':((o.var||0)>0?'#D9772B':'#3E7C45');
+    h+='<div style="border-top:1px solid var(--linha);padding:8px 0">'
+      +'<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">'
+      +'<div style="min-width:0"><b style="font-size:13px">'+o.nome+'</b>'
+      +(o.melhor?' <span class="chip" style="background:#EAF3EA;color:#3E7C45;font-weight:700">MENOR CUSTO</span>':'')
+      +'<div style="font-size:11px;color:#7A6A57">última '+brData(o.d2)+' · '+o.n+' nota(s)'
+      +(o.var===null?'':' · <span style="color:'+corV+'">'+(o.var>=0?'+':'')+fmt(o.var,1)+'%</span>')+'</div></div>'
+      +(atual?'<span style="font-size:11px;color:#3E7C45;font-weight:700;white-space:nowrap">selecionado</span>'
+        :(o.fid?'<button onclick="pcUsarForn(\''+o.fid+'\')" style="border:1px solid var(--linha);background:#fff;border-radius:8px;padding:5px 9px;font-size:11.5px;white-space:nowrap">Usar</button>'
+              :'<span style="font-size:11px;color:#B8A894;white-space:nowrap">não cadastrado</span>'))
+      +'</div>'
+      +'<div style="margin-top:6px">'
+      +linhaConta('preço por '+un, o.preco===null?'R$&nbsp;—':'R$ '+fmt(o.preco,2))
+      +((o.custo!==null&&o.preco!==null&&Math.abs(o.custo-o.preco)>0.005)
+        ? linhaConta('+ IPI / ST por '+un, 'R$ '+fmt(o.custo-o.preco,2), '#D9772B') : '')
+      +linhaConta('− ICMS '+(o.aliq===null?'':fmt(o.aliq,2)+'%'), o.icms===null?'R$&nbsp;—':'R$ '+fmt(o.icms,2), '#3E7C45')
+      +linhaConta('− PIS/COFINS '+(o.regime==='tributado'?'9,25%':(o.regime==='sem_credito'?'CST '+(o.nf.pis||'—')+', sem crédito':(o.regime==='simples'?'Simples, fora':'a definir'))),
+                  o.pc===null?'R$&nbsp;—':'R$ '+fmt(o.pc,2), o.regime==='tributado'?'#3E7C45':'#B8A894')
+      +linhaConta('= custo líquido por '+un, o.liq===null?'R$&nbsp;—':'R$ '+fmt(o.liq,2), '#33200F', true)
+      +'</div>'
+      +'<details style="margin-top:6px"><summary style="font-size:11px;color:#7A6A57;cursor:pointer">conferir contra a nota</summary>'
+      +'<div style="font-size:11px;color:#7A6A57;line-height:1.5;margin-top:4px">'
+      +'NF '+(o.nf.num||'—')+' de '+brData(o.d2)+'<br>'
+      +'na nota: '+(o.nf.qtd===null?'—':fmt(o.nf.qtd))+' '+(o.unNota||'')+' × '+(o.nf.vu===null?'R$ —':'R$ '+fmt(o.nf.vu,2))+' = '+(o.nf.vt===null?'R$ —':'R$ '+fmt(o.nf.vt,2))+'<br>'
+      +'ICMS '+(o.nf.icms===null?'R$ —':'R$ '+fmt(o.nf.icms,2))+' · IPI '+(o.nf.ipi===null?'R$ —':'R$ '+fmt(o.nf.ipi,2))+' · ST '+(o.nf.st===null?'R$ —':'R$ '+fmt(o.nf.st,2))+'<br>'
+      +'CST ICMS '+(o.nf.cst||'—')+' · CST PIS/COFINS '+(o.nf.pis||'—')+'<br>'
+      +'conversão: '+(o.obs||('1 '+(o.unNota||'un')+' = '+fmt(o.fat)+' '+un))
+      +'</div></details></div>';
+  });
+  h+='<div style="border-top:1px solid var(--linha);margin-top:6px;padding-top:6px;font-size:10.5px;color:#7A6A57;line-height:1.45">'
+    +'<b>Como a conta é feita.</b> Custo = valor da nota + IPI + ST, dividido pela quantidade já convertida para '+un+'. '
+    +'Crédito de ICMS pelo valor destacado na nota; a alíquota mostrada é a efetiva sobre o valor do produto, já refletindo base reduzida. '
+    +'PIS/COFINS a 9,25% só quando o CST é 01 ou 02 — CST 04 a 09 não credita, e fornecedor do Simples fica fora, por decisão de 15/09. '
+    +'Amostra, brinde e devolução não entram em preço. <b>Isto é leitura da nota, não orientação fiscal</b> — confirmar com a contabilidade.'
+    +'</div></div>';
+  return h;
 }
 /* ---------- rascunho do pedido (memoria; nada vai ao banco ate "Criar pedido") ---------- */
 function pcNovo(){EST.pc={forn:null,cond:'',prazo:'',entrega:'',obs:'',linhas:[],abertoEm:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}}
@@ -2183,9 +2224,9 @@ async function pcTrocaForn(id){
 async function pcAplicarPreco(l){
   l.forns=await pcFornecedoresDoItem(l.item_id);
   const s=await pcPrecoSugerido(l.item_id,EST.pc.forn?EST.pc.forn.cnpj:null,l.forns);
-  if(!s){l.dica=(l.forns===null?'':'sem preço anterior em nota — digite o combinado');return}
+  if(!s){l.dica='';return}
   if(!l.preco)l.preco=s.preco;
-  l.dica='último pago '+(s.mesmoForn?'a este fornecedor':'(outro fornecedor)')+' em '+brData(s.data)+(EST.gestor===true?': R$ '+fmt(s.preco,2):'');
+  l.dica='';
 }
 async function pcUsarForn(fid){
   const f=(EST.cache.forns||[]).find(x=>x.id===fid); if(!f)return msg('Fornecedor não encontrado',true);
