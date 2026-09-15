@@ -301,7 +301,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-09-15 07:30 · compras';
+const APP_VERSAO='2026-09-15 08:10 · compras';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -2164,7 +2164,18 @@ async function tPedidoCompra(pre){
     +'<option value="">— escolher —</option>'
     +forns.map(f=>'<option value="'+f.id+'"'+(p.forn&&p.forn.id===f.id?' selected':'')+'>'+f.nome+'</option>').join('')
     +'</select>'
-    +(p.forn&&p.forn.cnpj?'<small style="color:#7A6A57;display:block;margin-top:6px">CNPJ '+p.forn.cnpj+'</small>':'')
+    +(p.forn&&p.forn.cnpj?'<small style="color:#7A6A57;display:block;margin-top:6px">CNPJ '+formataCNPJ(p.forn.cnpj)+'</small>':'')
+    +(p.novoForn
+      ? '<div style="margin-top:10px;background:#F6F1E9;border-radius:9px;padding:10px">'
+        +'<b style="font-size:13px">Cadastrar fornecedor novo</b>'
+        +'<label style="display:block;margin-top:7px"><small style="color:#7A6A57">Razão social</small>'
+        +'<input id="nfNome" placeholder="como vem na nota fiscal" style="'+inp+'"></label>'
+        +'<label style="display:block;margin-top:7px"><small style="color:#7A6A57">CNPJ</small>'
+        +'<input id="nfCnpj" inputmode="numeric" placeholder="só os números" class="mono" style="'+inp+'"></label>'
+        +'<small style="color:#7A6A57;display:block;margin-top:6px">O CNPJ é a chave: é por ele que as notas deste fornecedor vão se ligar sozinhas ao cadastro. Fornecedor novo começa sem histórico de preço — ele aparece depois da primeira nota importada.</small>'
+        +'<button class="btnP" style="margin-top:9px" onclick="pcSalvarForn()">Salvar fornecedor</button>'
+        +'<button class="btnSec" onclick="pcFormForn(false)">Cancelar</button></div>'
+      : '<button class="btnSec" style="margin-top:9px" onclick="pcFormForn(true)">➕ Cadastrar fornecedor novo</button>')
     +'</div>';
   /* itens */
   h+='<div class="card"><b>2 · Itens do pedido ('+p.linhas.length+')</b>';
@@ -2227,6 +2238,36 @@ async function pcAplicarPreco(l){
   if(!s){l.dica='';return}
   if(!l.preco)l.preco=s.preco;
   l.dica='';
+}
+function formataCNPJ(c){
+  const d=String(c||'').replace(/\D/g,'');
+  return d.length===14?d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5'):(c||'');
+}
+function pcFormForn(v){pcColetar();EST.pc.novoForn=!!v;tela('pedidoCompra')}
+async function pcSalvarForn(){
+  if(precisaOperador())return;
+  const nome=((document.getElementById('nfNome')||{}).value||'').trim();
+  const cnpj=((document.getElementById('nfCnpj')||{}).value||'').replace(/\D/g,'');
+  if(nome.length<3)return msg('Escreva a razão social como vem na nota',true);
+  if(cnpj.length!==14)return msg('CNPJ precisa ter 14 dígitos — digitados: '+cnpj.length,true);
+  const ja=await sb.from('fornecedores').select('id,nome').eq('cnpj',cnpj).maybeSingle();
+  if(ja.data){
+    EST.pc.novoForn=false;
+    EST.cache.forns=null;
+    msg('Esse CNPJ já é de '+ja.data.nome+' — selecionei ele');
+    const f=await sb.from('fornecedores').select('id,nome,cnpj').order('nome');
+    EST.cache.forns=f.data||[];
+    return pcTrocaForn(ja.data.id);
+  }
+  const {data,error}=await sb.from('fornecedores').insert({nome:nome,cnpj:cnpj}).select('id,nome,cnpj').single();
+  if(error)return msg(error.message,true);
+  await sb.from('atividades').insert({tipo:'compra',
+    descricao:'Fornecedor cadastrado: '+nome+' ('+formataCNPJ(cnpj)+')',responsavel:EST.operador});
+  const f=await sb.from('fornecedores').select('id,nome,cnpj').order('nome');
+  EST.cache.forns=f.data||[];
+  EST.pc.novoForn=false;
+  msg('✅ Fornecedor cadastrado');
+  return pcTrocaForn(data.id);
 }
 async function pcUsarForn(fid){
   const f=(EST.cache.forns||[]).find(x=>x.id===fid); if(!f)return msg('Fornecedor não encontrado',true);
