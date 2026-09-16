@@ -301,7 +301,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-09-15 09:05 · compras+cotacao';
+const APP_VERSAO='2026-09-16 16:40 · fornecedor c/ CNPJ';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -2654,13 +2654,25 @@ async function criarPedidoAvulso(){
 async function escolherFornecedor(rotulo){
   const f=EST.cache.forns||[];
   const nomes=f.map((x,i)=>(i+1)+') '+x.nome).join('\n');
-  const esc=prompt((rotulo||'Fornecedor')+':\n'+(nomes?nomes+'\n':'')+'0) Outro (digitar nome novo)\n\nDigite o número:','1');
+  const esc=prompt((rotulo||'Fornecedor')+':\n'+(nomes?nomes+'\n':'')+'0) Outro (cadastrar com CNPJ)\n\nDigite o número:','1');
   if(esc==null)return null;
   if(esc.trim()==='0'){
-    const novoNome=prompt('Nome do novo fornecedor:');
-    if(novoNome==null||!novoNome.trim())return null;
-    const {data,error}=await sb.from('fornecedores').insert({nome:novoNome.trim()}).select().single();
+    /* 16/09/2026: mesma regra de pcSalvarForn — CNPJ de 14 digitos obrigatorio e duplicata barrada.
+       Antes este caminho criava fornecedor so com nome (caso Alvilac). */
+    const cnpjTxt=prompt('CNPJ do novo fornecedor (14 dígitos, como vem na nota):');
+    if(cnpjTxt==null)return null;
+    const cnpj=cnpjTxt.replace(/\D/g,'');
+    if(cnpj.length!==14){msg('CNPJ precisa ter 14 dígitos — digitados: '+cnpj.length,true);return null;}
+    const ja=await sb.from('fornecedores').select('id,nome,cnpj').eq('cnpj',cnpj).maybeSingle();
+    if(ja.error){msg(ja.error.message,true);return null;}
+    if(ja.data){msg('Esse CNPJ já é de '+ja.data.nome+' — selecionei ele');return ja.data;}
+    const novoNome=prompt('Razão social do fornecedor (como vem na nota):');
+    if(novoNome==null)return null;
+    if(novoNome.trim().length<3){msg('Escreva a razão social como vem na nota',true);return null;}
+    const {data,error}=await sb.from('fornecedores').insert({nome:novoNome.trim(),cnpj:cnpj}).select('id,nome,cnpj').single();
     if(error){msg(error.message,true);return null;}
+    await sb.from('atividades').insert({tipo:'compra',
+      descricao:'Fornecedor cadastrado: '+data.nome+' ('+formataCNPJ(cnpj)+')',responsavel:EST.operador});
     EST.cache.forns=EST.cache.forns||[];EST.cache.forns.push(data);
     return data;
   }
