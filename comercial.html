@@ -4452,14 +4452,22 @@ async function ligarCodigo(codigo, selectId, descricao){
     .eq("codigo", codigo).is("produto_acabado_id", null).select("id");
   if(rr.error) return msg("Código ligado no de-para, mas as notas antigas não foram atualizadas: "+rr.error.message, true);
   var n = (rr.data || []).length;
-  if(!n){
-    msg("Código "+codigo+" gravado no de-para, mas NENHUMA linha de nota foi atualizada — "+
-        "pode ser permissão ou o código já estar ligado. Confira antes de seguir.", true);
+
+  /* Pedidos importados antes de o codigo existir tambem ficam orfaos. Sem este
+     segundo update, eles sumiam das analises para sempre (18/09/2026). */
+  var rp = await sb.from("vendas_pedidos").update({ produto_acabado_id: pa })
+    .eq("codigo", codigo).is("produto_acabado_id", null).select("id");
+  var np = (rp.error ? 0 : (rp.data || []).length);
+
+  if(!n && !np){
+    msg("Código "+codigo+" gravado no de-para, mas NENHUMA linha de nota ou pedido foi "+
+        "atualizada — pode ser permissão ou o código já estar ligado. Confira antes de seguir.", true);
     telaPendencias();
     return;
   }
 
-  msg("Código "+codigo+" ligado ao produto · "+n+" linha(s) de nota atualizada(s)");
+  msg("Código "+codigo+" ligado ao produto · "+n+" linha(s) de nota e "+np+" de pedido atualizada(s)"+
+      (rp.error ? " · pedidos falharam: "+rp.error.message : ""), rp.error ? true : false);
   telaPendencias();
 }
 
