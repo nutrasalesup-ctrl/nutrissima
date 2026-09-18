@@ -343,7 +343,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-09-18 · TV da linha (2 telas)';
+const APP_VERSAO='2026-09-18 · Painel da produção em 2 telas';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -388,7 +388,7 @@ async function boot(){
   sb=window.supabase.createClient(SUPA_URL,key);
   const {data:{session}}=await sb.auth.getSession();
   if(!session){return telaLogin()}
-  tela(location.hash==='#tvlinha'?'tvlinha':(location.hash==='#tv'?'tv':(location.hash==='#quadro'?'quadro':'inicio')));
+  tela(location.hash==='#tvlinha'||location.hash==='#quadro'?'quadro':(location.hash==='#quadrosemana'?'quadrosemana':(location.hash==='#tv'?'tv':'inicio')));
 }
 function telaConfig(){
   document.getElementById('app').innerHTML=`
@@ -688,7 +688,7 @@ async function sepConferirEan(l,cod,diz){
   return 'segue';
 }
 
-const TELAS={inicio:tInicio,linha:tLinha,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao,treinamento:tTreinamento,separacao:tSeparacao,relComercial:tRelComercial,quadro:tQuadro,tvlinha:tTvLinha,pedidoCompra:tPedidoCompra,cockpitCompras:tCockpitCompras,relCompras:tRelCompras};
+const TELAS={inicio:tInicio,linha:tLinha,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao,treinamento:tTreinamento,separacao:tSeparacao,relComercial:tRelComercial,quadro:tTvLinha,quadrosemana:tQuadro,tvlinha:tTvLinha,pedidoCompra:tPedidoCompra,cockpitCompras:tCockpitCompras,relCompras:tRelCompras};
 function tela(n,arg){TELAS[n](arg)}
 
 /* ================= MISTURA & REFINO (área da linha) ================= */
@@ -1014,7 +1014,8 @@ async function tInicio(){
       <button onclick="tela('linha')"><span class="ico" style="background:#F6ECD6">🌀</span><span><b>Mistura & Refino</b><small>PS, ciclos e balde — um botão por vez</small></span></button>
       <button onclick="tela('mrp')"><span class="ico" style="background:#FBEAEA">🛒</span><span><b>Compras / MRP</b><small>O que comprar, quanto e até quando</small></span></button>
       <button onclick="tela('vendas')"><span class="ico" style="background:#EAF3EA">🛍️</span><span><b>Vendas / Despacho</b><small>Demanda dos marketplaces — o que envasar</small></span></button>
-      <button onclick="tela('quadro')"><span class="ico" style="background:#FDECEC">🚦</span><span><b>Painel da produção</b><small>Cremes e potes a envasar em cores — fica na parede</small></span></button>
+      <button onclick="tela('quadro')"><span class="ico" style="background:#FDECEC">🚦</span><span><b>Painel da produção</b><small>Duas telas girando: envasar hoje e separar por canal — fica na TV</small></span></button>
+      <button onclick="tela('quadrosemana')"><span class="ico" style="background:#F1ECE2">🗓️</span><span><b>Grade da semana</b><small>O painel antigo: potes por dia de despacho, para planejar</small></span></button>
       <button onclick="tela('carteira')"><span class="ico" style="background:#E4EDF2">📑</span><span><b>Carteira de pedidos</b><small>Quem está esperando, o que venceu e o que trava</small></span></button>
       <button onclick="tela('relComercial')"><span class="ico" style="background:#E4EDF2">📊</span><span><b>Relatório comercial</b><small>Ritmo, cobrança, concentração e mix — Varejo (LBR)</small></span></button>
       <button onclick="tela('separacao')"><span class="ico" style="background:#EAF3EA">✅</span><span><b>Separar pedidos</b><small>Check no que foi pra caixa — baixa o estoque na hora</small></span></button>
@@ -1024,7 +1025,6 @@ async function tInicio(){
       <button onclick="tela('estoque')"><span class="ico" style="background:#E4EDF2">📋</span><span><b>Conferir estoque</b><small>Matéria-prima, balde e potes</small></span></button>
       <button onclick="tela('metas')"><span class="ico" style="background:#F6ECD6">🎯</span><span><b>Metas do dia</b><small>Definir o quadro (PIN do gestor)</small></span></button>
       <button onclick="tela('tv')"><span class="ico" style="background:#33200F;color:#fff">📺</span><span><b>Modo TV</b><small>Quadro do dia em tela cheia</small></span></button>
-      <button onclick="tela('tvlinha')"><span class="ico" style="background:#1E150C;color:#FFD84D">🖥️</span><span><b>TV da linha</b><small>Duas telas girando: envase de hoje e o que separar</small></span></button>
       <button onclick="tela('treinamento')"><span class="ico" style="background:#F3EAD8">📚</span><span><b>Treinamento</b><small>Procedimentos operacionais padrão (POP)</small></span></button>
     </div>
     <button class="btnSec" style="margin-top:20px" onclick="sb.auth.signOut().then(boot)">Sair da conta</button>
@@ -3001,7 +3001,7 @@ async function quadroRender(){
     <div class="qd-rodape"><b>Como ler.</b> O número grande é quantos potes faltam envasar para os pedidos daquela data, já descontado o pote pronto; a barra embaixo dele é quanto desses pedidos já tem pote, e cresce conforme as entradas no estoque são lançadas. <b>Envasados hoje</b> soma as entradas de pote do dia (Entrada no estoque e Envase); ajuste de contagem fica fora, por isso pode dar menos que o Relatório de Produção. A conta é a mesma da tela Vendas / Despacho: cada data consome primeiro o pote pronto, depois o balde, depois o que está no moinho — o mesmo creme não é prometido a duas datas. A cor é calculada: vermelho quando falta creme e o despacho é em até 2 dias (ou já passou); amarelo quando só fecha com o moinho ou falta creme com 3 dias ou mais de prazo; verde quando tem pote pronto ou creme no balde; cinza quando o produto não tem receita amarrada. Na barra do creme, a parte cheia é o balde e a parte clara é o moinho.<br>
     <b>Pedidos atrasados</b> são os que têm prazo de despacho antes de hoje e ainda não foram separados (Varejo, Shopee Full e Mercado Livre Full pela carteira; demais marketplaces pela última planilha, agrupados por plataforma e prazo, sem número de pedido). A cor de cada produto diz o que falta para liberar: verde tem pote pronto e é só separar, amarelo precisa envasar, vermelho falta creme. Os produtos desses pedidos sobem para o topo da grade com o selo ⏰ ATRASADO, na cor do que falta para liberar o pedido vencido: verde só separar, amarelo envasar, vermelho sem creme. O selo fala só do pedido vencido; as células da grade continuam sendo os dias de despacho.<br>
     <b>Premissas.</b> O saldo do balde vale o que foi lançado; a demanda vale a última importação.${Q.semBaseTot>0?` ${fmt(Q.semBaseTot,0)} potes são de produtos sem receita amarrada e ficam fora da conta de creme.`:''}<br>
-    <b>Procedência.</b> demanda_vendas + vendas_pedidos (em aberto) e vw_sku_bases, lidos agora. Para deixar fixo no tablet ou na TV: ${location.origin+location.pathname}#quadro</div>`;
+    <b>Procedência.</b> demanda_vendas + vendas_pedidos (em aberto) e vw_sku_bases, lidos agora. Esta é a grade de planejamento; o painel da TV fica em ${location.origin+location.pathname}#quadro</div>`;
 }
 
 /* ================= COBERTURA DE CREME (conta única) =================
@@ -5140,7 +5140,7 @@ async function tTvLinha(){
 }
 function hhmmAgora(){return new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
 function tvlParar(){['tvlTimer','tvlGiro','tvlRel'].forEach(k=>{if(EST[k]){clearInterval(EST[k]);EST[k]=null}});document.body.classList.remove('tvl-body')}
-function tvlSair(){tvlParar();if(location.hash)location.hash='';tela('inicio')}
+function tvlSair(){tvlParar();if(location.hash)history.replaceState(null,'',location.pathname);tela('inicio')}
 async function tvlCarregar(){
   const hj=hojeLocal();
   try{
