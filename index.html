@@ -370,7 +370,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-09-18 · Produtos separados por canal no menu';
+const APP_VERSAO='2026-09-18 · Painel: 3ª tela de atendimento por produto';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -5224,16 +5224,16 @@ async function tTvLinha(){
   EST.tvlTimer=setInterval(()=>{document.getElementById('tvlinha')?tvlCarregar():tvlParar()},TVL_MIN*60000);
   EST.tvlGiro=setInterval(()=>{
     if(!document.getElementById('tvlinha'))return tvlParar();
-    EST.tvlSlide=EST.tvlSlide?0:1;tvlPintar();
+    EST.tvlSlide=(EST.tvlSlide+1)%3;tvlPintar();
   },TVL_SEG*1000);
   EST.tvlRel=setInterval(()=>{const r=document.getElementById('tvlClock');if(r)r.textContent=hhmmAgora()},20000);
 }
 function tvlIr(n){
-  EST.tvlSlide=(n===undefined)?(EST.tvlSlide?0:1):n;
+  EST.tvlSlide=(n===undefined)?((EST.tvlSlide+1)%3):((n+3)%3);
   if(EST.tvlGiro){clearInterval(EST.tvlGiro);EST.tvlGiro=null}
   EST.tvlGiro=setInterval(()=>{
     if(!document.getElementById('tvlinha'))return tvlParar();
-    EST.tvlSlide=EST.tvlSlide?0:1;tvlPintar();
+    EST.tvlSlide=(EST.tvlSlide+1)%3;tvlPintar();
   },TVL_SEG*1000);
   tvlPintar();
 }
@@ -5249,11 +5249,11 @@ async function tvlCarregar(){
       sb.from('produto_acabado_movimentos').select('produto_acabado_id,quantidade,lote,criado_em,produto_acabado(nome)').eq('tipo','entrada').gte('criado_em',iniISO).lte('criado_em',fimISO),
       sb.from('vendas_pedidos').select('pedido_numero,cliente,canal,entrega,qtd,qtd_separada,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').in('canal',['Varejo','Shopee Full','Mercado Livre Full']).lt('entrega',hj),
       sb.from('demanda_vendas').select('plataforma,data_despacho,qtd_potes,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').neq('origem','import_varejo').lt('data_despacho',hj),
-      sb.from('vendas_pedidos').select('canal,qtd,qtd_separada,status,baixado_em').in('canal',['Varejo','Shopee Full','Mercado Livre Full']),
-      sepPiso().then(p=>sb.from('separacao_ecommerce').select('canal,potes,data').gte('data',p))
+      sb.from('vendas_pedidos').select('canal,produto_acabado_id,qtd,qtd_separada,status,baixado_em').in('canal',['Varejo','Shopee Full','Mercado Livre Full']),
+      sepPiso().then(p=>sb.from('separacao_ecommerce').select('canal,produto_acabado_id,potes,data').gte('data',p))
     ]);
     const Q=quadroMontar(C,hj,null,env.data||[],{vp:atrVp.data||[],dv:atrDv.data||[]});
-    EST.tvlD={Q:Q,canais:tvlCanais(C,hj),produtos:tvlProdutos(C,hj),sep:tvlSeparados(vpTudo.data||[],(seR&&seR.data)||[],hj),hj:hj};
+    EST.tvlD={Q:Q,canais:tvlCanais(C,hj),produtos:tvlProdutos(C,hj),sep:tvlSeparados(vpTudo.data||[],(seR&&seR.data)||[],hj),atend:tvlAtendimento(C,vpTudo.data||[],(seR&&seR.data)||[],hj),hj:hj};
     EST.tvlErro=null;EST.tvlHora=hhmmAgora();
   }catch(e){EST.tvlErro=(e&&e.message)?e.message:String(e)}
   tvlPintar();
@@ -5320,13 +5320,14 @@ function tvlRotDia(dk,hj){
 }
 function tvlPintar(){
   const alvo=document.getElementById('tvlinha');if(!alvo)return;
-  const s=EST.tvlSlide?1:0;
+  const s=(EST.tvlSlide||0)%3;
+  const TIT=['🏭 Produção — envase do dia','📦 Separação por canal','✅ Atendimento dos pedidos por produto'];
   const cab=`<div class="tvl-topo">
-      <div><h1 class="tvl-tit">${s?'📦 Separação por canal':'🏭 Produção — envase do dia'}</h1>
+      <div><h1 class="tvl-tit">${TIT[s]}</h1>
       <div class="tvl-sub">${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'})} · dados de ${EST.tvlHora||'—'} · troca a cada ${TVL_SEG} s</div></div>
-      <div class="tvl-dir"><button class="tvl-nav" onclick="tvlIr(0)">‹</button>
-      <div class="tvl-pontos"><span class="tvl-ponto${s?'':' on'}" onclick="tvlIr(0)"></span><span class="tvl-ponto${s?' on':''}" onclick="tvlIr(1)"></span></div>
-      <button class="tvl-nav" onclick="tvlIr(1)">›</button>
+      <div class="tvl-dir"><button class="tvl-nav" onclick="tvlIr(${(s+2)%3})">‹</button>
+      <div class="tvl-pontos">${[0,1,2].map(i=>`<span class="tvl-ponto${s===i?' on':''}" onclick="tvlIr(${i})"></span>`).join('')}</div>
+      <button class="tvl-nav" onclick="tvlIr(${(s+1)%3})">›</button>
       <span class="tvl-rel" id="tvlClock">${hhmmAgora()}</span>
       <button class="tvl-sair" onclick="tvlSair()">sair</button></div>
     </div>`;
@@ -5334,7 +5335,7 @@ function tvlPintar(){
     alvo.innerHTML=cab+`<div class="tvl-erro">Não consegui carregar os dados agora — ${EST.tvlErro||'—'}. Tento de novo em ${TVL_MIN} min.</div>`;
     return;
   }
-  alvo.innerHTML=cab+(s?tvlTelaB(EST.tvlD):tvlTelaA(EST.tvlD));
+  alvo.innerHTML=cab+(s===0?tvlTelaA(EST.tvlD):(s===1?tvlTelaB(EST.tvlD):tvlTelaC(EST.tvlD)));
 }
 function tvlTelaA(D){
   const Q=D.Q;
@@ -5385,6 +5386,55 @@ function tvlCanalVis(n){
   if(s.indexOf('mercado')>=0)return['#FFE600','ML'];
   if(s.indexOf('varejo')>=0)return['#4FB3FF','VJ'];
   return['#C9A227','··'];
+}
+function tvlAtendimento(C,vp,se,hj){
+  const nomes={};(C.pa.data||[]).forEach(p=>{nomes[p.id]=p.nome});
+  (C.todos||[]).forEach(d=>{const n=(d.produto_acabado||{}).nome;if(n)nomes[d.produto_acabado_id]=n});
+  const m={};
+  const get=pid=>m[pid]=m[pid]||{pid:pid,nome:nomes[pid]||'produto sem cadastro',ped:0,fez:0,prazo:null,canais:{}};
+  (C.todos||[]).forEach(d=>{
+    const g=get(d.produto_acabado_id);g.ped+=Number(d.qtd_potes)||0;
+    const dk=d.data_despacho;if(dk&&(!g.prazo||dk<g.prazo))g.prazo=dk;
+    const cn=d.plataforma||'sem canal';g.canais[cn]=(g.canais[cn]||0)+(Number(d.qtd_potes)||0);
+  });
+  (vp||[]).forEach(r=>{if(r.status!=='aberto'||!r.produto_acabado_id)return;const g=get(r.produto_acabado_id);g.fez+=Number(r.qtd_separada)||0});
+  (se||[]).forEach(r=>{if(!r.produto_acabado_id)return;const g=get(r.produto_acabado_id);g.fez+=Number(r.potes)||0;g.ped+=Number(r.potes)||0;
+    const cn=r.canal||'sem canal';g.canais[cn]=(g.canais[cn]||0)+(Number(r.potes)||0)});
+  return Object.values(m).map(g=>{
+    g.ped=Math.round(g.ped);g.fez=Math.round(g.fez);g.falta=Math.max(0,g.ped-g.fez);
+    g.pct=g.ped>0?Math.min(100,g.fez/g.ped*100):0;
+    if(g.falta<=0){g.cor='#2E8B47';g.sit='completo'}
+    else if(g.fez>0){g.cor='#F2B705';g.sit='parcial'}
+    else{g.cor='#D93636';g.sit='não começou'}
+    g.dias=g.prazo?Math.round((new Date(g.prazo+'T12:00')-new Date(hj+'T12:00'))/86400000):null;
+    g.prazoTxt=tvlUrg(g.dias)[1];g.rank=tvlUrg(g.dias)[2];
+    g.canal=Object.entries(g.canais).sort((a,b)=>b[1]-a[1]).slice(0,2).map(x=>x[0]).join(' · ');
+    return g;
+  }).filter(g=>g.ped>0).sort((a,b)=>a.rank-b.rank||b.falta-a.falta);
+}
+function tvlTelaC(D){
+  const ls=D.atend||[];
+  if(!ls.length)return '<div class="tvl-vazio">Sem pedidos em aberto.</div>';
+  const tPed=ls.reduce((s,g)=>s+g.ped,0), tFez=ls.reduce((s,g)=>s+g.fez,0);
+  const pctG=tPed>0?tFez/tPed*100:0;
+  const corG=pctG>=100?'#2E8B47':(pctG>0?'#F2B705':'#D93636');
+  const linha=g=>`<div class="tvl-lin" style="border-left-color:${g.cor}">
+      <div class="lt"><span class="rn">${g.nome}</span><span class="rq" style="color:${g.cor}">${g.pct.toFixed(0)}%</span></div>
+      <div class="tvl-bar"><div style="width:${g.pct.toFixed(1)}%;background:${g.cor}"></div></div>
+      <div class="rs">separados <b style="color:${g.cor}">${fmt(g.fez,0)}</b> de ${fmt(g.ped,0)} · faltam <b style="color:${g.cor}">${fmt(g.falta,0)}</b> · ${g.prazoTxt} · ${g.canal}</div></div>`;
+  const meio=Math.ceil(Math.min(ls.length,12)/2);
+  const col=(a,b)=>ls.slice(a,b).map(linha).join('');
+  return `<div class="tvl-kpis" style="grid-template-columns:1fr">
+      <div class="tvl-kpi" style="border-left-color:${corG};display:flex;align-items:center;gap:1.5vw">
+        <div><div class="rot">atendimento dos pedidos</div><div class="num" style="color:${corG}">${pctG.toFixed(0)}%</div></div>
+        <div style="flex:1"><div class="tvl-bar" style="height:2vh"><div style="width:${pctG.toFixed(1)}%;background:${corG}"></div></div>
+        <div class="conta">${fmt(tFez,0)} potes separados de ${fmt(tPed,0)} pedidos · faltam ${fmt(tPed-tFez,0)}</div></div>
+      </div></div>
+    <div class="tvl-2col">
+      <div class="tvl-bloco">${col(0,meio)}</div>
+      <div class="tvl-bloco">${col(meio,12)}${ls.length>12?`<div class="tvl-mais">+ ${ls.length-12} produtos</div>`:''}</div>
+    </div>
+    <div class="tvl-pe">Percentual por produto = potes já separados ÷ potes pedidos. Verde completo, amarelo parcial, vermelho ainda não começou. Conta os lançamentos da tela Produtos separados por canal desde o último import de demanda, mais o que a tela de pedido do Varejo marcou. Um pedido de Varejo lançado nas duas telas apareceria duas vezes — use a tela de pedido para Varejo e a de canal para o e-commerce.</div>`;
 }
 function tvlTelaB(D){
   const cs=D.canais, ps=D.produtos, S=D.sep||{};
