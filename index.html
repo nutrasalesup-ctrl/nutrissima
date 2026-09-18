@@ -310,6 +310,15 @@ body.tvl-body{background:#100A05;overflow:hidden}
 /* cards por dia e por canal — mesmo modelo e cores do painel */
 .tvl .qd-faixa{display:grid;grid-template-columns:repeat(auto-fit,minmax(10vw,1fr));gap:.8vw;margin:0}
 .tvl-canais{display:grid;grid-template-columns:repeat(auto-fit,minmax(20vw,1fr));gap:1vw;align-content:start}
+.tvl-2col{flex:1;min-height:0;display:grid;grid-template-columns:1fr 1.05fr;gap:1.2vw;overflow:hidden}
+.tvl-bloco{display:flex;flex-direction:column;gap:.8vh;overflow:hidden}
+.tvl-bloco h2{margin:0 0 .2vh;font-size:2.3vh;font-weight:900;color:#FFD84D}
+.tvl-row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:1vw;background:#1B130A;border-left:1.1vh solid #6B5A44;border-radius:1.2vh;padding:1vh 1.1vw}
+.tvl-row .rn{font-size:3vh;font-weight:900;line-height:1.1}
+.tvl-row .rs{font-size:1.7vh;font-weight:700;color:#A8967C;margin-top:.2vh}
+.tvl-row .rq{font-size:5.4vh;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
+.tvl-mais{font-size:1.7vh;color:#8A7A64;text-align:center}
+
 .tvl .qd-dia{border-radius:1.4vh;padding:1.2vh 1vw}
 .tvl .qd-dia-rot{font-size:2.5vh;line-height:1.1}
 .tvl .qd-dia-data{font-size:1.8vh}
@@ -348,7 +357,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-09-18 · Painel TV: cards por dia e por canal';
+const APP_VERSAO='2026-09-18 · Painel TV: dia, canal e produto';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -5157,7 +5166,7 @@ async function tvlCarregar(){
       sb.from('demanda_vendas').select('plataforma,data_despacho,qtd_potes,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').neq('origem','import_varejo').lt('data_despacho',hj)
     ]);
     const Q=quadroMontar(C,hj,null,env.data||[],{vp:atrVp.data||[],dv:atrDv.data||[]});
-    EST.tvlD={Q:Q,canais:tvlCanais(C,hj),hj:hj};
+    EST.tvlD={Q:Q,canais:tvlCanais(C,hj),produtos:tvlProdutos(C,hj),hj:hj};
     EST.tvlErro=null;EST.tvlHora=hhmmAgora();
   }catch(e){EST.tvlErro=(e&&e.message)?e.message:String(e)}
   tvlPintar();
@@ -5233,30 +5242,65 @@ function tvlTelaA(D){
     <div class="tvl-cremes"><h2>🪣 Cremes — até quando o balde aguenta</h2><div class="tvl-cremes-grid">${Q.blocoBases}</div></div>
     <div class="tvl-pe">O número grande é quanto falta envasar para os pedidos daquela data, já descontado o pote pronto; a barra é quanto já tem pote. <b>Envasados hoje</b> soma as entradas de pote do dia — ajuste de contagem fica fora. Cor calculada: vermelho falta creme com despacho em até 2 dias, amarelo só fecha com o moinho, verde tem pote ou creme no balde.</div>`;
 }
-function tvlTelaB(D){
-  const cs=D.canais;
-  if(!cs.length)return '<div class="tvl-vazio">Nenhum pedido em aberto em nenhum canal.</div>';
-  const cards=cs.slice(0,6).map(c=>{
-    const [bg,fg]=QD_COR[c.cor];
-    const chips=c.dias.filter(x=>x.dem>0).slice(0,5).map(x=>{
-      const [r1,r2]=tvlRotDia(x.dk,D.hj);const [b2,f2]=QD_COR[x.cor];
-      return `<span class="tvl-chip" style="background:${b2};color:${f2}"><b>${r1}</b> ${r2} · separar ${fmt(x.sep,0)} · envasar ${fmt(Math.round(x.aEnv),0)}</span>`;
-    }).join('');
-    return `<div class="qd-dia" style="background:${bg};color:${fg}">
-      <div class="qd-dia-rot">${c.nome.toUpperCase()}</div>
-      <div class="qd-dia-data">${fmt(c.dem,0)} potes em aberto</div>
-      <div class="qd-dia-num mono">${fmt(c.sep,0)}</div>
-      <div class="qd-dia-sub">potes a separar — já estão em pote</div>
-      <div class="qd-dia-barra" style="background:${fg}33"><div style="width:${c.pct.toFixed(1)}%;background:${fg}"></div></div>
-      <div class="qd-dia-pronto mono">faltam envasar ${fmt(c.aEnv,0)}${c.semRec>0?' · '+fmt(Math.round(c.semRec),0)+' sem receita':''}</div>
-      <div class="tvl-chips">${chips}</div>
-    </div>`;
-  }).join('');
-  const tSep=cs.reduce((s,c)=>s+c.sep,0), tEnv=cs.reduce((s,c)=>s+c.aEnv,0);
-  return `<div class="tvl-canais">${cards}</div>
-    <div class="tvl-pe"><b>Separar</b> = pedido em aberto que já tem pote pronto; <b>envasar</b> = o que falta virar pote. Quando o mesmo produto e a mesma data têm pedido de mais de um canal, o pote pronto é rateado entre eles — o banco não guarda a qual canal cada pote foi prometido. Total: ${fmt(tSep,0)} a separar e ${fmt(tEnv,0)} a envasar. Fonte: demanda_vendas + vendas_pedidos em aberto, relidos a cada ${TVL_MIN} min.</div>`;
+function tvlProdutos(C,hj){
+  const demChave={};
+  (C.todos||[]).forEach(d=>{const dk=d.data_despacho||'sem-prazo';const k=d.produto_acabado_id+'|'+dk;demChave[k]=(demChave[k]||0)+(Number(d.qtd_potes)||0)});
+  const nomes={};(C.pa.data||[]).forEach(p=>{nomes[p.id]=p.nome});
+  (C.todos||[]).forEach(d=>{const n=(d.produto_acabado||{}).nome;if(n)nomes[d.produto_acabado_id]=n});
+  const pp={};
+  (C.todos||[]).forEach(d=>{
+    const dk=d.data_despacho||'sem-prazo', k=d.produto_acabado_id+'|'+dk, a=C.ALOC[k];
+    if(!a||!a.pote)return;
+    const q=Number(d.qtd_potes)||0, tot=demChave[k]||0; if(!q||!tot)return;
+    const sep=Math.min(q,(a.pote||0)*(q/tot)); if(sep<0.5)return;
+    const p=pp[d.produto_acabado_id]=pp[d.produto_acabado_id]||{nome:nomes[d.produto_acabado_id]||'produto sem cadastro',sep:0,prazo:null,canais:{}};
+    p.sep+=sep;
+    if(dk!=='sem-prazo'&&(!p.prazo||dk<p.prazo))p.prazo=dk;
+    const cn=d.plataforma||'sem canal';p.canais[cn]=(p.canais[cn]||0)+sep;
+  });
+  return Object.values(pp).map(p=>{
+    p.sep=Math.round(p.sep);
+    p.dias=p.prazo?Math.round((new Date(p.prazo+'T12:00')-new Date(hj+'T12:00'))/86400000):null;
+    const u=tvlUrg(p.dias);p.cor=u[0];p.tag=u[1];p.rank=u[2];
+    p.canal=Object.entries(p.canais).sort((a,b)=>b[1]-a[1]).slice(0,2).map(x=>x[0]+' '+fmt(Math.round(x[1]),0)).join(' · ');
+    return p;
+  }).filter(p=>p.sep>0).sort((a,b)=>a.rank-b.rank||b.sep-a.sep);
 }
-
+function tvlUrg(dias){
+  if(dias===null)return['#8A6B3D','sem prazo',5];
+  if(dias<0)return['#D93636','⏰ vencido',0];
+  if(dias===0)return['#E06A1E','despacha hoje',1];
+  if(dias===1)return['#F2B705','amanhã',2];
+  if(dias<=3)return['#8FBF4A','em '+dias+' dias',3];
+  return['#2E8B47','em '+dias+' dias',4];
+}
+function tvlCorCanal(n){
+  const s=(n||'').toLowerCase();
+  if(s.indexOf('tiktok')>=0)return'#C77DFF';
+  if(s.indexOf('shopee')>=0)return'#FF6B3D';
+  if(s.indexOf('mercado')>=0)return'#FFE600';
+  if(s.indexOf('varejo')>=0)return'#4FB3FF';
+  return'#C9A227';
+}
+function tvlTelaB(D){
+  const cs=D.canais, ps=D.produtos;
+  const linhaCanal=c=>{
+    const cor=tvlCorCanal(c.nome);
+    const dias=c.dias.filter(x=>x.sep>0).slice(0,3).map(x=>{const [r1,r2]=tvlRotDia(x.dk,D.hj);return r1+' '+fmt(x.sep,0)}).join(' · ');
+    return `<div class="tvl-row" style="border-left-color:${cor}">
+      <div><div class="rn">${c.nome}</div><div class="rs">${dias||'—'}${c.aEnv>0?' · faltam envasar '+fmt(c.aEnv,0):''}</div></div>
+      <div class="rq" style="color:${cor}">${fmt(c.sep,0)}</div></div>`;
+  };
+  const linhaProd=p=>`<div class="tvl-row" style="border-left-color:${p.cor}">
+      <div><div class="rn">${p.nome}</div><div class="rs" style="color:${p.cor}">${p.tag} · ${p.canal}</div></div>
+      <div class="rq" style="color:${p.cor}">${fmt(p.sep,0)}</div></div>`;
+  const tot=cs.reduce((s,c)=>s+c.sep,0);
+  return `<div class="tvl-2col">
+    <div class="tvl-bloco"><h2>📦 Por canal — ${fmt(tot,0)} potes a separar</h2>${cs.length?cs.slice(0,6).map(linhaCanal).join(''):'<div class="tvl-vazio">Nada a separar.</div>'}</div>
+    <div class="tvl-bloco"><h2>🫙 Por produto — o que tirar do estoque</h2>${ps.length?ps.slice(0,8).map(linhaProd).join(''):'<div class="tvl-vazio">Nada a separar.</div>'}${ps.length>8?`<div class="tvl-mais">+ ${ps.length-8} produtos com menos potes</div>`:''}</div>
+  </div>
+  <div class="tvl-pe"><b>Separar</b> = pedido em aberto que já tem pote pronto; a cor do produto é o prazo do pedido mais apertado que o espera — vermelho vencido, laranja hoje, amarelo amanhã, verde com folga. Quando o mesmo produto e a mesma data têm pedido de mais de um canal, o pote pronto é rateado entre eles: o banco não guarda a qual canal cada pote foi prometido. Fonte: demanda_vendas + vendas_pedidos em aberto, relidos a cada ${TVL_MIN} min.</div>`;
+}
 boot();
 </script>
 </body>
