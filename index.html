@@ -318,6 +318,18 @@ body.tvl-body{background:#100A05;overflow:hidden}
 .tvl-row .rs{font-size:1.7vh;font-weight:700;color:#A8967C;margin-top:.2vh}
 .tvl-row .rq{font-size:5.4vh;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
 .tvl-mais{font-size:1.7vh;color:#8A7A64;text-align:center}
+.tvl-row{grid-template-columns:auto 1fr auto}
+.tvl-ic{width:4.6vh;height:4.6vh;border-radius:1vh;display:flex;align-items:center;justify-content:center;font-size:2vh;font-weight:900;color:#1B130A}
+.tvl-bar{height:1.1vh;background:#ffffff1a;border-radius:.6vh;overflow:hidden;margin:.5vh 0 .3vh}
+.tvl-bar div{height:100%}
+.tvl-lin{background:#1B130A;border-left:1vh solid #6B5A44;border-radius:1.2vh;padding:.75vh 1vw}
+.tvl-lin .lt{display:flex;justify-content:space-between;align-items:baseline;gap:1vw}
+.tvl-lin .rn{font-size:2.3vh;font-weight:800}
+.tvl-lin .rq{font-size:3.3vh;font-weight:900;font-variant-numeric:tabular-nums}
+.tvl-lin .rq small{font-size:1.9vh;color:#A8967C;font-weight:800}
+.tvl-lin .rs{font-size:1.55vh}
+.tvl-bloco{gap:.7vh}
+
 
 .tvl .qd-dia{border-radius:1.4vh;padding:1.2vh 1vw}
 .tvl .qd-dia-rot{font-size:2.5vh;line-height:1.1}
@@ -357,7 +369,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-09-18 · Painel TV: dia, canal e produto';
+const APP_VERSAO='2026-09-18 · Painel TV: canal com progresso + top 10';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -5159,14 +5171,15 @@ async function tvlCarregar(){
   const hj=hojeLocal();
   try{
     const iniISO=new Date(hj+'T00:00:00-03:00').toISOString(), fimISO=new Date(hj+'T23:59:59-03:00').toISOString();
-    const [C,env,atrVp,atrDv]=await Promise.all([
+    const [C,env,atrVp,atrDv,vpTudo]=await Promise.all([
       calcCobertura(),
       sb.from('produto_acabado_movimentos').select('produto_acabado_id,quantidade,lote,criado_em,produto_acabado(nome)').eq('tipo','entrada').gte('criado_em',iniISO).lte('criado_em',fimISO),
       sb.from('vendas_pedidos').select('pedido_numero,cliente,canal,entrega,qtd,qtd_separada,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').in('canal',['Varejo','Shopee Full','Mercado Livre Full']).lt('entrega',hj),
-      sb.from('demanda_vendas').select('plataforma,data_despacho,qtd_potes,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').neq('origem','import_varejo').lt('data_despacho',hj)
+      sb.from('demanda_vendas').select('plataforma,data_despacho,qtd_potes,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').neq('origem','import_varejo').lt('data_despacho',hj),
+      sb.from('vendas_pedidos').select('canal,qtd,qtd_separada,status,baixado_em').in('canal',['Varejo','Shopee Full','Mercado Livre Full'])
     ]);
     const Q=quadroMontar(C,hj,null,env.data||[],{vp:atrVp.data||[],dv:atrDv.data||[]});
-    EST.tvlD={Q:Q,canais:tvlCanais(C,hj),produtos:tvlProdutos(C,hj),hj:hj};
+    EST.tvlD={Q:Q,canais:tvlCanais(C,hj),produtos:tvlProdutos(C,hj),sep:tvlSeparados(vpTudo.data||[],hj),hj:hj};
     EST.tvlErro=null;EST.tvlHora=hhmmAgora();
   }catch(e){EST.tvlErro=(e&&e.message)?e.message:String(e)}
   tvlPintar();
@@ -5200,6 +5213,17 @@ function tvlCanais(C,hj){
     c.rank=QD_RANK[pior]*1e6+c.dem;
     return c;
   }).filter(c=>c.dem>0).sort((a,b)=>b.rank-a.rank);
+}
+function tvlSeparados(vp,hj){
+  const s={};
+  vp.forEach(r=>{
+    const c=s[r.canal]=s[r.canal]||{feito:0,total:0};
+    const q=Number(r.qtd)||0, sp=Number(r.qtd_separada)||0;
+    if(r.status==='aberto'){c.total+=q;c.feito+=sp;}
+    else if(r.baixado_em&&String(r.baixado_em).slice(0,10)===hj){c.total+=q;c.feito+=q;}
+  });
+  Object.keys(s).forEach(k=>{const x=s[k];x.pct=x.total>0?Math.min(100,x.feito/x.total*100):0});
+  return s;
 }
 function tvlCorCel(D,hj){
   const aEnv=Math.max(0,D.dem-D.pote);
@@ -5249,57 +5273,66 @@ function tvlProdutos(C,hj){
   (C.todos||[]).forEach(d=>{const n=(d.produto_acabado||{}).nome;if(n)nomes[d.produto_acabado_id]=n});
   const pp={};
   (C.todos||[]).forEach(d=>{
-    const dk=d.data_despacho||'sem-prazo', k=d.produto_acabado_id+'|'+dk, a=C.ALOC[k];
-    if(!a||!a.pote)return;
+    const dk=d.data_despacho||'sem-prazo', k=d.produto_acabado_id+'|'+dk, a=C.ALOC[k]||{pote:0};
     const q=Number(d.qtd_potes)||0, tot=demChave[k]||0; if(!q||!tot)return;
-    const sep=Math.min(q,(a.pote||0)*(q/tot)); if(sep<0.5)return;
-    const p=pp[d.produto_acabado_id]=pp[d.produto_acabado_id]||{nome:nomes[d.produto_acabado_id]||'produto sem cadastro',sep:0,prazo:null,canais:{}};
-    p.sep+=sep;
+    const sep=Math.min(q,(a.pote||0)*(q/tot));
+    const p=pp[d.produto_acabado_id]=pp[d.produto_acabado_id]||{nome:nomes[d.produto_acabado_id]||'produto sem cadastro',dem:0,sep:0,prazo:null,canais:{}};
+    p.dem+=q;p.sep+=sep;
     if(dk!=='sem-prazo'&&(!p.prazo||dk<p.prazo))p.prazo=dk;
-    const cn=d.plataforma||'sem canal';p.canais[cn]=(p.canais[cn]||0)+sep;
+    const cn=d.plataforma||'sem canal';p.canais[cn]=(p.canais[cn]||0)+q;
   });
   return Object.values(pp).map(p=>{
-    p.sep=Math.round(p.sep);
+    p.dem=Math.round(p.dem);p.sep=Math.round(p.sep);p.falta=Math.max(0,p.dem-p.sep);
+    p.pct=p.dem>0?Math.min(100,p.sep/p.dem*100):100;
+    if(p.falta<=0){p.cor='#2E8B47';p.sit='estoque cobre — pode separar tudo'}
+    else if(p.sep>0){p.cor='#F2B705';p.sit='cobre parte — faltam '+fmt(p.falta,0)+' potes'}
+    else{p.cor='#D93636';p.sit='sem pote — faltam '+fmt(p.falta,0)}
     p.dias=p.prazo?Math.round((new Date(p.prazo+'T12:00')-new Date(hj+'T12:00'))/86400000):null;
-    const u=tvlUrg(p.dias);p.cor=u[0];p.tag=u[1];p.rank=u[2];
-    p.canal=Object.entries(p.canais).sort((a,b)=>b[1]-a[1]).slice(0,2).map(x=>x[0]+' '+fmt(Math.round(x[1]),0)).join(' · ');
+    const u=tvlUrg(p.dias);p.prazoTxt=u[1];p.rank=u[2];
+    p.canal=Object.entries(p.canais).sort((a,b)=>b[1]-a[1]).slice(0,2).map(x=>x[0]).join(' · ');
     return p;
-  }).filter(p=>p.sep>0).sort((a,b)=>a.rank-b.rank||b.sep-a.sep);
+  }).filter(p=>p.dem>0).sort((a,b)=>a.rank-b.rank||b.dem-a.dem);
 }
 function tvlUrg(dias){
   if(dias===null)return['#8A6B3D','sem prazo',5];
   if(dias<0)return['#D93636','⏰ vencido',0];
-  if(dias===0)return['#E06A1E','despacha hoje',1];
+  if(dias===0)return['#E06A1E','hoje',1];
   if(dias===1)return['#F2B705','amanhã',2];
   if(dias<=3)return['#8FBF4A','em '+dias+' dias',3];
   return['#2E8B47','em '+dias+' dias',4];
 }
-function tvlCorCanal(n){
+function tvlCanalVis(n){
   const s=(n||'').toLowerCase();
-  if(s.indexOf('tiktok')>=0)return'#C77DFF';
-  if(s.indexOf('shopee')>=0)return'#FF6B3D';
-  if(s.indexOf('mercado')>=0)return'#FFE600';
-  if(s.indexOf('varejo')>=0)return'#4FB3FF';
-  return'#C9A227';
+  if(s.indexOf('tiktok')>=0)return['#C77DFF','TT'];
+  if(s.indexOf('shopee')>=0)return['#FF6B3D','SP'];
+  if(s.indexOf('mercado')>=0)return['#FFE600','ML'];
+  if(s.indexOf('varejo')>=0)return['#4FB3FF','VJ'];
+  return['#C9A227','··'];
 }
 function tvlTelaB(D){
-  const cs=D.canais, ps=D.produtos;
+  const cs=D.canais, ps=D.produtos, S=D.sep||{};
   const linhaCanal=c=>{
-    const cor=tvlCorCanal(c.nome);
-    const dias=c.dias.filter(x=>x.sep>0).slice(0,3).map(x=>{const [r1,r2]=tvlRotDia(x.dk,D.hj);return r1+' '+fmt(x.sep,0)}).join(' · ');
+    const v=tvlCanalVis(c.nome), cor=v[0];
+    const s=S[c.nome];
+    const dias=c.dias.filter(x=>x.sep>0).slice(0,3).map(x=>tvlRotDia(x.dk,D.hj)[0]+' '+fmt(x.sep,0)).join(' · ');
+    const barra=s?`<div class="tvl-bar"><div style="width:${s.pct.toFixed(1)}%;background:${cor}"></div></div>
+        <div class="rs" style="color:${cor}">separados hoje ${fmt(s.feito,0)} de ${fmt(s.total,0)} · ${s.pct.toFixed(0)}%</div>`
+      :`<div class="rs" style="color:#7A6A57">o sistema não registra separação parcial deste canal</div>`;
     return `<div class="tvl-row" style="border-left-color:${cor}">
-      <div><div class="rn">${c.nome}</div><div class="rs">${dias||'—'}${c.aEnv>0?' · faltam envasar '+fmt(c.aEnv,0):''}</div></div>
+      <div class="tvl-ic" style="background:${cor}">${v[1]}</div>
+      <div><div class="rn">${c.nome}</div><div class="rs">${dias||'—'}${c.aEnv>0?' · faltam envasar '+fmt(c.aEnv,0):''}</div>${barra}</div>
       <div class="rq" style="color:${cor}">${fmt(c.sep,0)}</div></div>`;
   };
-  const linhaProd=p=>`<div class="tvl-row" style="border-left-color:${p.cor}">
-      <div><div class="rn">${p.nome}</div><div class="rs" style="color:${p.cor}">${p.tag} · ${p.canal}</div></div>
-      <div class="rq" style="color:${p.cor}">${fmt(p.sep,0)}</div></div>`;
+  const linhaProd=p=>`<div class="tvl-lin" style="border-left-color:${p.cor}">
+      <div class="lt"><span class="rn">${p.nome}</span><span class="rq" style="color:${p.cor}">${fmt(p.sep,0)}<small>/${fmt(p.dem,0)}</small></span></div>
+      <div class="tvl-bar"><div style="width:${p.pct.toFixed(1)}%;background:${p.cor}"></div></div>
+      <div class="rs" style="color:${p.cor}">${p.prazoTxt} · ${p.sit} · ${p.canal}</div></div>`;
   const tot=cs.reduce((s,c)=>s+c.sep,0);
   return `<div class="tvl-2col">
-    <div class="tvl-bloco"><h2>📦 Por canal — ${fmt(tot,0)} potes a separar</h2>${cs.length?cs.slice(0,6).map(linhaCanal).join(''):'<div class="tvl-vazio">Nada a separar.</div>'}</div>
-    <div class="tvl-bloco"><h2>🫙 Por produto — o que tirar do estoque</h2>${ps.length?ps.slice(0,8).map(linhaProd).join(''):'<div class="tvl-vazio">Nada a separar.</div>'}${ps.length>8?`<div class="tvl-mais">+ ${ps.length-8} produtos com menos potes</div>`:''}</div>
+    <div class="tvl-bloco"><h2>📦 Por canal — ${fmt(tot,0)} potes prontos para separar</h2>${cs.length?cs.slice(0,6).map(linhaCanal).join(''):'<div class="tvl-vazio">Nada a separar.</div>'}</div>
+    <div class="tvl-bloco"><h2>🫙 10 produtos mais pedidos — estoque cobre?</h2>${ps.length?ps.slice(0,10).map(linhaProd).join(''):'<div class="tvl-vazio">Sem pedidos em aberto.</div>'}</div>
   </div>
-  <div class="tvl-pe"><b>Separar</b> = pedido em aberto que já tem pote pronto; a cor do produto é o prazo do pedido mais apertado que o espera — vermelho vencido, laranja hoje, amarelo amanhã, verde com folga. Quando o mesmo produto e a mesma data têm pedido de mais de um canal, o pote pronto é rateado entre eles: o banco não guarda a qual canal cada pote foi prometido. Fonte: demanda_vendas + vendas_pedidos em aberto, relidos a cada ${TVL_MIN} min.</div>`;
+  <div class="tvl-pe">No canal, o número grande é o que já tem pote pronto. No produto, o número é <b>pote pronto de quanto foi pedido</b> e a barra é a cobertura: verde cobre tudo, amarelo cobre parte, vermelho não tem pote. A cor do prazo vem do pedido mais apertado que espera aquele produto. Quando o mesmo produto e a mesma data têm pedido de mais de um canal, o pote é rateado entre eles — o banco não guarda a qual canal cada pote foi prometido. <b>Separados hoje</b> só existe em Varejo, Shopee Full e Mercado Livre Full; os demais marketplaces não gravam separação parcial. Fonte: demanda_vendas + vendas_pedidos, relidos a cada ${TVL_MIN} min.</div>`;
 }
 boot();
 </script>
