@@ -370,7 +370,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-09-18 · Separação por canal + painel com progresso';
+const APP_VERSAO='2026-09-18 · Produtos separados por canal no menu';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -1046,6 +1046,7 @@ async function tInicio(){
       <button onclick="tela('carteira')"><span class="ico" style="background:#E4EDF2">📑</span><span><b>Carteira de pedidos</b><small>Quem está esperando, o que venceu e o que trava</small></span></button>
       <button onclick="tela('relComercial')"><span class="ico" style="background:#E4EDF2">📊</span><span><b>Relatório comercial</b><small>Ritmo, cobrança, concentração e mix — Varejo (LBR)</small></span></button>
       <button onclick="tela('separacao')"><span class="ico" style="background:#EAF3EA">✅</span><span><b>Separar pedidos</b><small>Check no que foi pra caixa — baixa o estoque na hora</small></span></button>
+      <button onclick="tela('baixa')"><span class="ico" style="background:#FDECEC">📤</span><span><b>Produtos separados por canal</b><small>E-commerce: escolha o canal e conte os potes — pedido, separado e falta</small></span></button>
       <button onclick="tela('receber')"><span class="ico" style="background:#E7F0E4">📦</span><span><b>Receber mercadoria</b><small>Confirmar chegada das compras</small></span></button>
       <button onclick="tela('movimento')"><span class="ico" style="background:#EAE4F2">🔄</span><span><b>Entrada / Saída de Estoque</b><small>Balde, matéria-prima ou pote — escolha e conte</small></span></button>
       <button onclick="tela('producao')"><span class="ico" style="background:#EAF3EA">📊</span><span><b>Relatório de Produção</b><small>Entradas e saídas do dia — meça como foi</small></span></button>
