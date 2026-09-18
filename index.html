@@ -370,7 +370,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-09-18 · Painel da produção: 2 telas com navegação';
+const APP_VERSAO='2026-09-18 · Separação por canal + painel com progresso';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -4406,29 +4406,85 @@ function pesagemFim(lote){
 }
 
 /* ================= ENVASE ================= */
+/* ---- piso de contagem: separações valem a partir do último import de demanda ---- */
+async function sepPiso(){
+  const [a,b]=await Promise.all([
+    sb.from('atividades').select('criado_em').ilike('descricao','Demanda de vendas%').order('criado_em',{ascending:false}).limit(1),
+    sb.from('atividades').select('criado_em').ilike('descricao','Carteira Varejo%').order('criado_em',{ascending:false}).limit(1)
+  ]);
+  const ts=[(a.data||[])[0],(b.data||[])[0]].filter(Boolean).map(r=>r.criado_em).sort();
+  if(!ts.length)return hojeLocal();
+  return new Date(ts[ts.length-1]).toLocaleDateString('sv-SE',{timeZone:'America/Sao_Paulo'});
+}
+const BX_CANAIS=['Varejo','Shopee Full','Mercado Livre Full','TikTok Shop','Shopee','Mercado Libre'];
 async function tBaixa(){
-  if(!EST.bx)EST.bx={paId:null,potes:0,caixa:28};
-  const {data:pa}=await sb.from('produto_acabado').select('id,nome,linha,saldo_potes').eq('ativo',true).gt('saldo_potes',0).order('linha').order('nome');
-  EST.cache.paBaixa=pa||[];
-  const p=EST.cache.paBaixa.find(x=>x.id===EST.bx.paId);
+  if(!EST.bx)EST.bx={paId:null,potes:0,caixa:28,canal:null};
+  const piso=await sepPiso();
+  const [paR,dvR,vpR,seR]=await Promise.all([
+    sb.from('produto_acabado').select('id,nome,linha,saldo_potes').eq('ativo',true).order('linha').order('nome'),
+    sb.from('demanda_vendas').select('plataforma,produto_acabado_id,qtd_potes').eq('status','aberto').neq('origem','import_varejo'),
+    sb.from('vendas_pedidos').select('canal,produto_acabado_id,qtd,qtd_separada').eq('status','aberto').in('canal',['Varejo','Shopee Full','Mercado Livre Full']),
+    sb.from('separacao_ecommerce').select('canal,produto_acabado_id,potes').gte('data',piso)
+  ]);
+  const pedido={},sep={};
+  (dvR.data||[]).forEach(r=>{const k=(r.plataforma||'sem canal')+'|'+r.produto_acabado_id;pedido[k]=(pedido[k]||0)+(Number(r.qtd_potes)||0)});
+  (vpR.data||[]).forEach(r=>{const k=r.canal+'|'+r.produto_acabado_id;pedido[k]=(pedido[k]||0)+(Number(r.qtd)||0);sep[k]=(sep[k]||0)+(Number(r.qtd_separada)||0)});
+  (seR.data||[]).forEach(r=>{const k=r.canal+'|'+r.produto_acabado_id;sep[k]=(sep[k]||0)+(Number(r.potes)||0)});
+  EST.cache.bxPedido=pedido;EST.cache.bxSep=sep;EST.cache.bxPiso=piso;
+  const todos=paR.data||[];
+  EST.cache.paBaixa=todos;
+  const cn=EST.bx.canal;
+  const p=todos.find(x=>x.id===EST.bx.paId);
+  const totCanal=c=>{let ped=0,fez=0;Object.keys(pedido).forEach(k=>{if(k.slice(0,k.lastIndexOf('|'))===c)ped+=pedido[k]});
+    Object.keys(sep).forEach(k=>{if(k.slice(0,k.lastIndexOf('|'))===c)fez+=sep[k]});return [ped,fez]};
+  const chipsCanal=`<div class="card" style="margin-top:0"><span class="step-label">① de qual canal é a separação?</span>
+    <div class="chips" style="margin-top:8px">
+      ${BX_CANAIS.map(c=>{const [ped,fez]=totCanal(c);const falta=Math.max(0,ped-fez);
+        return `<button onclick="bxCanal('${c}')" style="${cn===c?'outline:3px solid var(--linha)':''}">${c}${ped>0?` <small>(faltam ${fmt(falta,0)})</small>`:''}</button>`}).join('')}
+      <button onclick="bxCanal('')" style="${cn===''?'outline:3px solid var(--linha)':''}">sem canal <small>(só tirar do estoque)</small></button>
+    </div>
+    ${cn?`<p style="margin:10px 0 0;font-size:12.5px;color:#7A6A57">Contando o que já foi separado desde o último import (${new Date(piso+'T12:00').toLocaleDateString('pt-BR')}).</p>`:''}
+  </div>`;
   let corpo;
-  if(!p){
-    const porLinha={};EST.cache.paBaixa.forEach(x=>{(porLinha[x.linha||'Outros']=porLinha[x.linha||'Outros']||[]).push(x)});
-    corpo=`<div class="card" style="margin-top:0"><span class="step-label">① toca no produto que você separou</span><small style="color:#7A6A57">só aparecem produtos com saldo em estoque</small></div>`+
-      (EST.cache.paBaixa.length?Object.entries(porLinha).map(([linha,items])=>`
-      <div class="card"><small style="color:#7A6A57;font-weight:700">${linha}</small><div class="chips" style="margin-top:8px">
-        ${items.map(x=>`<button onclick="bxEscolheProduto('${x.id}')">${x.nome} <small>(${fmt(x.saldo_potes,0)})</small></button>`).join('')}
-      </div></div>`).join(''):'<div class="card"><div class="center">Nenhum produto com saldo em estoque agora.</div></div>');
+  if(cn===null){
+    corpo='<div class="card"><div class="center" style="color:#7A6A57">Escolha o canal acima para ver o que ele está esperando.</div></div>';
+  }else if(!p){
+    let lista;
+    if(cn){
+      const itens=todos.map(x=>{const k=cn+'|'+x.id,ped=pedido[k]||0,fez=sep[k]||0;
+        return {x:x,ped:ped,fez:fez,falta:Math.max(0,ped-fez)}}).filter(i=>i.ped>0||i.fez>0)
+        .sort((a,b)=>b.falta-a.falta||b.ped-a.ped);
+      lista=itens.length?itens.map(i=>{
+        const pct=i.ped>0?Math.min(100,i.fez/i.ped*100):100;
+        const cor=i.falta<=0?'var(--pistache)':(i.fez>0?'#C9A227':'var(--morango)');
+        const semEstoque=i.x.saldo_potes<=0;
+        return `<button class="linha-item" onclick="bxEscolheProduto('${i.x.id}')" style="display:block;width:100%;text-align:left;border-left:7px solid ${cor};background:#fff;border-radius:12px;padding:10px 12px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><b style="font-size:15.5px">${i.x.nome}</b><b class="mono" style="font-size:20px;color:${cor}">${fmt(i.falta,0)}</b></div>
+          <div style="height:8px;background:#0000000f;border-radius:5px;overflow:hidden;margin:6px 0 4px"><div style="width:${pct.toFixed(1)}%;height:100%;background:${cor}"></div></div>
+          <small style="color:#7A6A57">pedido ${fmt(i.ped,0)} · separado ${fmt(i.fez,0)} · falta ${fmt(i.falta,0)} · estoque ${fmt(i.x.saldo_potes,0)}${semEstoque?' ⚠️ sem pote':''}</small>
+        </button>`}).join(''):'<div class="card"><div class="center">Este canal não tem pedido em aberto.</div></div>';
+    }else{
+      const comSaldo=todos.filter(x=>Number(x.saldo_potes)>0);
+      const porLinha={};comSaldo.forEach(x=>{(porLinha[x.linha||'Outros']=porLinha[x.linha||'Outros']||[]).push(x)});
+      lista=comSaldo.length?Object.entries(porLinha).map(([linha,items])=>`
+        <div class="card"><small style="color:#7A6A57;font-weight:700">${linha}</small><div class="chips" style="margin-top:8px">
+          ${items.map(x=>`<button onclick="bxEscolheProduto('${x.id}')">${x.nome} <small>(${fmt(x.saldo_potes,0)})</small></button>`).join('')}
+        </div></div>`).join(''):'<div class="card"><div class="center">Nenhum produto com saldo em estoque agora.</div></div>';
+    }
+    corpo=`<div class="card"><span class="step-label">② toca no produto que você separou</span><small style="color:#7A6A57">${cn?'ordenado pelo que mais falta neste canal':'só aparecem produtos com saldo em estoque'}</small></div>${lista}`;
   }else{
+    const k=(cn||'')+'|'+p.id, ped=pedido[k]||0, fez=sep[k]||0, falta=Math.max(0,ped-fez);
     corpo=`<div class="card" style="text-align:center;margin-top:0">
-      <span class="step-label" style="margin-bottom:2px">produto</span><b style="font-size:20px">${p.nome}</b>
+      <span class="step-label" style="margin-bottom:2px">produto${cn?' · '+cn:''}</span><b style="font-size:20px">${p.nome}</b>
+      ${cn&&ped>0?`<p style="margin:8px 0 0;font-size:13px;color:#7A6A57">pedido <b>${fmt(ped,0)}</b> · já separado <b>${fmt(fez,0)}</b> · falta <b style="color:var(--morango)">${fmt(falta,0)}</b></p>`:''}
       <p style="color:#7A6A57;margin:10px 0 0;font-size:12.5px">em estoque agora</p><b class="mono">${fmt(p.saldo_potes,0)} potes</b>
-      <span class="step-label" style="margin:18px 0 2px">② conte em unidades (a caixa é só um atalho)</span>
+      <span class="step-label" style="margin:18px 0 2px">③ conte em unidades (a caixa é só um atalho)</span>
       <div style="font-size:60px;font-weight:900;margin:2px 0 2px;color:var(--morango);line-height:1">${EST.bx.potes||0}</div>
       <p style="color:#7A6A57;margin:0 0 16px;font-size:12.5px">potes separados pra tirar do estoque</p>
       <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
         <button class="btnP" style="min-height:64px;font-size:19px;padding:0 22px;background:var(--morango);border-color:var(--morango)" onclick="bxAdd(${EST.bx.caixa})">📦 +1 caixa (${EST.bx.caixa})</button>
         <button class="btnSec" style="min-height:64px;font-size:19px;padding:0 20px" onclick="bxAdd(1)">+1 pote</button>
+        ${cn&&falta>0?`<button class="btnSec" style="min-height:64px;font-size:19px;padding:0 20px" onclick="bxSetPotes(${falta})">tudo que falta (${fmt(falta,0)})</button>`:''}
       </div>
       <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;align-items:center">
         <button class="btnSec" style="min-width:52px;min-height:48px" onclick="bxAdd(-1)">−1</button>
@@ -4437,18 +4493,21 @@ async function tBaixa(){
       </div>
       ${EST.bx.potes>p.saldo_potes?`<p style="color:var(--morango);font-size:13px;margin-top:10px">⚠️ Isso é mais do que tem em estoque (${fmt(p.saldo_potes,0)}). Confere a contagem antes de confirmar.</p>`:''}
       <p style="margin-top:14px"><a href="#" onclick="bxMudarCaixa();return false" style="color:#7A6A57;font-size:12.5px">caixa tem ${EST.bx.caixa} potes · toque pra mudar</a></p>
-      <button class="btnP" style="margin-top:16px;min-height:56px;font-size:18px;width:100%;background:var(--morango);border-color:var(--morango)" ${!(EST.bx.potes>0)?'disabled':''} onclick="confBaixa()">📤 Confirmar baixa</button>
+      <button class="btnP" style="margin-top:16px;min-height:56px;font-size:18px;width:100%;background:var(--morango);border-color:var(--morango)" ${!(EST.bx.potes>0)?'disabled':''} onclick="confBaixa()">📤 Confirmar separação</button>
     </div>`;
   }
   document.getElementById('app').innerHTML=`
-  ${trilha('Baixa')}${topo('Produtos separados','tirou do estoque pra separar/despachar? anote aqui')}
+  ${trilha('Baixa')}${topo('Produtos separados','escolha o canal, conte os potes e confirme')}
   <main>
-    ${p?`<button class="btnSec" onclick="bxVoltar()">← trocar produto</button>`:`<div class="card" style="margin-top:0;border-left:7px solid var(--pistache)"><b>Separando um pedido do varejo?</b><p style="margin:6px 0 10px;font-size:13px;color:#7A6A57">Use a tela de pedido: ela mostra o que cada cliente pediu, marca o que já foi pra caixa e deixa o resto pendente.</p><button class="btnP" style="min-height:52px;width:100%" onclick="tela('separacao')">📦 Separar por pedido</button></div>`}
+    ${p?`<button class="btnSec" onclick="bxVoltar()">← trocar produto</button>`:''}
+    ${chipsCanal}
+    ${cn==='Varejo'?`<div class="card" style="border-left:7px solid var(--pistache)"><b>Separando um pedido do varejo?</b><p style="margin:6px 0 10px;font-size:13px;color:#7A6A57">A tela de pedido mostra o que cada cliente pediu e deixa o resto pendente.</p><button class="btnP" style="min-height:52px;width:100%" onclick="tela('separacao')">📦 Separar por pedido</button></div>`:''}
     ${corpo}
   </main>`;
 }
-function bxEscolheProduto(id){EST.bx={paId:id,potes:0,caixa:EST.bx.caixa||28};tela('baixa')}
-function bxVoltar(){EST.bx={paId:null,potes:0,caixa:EST.bx?.caixa||28};tela('baixa')}
+function bxCanal(c){EST.bx={paId:null,potes:0,caixa:EST.bx?.caixa||28,canal:c};tela('baixa')}
+function bxEscolheProduto(id){EST.bx={paId:id,potes:0,caixa:EST.bx.caixa||28,canal:EST.bx.canal};tela('baixa')}
+function bxVoltar(){EST.bx={paId:null,potes:0,caixa:EST.bx?.caixa||28,canal:EST.bx?.canal};tela('baixa')}
 function bxAdd(n){EST.bx.potes=Math.max(0,(EST.bx.potes||0)+n);tela('baixa')}
 function bxSetPotes(v){EST.bx.potes=Math.max(0,Math.round(parseNumBR(v))||0);tela('baixa')}
 function bxZerar(){EST.bx.potes=0;tela('baixa')}
@@ -4458,10 +4517,13 @@ async function confBaixa(){
   const p=EST.cache.paBaixa.find(x=>x.id===EST.bx.paId);if(!p)return;
   const n=EST.bx.potes;if(!n||n<=0)return msg('Conte pelo menos 1 pote',true);
   if(!await travaEstoque())return;
-  const {error}=await sb.rpc('baixa_despacho',{p_pa:p.id,p_potes:n,p_responsavel:EST.operador});
+  const cn=EST.bx.canal;
+  const {error}=cn
+    ? await sb.rpc('separar_canal',{p_pa:p.id,p_canal:cn,p_potes:n,p_responsavel:EST.operador})
+    : await sb.rpc('baixa_despacho',{p_pa:p.id,p_potes:n,p_responsavel:EST.operador});
   if(error)return msg(error.message,true);
-  msg('✅ Baixa de '+n+' potes de '+p.nome+' registrada');
-  EST.bx={paId:null,potes:0,caixa:EST.bx.caixa};
+  msg('✅ '+n+' potes de '+p.nome+(cn?' separados para '+cn:' baixados'));
+  EST.bx={paId:null,potes:0,caixa:EST.bx.caixa,canal:cn};
   tela('baixa');
 }
 const MV_CONF={
@@ -5181,15 +5243,16 @@ async function tvlCarregar(){
   const hj=hojeLocal();
   try{
     const iniISO=new Date(hj+'T00:00:00-03:00').toISOString(), fimISO=new Date(hj+'T23:59:59-03:00').toISOString();
-    const [C,env,atrVp,atrDv,vpTudo]=await Promise.all([
+    const [C,env,atrVp,atrDv,vpTudo,seR]=await Promise.all([
       calcCobertura(),
       sb.from('produto_acabado_movimentos').select('produto_acabado_id,quantidade,lote,criado_em,produto_acabado(nome)').eq('tipo','entrada').gte('criado_em',iniISO).lte('criado_em',fimISO),
       sb.from('vendas_pedidos').select('pedido_numero,cliente,canal,entrega,qtd,qtd_separada,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').in('canal',['Varejo','Shopee Full','Mercado Livre Full']).lt('entrega',hj),
       sb.from('demanda_vendas').select('plataforma,data_despacho,qtd_potes,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').neq('origem','import_varejo').lt('data_despacho',hj),
-      sb.from('vendas_pedidos').select('canal,qtd,qtd_separada,status,baixado_em').in('canal',['Varejo','Shopee Full','Mercado Livre Full'])
+      sb.from('vendas_pedidos').select('canal,qtd,qtd_separada,status,baixado_em').in('canal',['Varejo','Shopee Full','Mercado Livre Full']),
+      sepPiso().then(p=>sb.from('separacao_ecommerce').select('canal,potes,data').gte('data',p))
     ]);
     const Q=quadroMontar(C,hj,null,env.data||[],{vp:atrVp.data||[],dv:atrDv.data||[]});
-    EST.tvlD={Q:Q,canais:tvlCanais(C,hj),produtos:tvlProdutos(C,hj),sep:tvlSeparados(vpTudo.data||[],hj),hj:hj};
+    EST.tvlD={Q:Q,canais:tvlCanais(C,hj),produtos:tvlProdutos(C,hj),sep:tvlSeparados(vpTudo.data||[],(seR&&seR.data)||[],hj),hj:hj};
     EST.tvlErro=null;EST.tvlHora=hhmmAgora();
   }catch(e){EST.tvlErro=(e&&e.message)?e.message:String(e)}
   tvlPintar();
@@ -5224,7 +5287,7 @@ function tvlCanais(C,hj){
     return c;
   }).filter(c=>c.dem>0).sort((a,b)=>b.rank-a.rank);
 }
-function tvlSeparados(vp,hj){
+function tvlSeparados(vp,se,hj){
   const s={};
   vp.forEach(r=>{
     const c=s[r.canal]=s[r.canal]||{feito:0,total:0};
@@ -5232,6 +5295,7 @@ function tvlSeparados(vp,hj){
     if(r.status==='aberto'){c.total+=q;c.feito+=sp;}
     else if(r.baixado_em&&String(r.baixado_em).slice(0,10)===hj){c.total+=q;c.feito+=q;}
   });
+  (se||[]).forEach(r=>{const c=s[r.canal]=s[r.canal]||{feito:0,total:0};const q=Number(r.potes)||0;c.feito+=q;c.total+=q;});
   Object.keys(s).forEach(k=>{const x=s[k];x.pct=x.total>0?Math.min(100,x.feito/x.total*100):0});
   return s;
 }
@@ -5329,7 +5393,7 @@ function tvlTelaB(D){
     const dias=c.dias.filter(x=>x.sep>0).slice(0,3).map(x=>tvlRotDia(x.dk,D.hj)[0]+' '+fmt(x.sep,0)).join(' · ');
     const barra=s?`<div class="tvl-bar"><div style="width:${s.pct.toFixed(1)}%;background:${cor}"></div></div>
         <div class="rs" style="color:${cor}">separados hoje ${fmt(s.feito,0)} de ${fmt(s.total,0)} · ${s.pct.toFixed(0)}%</div>`
-      :`<div class="rs" style="color:#7A6A57">o sistema não registra separação parcial deste canal</div>`;
+      :`<div class="rs" style="color:#7A6A57">nada separado ainda desde o último import</div>`;
     return `<div class="tvl-row" style="border-left-color:${cor}">
       <div class="tvl-ic" style="background:${cor}">${v[1]}</div>
       <div><div class="rn">${c.nome}</div><div class="rs">${dias||'—'}${c.aEnv>0?' · faltam envasar '+fmt(c.aEnv,0):''}</div>${barra}</div>
@@ -5344,7 +5408,7 @@ function tvlTelaB(D){
     <div class="tvl-bloco"><h2>📦 Por canal — ${fmt(tot,0)} potes prontos para separar</h2>${cs.length?cs.slice(0,6).map(linhaCanal).join(''):'<div class="tvl-vazio">Nada a separar.</div>'}</div>
     <div class="tvl-bloco"><h2>🫙 10 produtos mais pedidos — estoque cobre?</h2>${ps.length?ps.slice(0,10).map(linhaProd).join(''):'<div class="tvl-vazio">Sem pedidos em aberto.</div>'}</div>
   </div>
-  <div class="tvl-pe">No canal, o número grande é o que já tem pote pronto. No produto, o número é <b>pote pronto de quanto foi pedido</b> e a barra é a cobertura: verde cobre tudo, amarelo cobre parte, vermelho não tem pote. A cor do prazo vem do pedido mais apertado que espera aquele produto. Quando o mesmo produto e a mesma data têm pedido de mais de um canal, o pote é rateado entre eles — o banco não guarda a qual canal cada pote foi prometido. <b>Separados hoje</b> só existe em Varejo, Shopee Full e Mercado Livre Full; os demais marketplaces não gravam separação parcial. Fonte: demanda_vendas + vendas_pedidos, relidos a cada ${TVL_MIN} min.</div>`;
+  <div class="tvl-pe">No canal, o número grande é o que já tem pote pronto. No produto, o número é <b>pote pronto de quanto foi pedido</b> e a barra é a cobertura: verde cobre tudo, amarelo cobre parte, vermelho não tem pote. A cor do prazo vem do pedido mais apertado que espera aquele produto. Quando o mesmo produto e a mesma data têm pedido de mais de um canal, o pote é rateado entre eles — o banco não guarda a qual canal cada pote foi prometido. <b>Separados</b> conta o que foi lançado na tela Produtos separados desde o último import de demanda, mais o que a tela de pedido do Varejo já marcou. Fonte: demanda_vendas + vendas_pedidos, relidos a cada ${TVL_MIN} min.</div>`;
 }
 boot();
 </script>
