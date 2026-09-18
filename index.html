@@ -291,47 +291,52 @@ body{overflow-x:hidden}
 .qd-atr-item{font-size:14px;border-radius:10px;padding:5px 10px}
 .qd-atr-ok{color:#7ED957;font-size:15px;font-weight:800;margin-bottom:10px}
 .qd-selo-atr{display:block;width:fit-content;background:#D93636;color:#fff;font-size:11px;font-weight:900;border-radius:6px;padding:1px 6px;margin-bottom:3px;white-space:nowrap}
-/* ===== TV da linha — 2 telas girando (32", sem rolagem) ===== */
+/* ===== Painel da produção na TV — 2 telas girando (sem rolagem) ===== */
 body.tvl-body{background:#100A05;overflow:hidden}
-.tvl{position:fixed;inset:0;background:#120C06;color:#F4ECE0;display:flex;flex-direction:column;padding:2.2vh 1.4vw;gap:1.3vh;overflow:hidden}
+.tvl{position:fixed;inset:0;background:#120C06;color:#F4ECE0;display:flex;flex-direction:column;padding:1.8vh 1.2vw;gap:1.2vh;overflow:hidden}
 .tvl-carga{font-size:4vh;color:#C9B99F;padding:8vh 2vw}
+.tvl-erro{background:#3A1414;border:2px solid #D93636;border-radius:1.4vh;padding:2vh 1.5vw;font-size:2.6vh;font-weight:800}
 .tvl-topo{display:flex;justify-content:space-between;align-items:center;gap:1vw}
 .tvl-tit{font-size:2.9vh;font-weight:900;color:#FFD84D;margin:0}
-.tvl-sub{font-size:1.8vh;color:#A8967C;margin-top:.3vh}
+.tvl-sub{font-size:1.7vh;color:#A8967C;margin-top:.3vh}
 .tvl-dir{display:flex;align-items:center;gap:1.2vw}
-.tvl-rel{font-size:3.4vh;font-weight:900;font-variant-numeric:tabular-nums;color:#F4ECE0}
+.tvl-rel{font-size:3.2vh;font-weight:900;font-variant-numeric:tabular-nums}
 .tvl-pontos{display:flex;gap:.7vw}
 .tvl-ponto{width:1.3vh;height:1.3vh;border-radius:50%;background:#4A3A28}
 .tvl-ponto.on{background:#FFD84D}
-.tvl-sair{border:1px solid #ffffff2e;background:transparent;color:#8A7A64;border-radius:1vh;padding:.7vh 1vw;font-size:1.6vh;cursor:pointer}
-.tvl-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:1vw}
-.tvl-kpi{background:#1E150C;border-left:1.1vh solid #6B5A44;border-radius:1.4vh;padding:1.2vh 1.3vw}
-.tvl-kpi .rot{font-size:1.9vh;font-weight:800;color:#C9B99F;text-transform:uppercase;letter-spacing:.06em}
-.tvl-kpi .num{font-size:9.5vh;font-weight:900;line-height:1.02;font-variant-numeric:tabular-nums}
-.tvl-kpi .un{font-size:2.4vh;font-weight:800;color:#A8967C;margin-left:.5vw}
-.tvl-kpi .conta{font-size:1.75vh;color:#A8967C;line-height:1.3}
-.tvl-corpo{flex:1;display:grid;gap:1vh;align-content:start;overflow:hidden}
-.tvl-li{display:grid;grid-template-columns:1fr auto;align-items:center;gap:1.2vw;background:#1B130A;border-left:1.1vh solid #6B5A44;border-radius:1.2vh;padding:1.05vh 1.2vw}
-.tvl-li .nm{font-size:3.1vh;font-weight:800;line-height:1.1}
-.tvl-li .tg{font-size:1.65vh;font-weight:900;text-transform:uppercase;letter-spacing:.07em;margin-top:.3vh}
-.tvl-li .qt{font-size:5.6vh;font-weight:900;line-height:1;font-variant-numeric:tabular-nums;text-align:right}
-.tvl-li .qtr{font-size:1.6vh;font-weight:800;color:#A8967C;text-align:right;display:block}
-.tvl-feito{background:#14301A;border-left:1.1vh solid #3FBF5F;border-radius:1.2vh;padding:1vh 1.2vw;font-size:2.1vh;font-weight:700;color:#BFF0C9}
-.tvl-2col{flex:1;display:grid;grid-template-columns:1.15fr 1fr;gap:1.2vw;overflow:hidden}
-.tvl-bloco{display:flex;flex-direction:column;gap:1vh;overflow:hidden}
-.tvl-bloco h2{margin:0;font-size:2.4vh;font-weight:900;color:#FFD84D;letter-spacing:.02em}
-.tvl-canal{display:grid;grid-template-columns:1fr auto;align-items:center;gap:1vw;border-radius:1.2vh;padding:1.3vh 1.3vw;background:#1B130A;border-left:1.1vh solid #6B5A44}
-.tvl-canal .cn{font-size:3.4vh;font-weight:900}
-.tvl-canal .cs{font-size:1.7vh;font-weight:700;color:#A8967C}
-.tvl-canal .cq{font-size:7vh;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
-.tvl-creme{border-radius:1.2vh;padding:1.2vh 1.3vw;background:#1B130A;border-left:1.1vh solid #D93636}
-.tvl-creme .cn{font-size:2.9vh;font-weight:900}
-.tvl-creme .cq{font-size:4.4vh;font-weight:900;line-height:1.05;font-variant-numeric:tabular-nums;color:#FF8A6B}
-.tvl-creme .cd{font-size:1.8vh;color:#C9B99F}
-.tvl-ok{background:#14301A;border-left:1.1vh solid #3FBF5F;border-radius:1.2vh;padding:1.6vh 1.3vw;font-size:2.4vh;font-weight:800;color:#BFF0C9}
-.tvl-vazio{color:#8A7A64;font-size:2.2vh;padding:2vh 0}
-.tvl-pe{font-size:1.6vh;color:#7A6A57;line-height:1.35}
-.tvl-mais{font-size:1.9vh;color:#8A7A64;text-align:center}
+.tvl-sair{border:1px solid #ffffff2e;background:transparent;color:#8A7A64;border-radius:1vh;padding:.6vh 1vw;font-size:1.5vh;cursor:pointer}
+.tvl-vazio{color:#8A7A64;font-size:2.4vh;padding:3vh 0}
+.tvl-pe{font-size:1.5vh;color:#7A6A57;line-height:1.35;margin-top:auto}
+/* cards por dia e por canal — mesmo modelo e cores do painel */
+.tvl .qd-faixa{display:grid;grid-template-columns:repeat(auto-fit,minmax(10vw,1fr));gap:.8vw;margin:0}
+.tvl-canais{display:grid;grid-template-columns:repeat(auto-fit,minmax(20vw,1fr));gap:1vw;align-content:start}
+.tvl .qd-dia{border-radius:1.4vh;padding:1.2vh 1vw}
+.tvl .qd-dia-rot{font-size:2.5vh;line-height:1.1}
+.tvl .qd-dia-data{font-size:1.8vh}
+.tvl .qd-dia-num{font-size:7.4vh;margin-top:.5vh}
+.tvl .qd-dia-sub{font-size:1.6vh}
+.tvl .qd-dia-barra{height:1.3vh;margin-top:.7vh}
+.tvl .qd-dia-pronto{font-size:1.7vh;margin-top:.5vh}
+.tvl .qd-dia-frase{font-size:1.7vh;margin-top:.6vh}
+.tvl-chips{display:flex;flex-wrap:wrap;gap:.4vw;margin-top:.9vh}
+.tvl-chip{font-size:1.45vh;font-weight:800;border-radius:1vh;padding:.4vh .6vw;border:1px solid #00000022}
+/* envasados hoje */
+.tvl .qd-env{padding:1.1vh 1.2vw;margin:0;border-radius:1.4vh;gap:1vw}
+.tvl .qd-env-rot{font-size:2.2vh}
+.tvl .qd-env b{font-size:6vh}
+.tvl .qd-env-un{font-size:2vh}
+.tvl .qd-env-ult{font-size:1.9vh}
+.tvl .qd-env-aj{font-size:1.6vh}
+/* cremes */
+.tvl-cremes{flex:1;min-height:0;overflow:hidden;background:#ffffff0d;border:1px solid #ffffff1f;border-radius:1.4vh;padding:1.1vh 1.2vw}
+.tvl-cremes h2{margin:0 0 1vh;font-size:2.3vh;color:#FFD84D}
+.tvl-cremes-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(21vw,1fr));gap:.4vh 1.4vw;align-content:start;overflow:hidden}
+.tvl .qd-base{border-left-width:.9vh;padding:.2vh 0 .2vh 1vw;margin-bottom:.8vh}
+.tvl .qd-base-top{font-size:2.1vh}
+.tvl .qd-tag{font-size:1.4vh;padding:.3vh .7vw}
+.tvl .qd-barra{height:1.5vh;margin:.5vh 0 .3vh}
+.tvl .qd-base-txt{font-size:1.75vh}
+.tvl .qd-base-conta{font-size:1.5vh}
 
 </style>
 </head>
@@ -343,7 +348,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-09-18 · Painel da produção em 2 telas';
+const APP_VERSAO='2026-09-18 · Painel TV: cards por dia e por canal';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -5121,15 +5126,15 @@ async function tvRender(){
   </div>`;
 }
 
-/* ================= TV DA LINHA (2 telas, giro de 30 s) =================
-   Não recalcula nada: usa calcCobertura() (mesma conta da tela Vendas/Despacho
-   e do Painel da produção) e as entradas de pote do dia. */
+/* ================= PAINEL DA PRODUÇÃO NA TV (2 telas, giro de 30 s) =================
+   Não recalcula nada: usa calcCobertura() + quadroMontar() — os mesmos cards e cores
+   da grade da semana. A tela 2 reparte a mesma conta por canal. */
 const TVL_SEG=30, TVL_MIN=3;
 async function tTvLinha(){
   tvlParar();
   EST.tvlSlide=0;
   document.body.classList.add('tvl-body');
-  document.getElementById('app').innerHTML='<div class="tvl" id="tvlinha"><div class="tvl-carga">Carregando o painel da linha…</div></div>';
+  document.getElementById('app').innerHTML='<div class="tvl" id="tvlinha"><div class="tvl-carga">Carregando o painel da produção…</div></div>';
   await tvlCarregar();
   EST.tvlTimer=setInterval(()=>{document.getElementById('tvlinha')?tvlCarregar():tvlParar()},TVL_MIN*60000);
   EST.tvlGiro=setInterval(()=>{
@@ -5145,132 +5150,111 @@ async function tvlCarregar(){
   const hj=hojeLocal();
   try{
     const iniISO=new Date(hj+'T00:00:00-03:00').toISOString(), fimISO=new Date(hj+'T23:59:59-03:00').toISOString();
-    const [C,env]=await Promise.all([
+    const [C,env,atrVp,atrDv]=await Promise.all([
       calcCobertura(),
-      sb.from('produto_acabado_movimentos').select('produto_acabado_id,quantidade,lote,criado_em,produto_acabado(nome)').eq('tipo','entrada').gte('criado_em',iniISO).lte('criado_em',fimISO)
+      sb.from('produto_acabado_movimentos').select('produto_acabado_id,quantidade,lote,criado_em,produto_acabado(nome)').eq('tipo','entrada').gte('criado_em',iniISO).lte('criado_em',fimISO),
+      sb.from('vendas_pedidos').select('pedido_numero,cliente,canal,entrega,qtd,qtd_separada,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').in('canal',['Varejo','Shopee Full','Mercado Livre Full']).lt('entrega',hj),
+      sb.from('demanda_vendas').select('plataforma,data_despacho,qtd_potes,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').neq('origem','import_varejo').lt('data_despacho',hj)
     ]);
-    EST.tvlD=tvlMontar(C,hj,env.data||[]);EST.tvlErro=null;EST.tvlHora=hhmmAgora();
+    const Q=quadroMontar(C,hj,null,env.data||[],{vp:atrVp.data||[],dv:atrDv.data||[]});
+    EST.tvlD={Q:Q,canais:tvlCanais(C,hj),hj:hj};
+    EST.tvlErro=null;EST.tvlHora=hhmmAgora();
   }catch(e){EST.tvlErro=(e&&e.message)?e.message:String(e)}
   tvlPintar();
   try{if(navigator.wakeLock&&(!EST.quadroWake||EST.quadroWake.released))EST.quadroWake=await navigator.wakeLock.request('screen')}catch(e){}
 }
-function tvlMontar(C,hj,envHoje){
-  const nome={};(C.pa.data||[]).forEach(p=>{nome[p.id]=p.nome});
-  (C.todos||[]).forEach(d=>{const n=(d.produto_acabado||{}).nome;if(n)nome[d.produto_acabado_id]=n});
-  /* ---- envasados hoje (ajuste de contagem fica fora) ---- */
-  const envPid={};let totEnv=0,pri=null,ult=null;
-  (envHoje||[]).forEach(m=>{
-    const q=Number(m.quantidade)||0;
-    if(String(m.lote||'').toUpperCase()==='AJUSTE')return;
-    totEnv+=q;envPid[m.produto_acabado_id]=(envPid[m.produto_acabado_id]||0)+q;
-    if(!pri||m.criado_em<pri.criado_em)pri=m;
-    if(!ult||m.criado_em>ult.criado_em)ult=m;
-  });
-  const hAgora=new Date();
-  const horas=pri?Math.max(.5,(hAgora-new Date(pri.criado_em))/3600000):0;
-  const ritmo=pri?totEnv/horas:0;
-  /* ---- falta envasar, por produto, sobre TODA a carteira em aberto ---- */
-  const porPid={};
-  Object.keys(C.ALOC).forEach(k=>{
-    const a=C.ALOC[k], corte=k.lastIndexOf('|'), pid=k.slice(0,corte), dk=k.slice(corte+1);
-    const falta=Math.max(0,(a.dem||0)-(a.pote||0));
-    const p=porPid[pid]=porPid[pid]||{pid:pid,nome:nome[pid]||'produto sem cadastro',falta:0,semCreme:0,prazo:null};
-    p.falta+=falta;p.semCreme+=(a.falta||0);
-    if(falta>0&&dk!=='sem-prazo'&&(!p.prazo||dk<p.prazo))p.prazo=dk;
-  });
-  const lista=Object.values(porPid).filter(p=>p.falta>0).map(p=>{
-    p.envasado=envPid[p.pid]||0;
-    p.dias=p.prazo?Math.round((new Date(p.prazo+'T12:00')-new Date(hj+'T12:00'))/86400000):null;
-    const u=tvlUrgencia(p.dias,p.semCreme>0);
-    p.cor=u[0];p.tag=u[1];p.rank=u[2];
-    return p;
-  }).sort((a,b)=>a.rank-b.rank||b.falta-a.falta);
-  const totFalta=lista.reduce((s,p)=>s+p.falta,0);
-  const prontos=Object.keys(envPid).filter(pid=>!porPid[pid]||porPid[pid].falta<=0).map(pid=>({nome:nome[pid]||'—',q:envPid[pid]})).sort((a,b)=>b.q-a.q);
-  /* ---- potes a separar por canal: pedidos com prazo até hoje que já têm pote ---- */
+/* ---- mesma conta, repartida por canal ----
+   O pote pronto é de um SKU, não de um canal: quando o mesmo produto e a mesma data
+   têm pedido de mais de um canal, o pote é rateado pela participação de cada um. */
+function tvlCanais(C,hj){
   const demChave={};
   (C.todos||[]).forEach(d=>{const dk=d.data_despacho||'sem-prazo';const k=d.produto_acabado_id+'|'+dk;demChave[k]=(demChave[k]||0)+(Number(d.qtd_potes)||0)});
-  const canal={};
+  const cc={};
   (C.todos||[]).forEach(d=>{
-    const dk=d.data_despacho||'sem-prazo';if(dk==='sem-prazo'||dk>hj)return;
-    const k=d.produto_acabado_id+'|'+dk, a=C.ALOC[k];if(!a||!a.pote)return;
-    const tot=demChave[k]||0;if(!tot)return;
-    const parte=a.pote*((Number(d.qtd_potes)||0)/tot);
-    const cn=d.plataforma||'sem canal';
-    const c=canal[cn]=canal[cn]||{nome:cn,potes:0,atras:0};
-    c.potes+=parte;if(dk<hj)c.atras+=parte;
+    const dk=d.data_despacho||'sem-prazo', k=d.produto_acabado_id+'|'+dk;
+    const a=C.ALOC[k]||{dem:0,pote:0,falta:0,pesado:0,semBase:true};
+    const q=Number(d.qtd_potes)||0, tot=demChave[k]||0; if(!q||!tot)return;
+    const r=q/tot, cn=d.plataforma||'sem canal';
+    const c=cc[cn]=cc[cn]||{nome:cn,dem:0,pote:0,falta:0,pesado:0,semRec:0,dias:{}};
+    const pote=Math.min(q,(a.pote||0)*r), falta=(a.falta||0)*r, pes=(a.pesado||0)*r;
+    c.dem+=q;c.pote+=pote;c.falta+=falta;c.pesado+=pes;if(a.semBase)c.semRec+=Math.max(0,q-pote);
+    const D=c.dias[dk]=c.dias[dk]||{dk:dk,dem:0,pote:0,falta:0,pesado:0,semBase:!!a.semBase};
+    D.dem+=q;D.pote+=pote;D.falta+=falta;D.pesado+=pes;
   });
-  const canais=Object.values(canal).map(c=>({nome:c.nome,potes:Math.round(c.potes),atras:Math.round(c.atras)})).filter(c=>c.potes>0).sort((a,b)=>b.potes-a.potes);
-  const totSep=canais.reduce((s,c)=>s+c.potes,0);
-  /* ---- cremes que não cobrem os pedidos ---- */
-  const cremes=Object.keys(C.baseInfo).map(id=>C.baseInfo[id]).filter(b=>b.faltaKg>0)
-    .map(b=>({nome:b.nome,falta:Math.round(b.faltaKg),balde:Math.round(b.balde||0),quebra:b.quebraEm}))
-    .sort((a,b)=>(a.quebra||'9999')<(b.quebra||'9999')?-1:1).slice(0,5);
-  return {lista:lista,totFalta:totFalta,totEnv:totEnv,ritmo:ritmo,horas:horas,pri:pri,ult:ult,prontos:prontos,canais:canais,totSep:totSep,cremes:cremes,hj:hj};
+  return Object.values(cc).map(c=>{
+    c.dias=Object.values(c.dias).sort((a,b)=>a.dk<b.dk?-1:1).map(D=>{
+      D.cor=tvlCorCel(D,hj);D.aEnv=Math.max(0,D.dem-D.pote);D.sep=Math.round(Math.min(D.dem,D.pote));return D;
+    });
+    let pior='verde';c.dias.forEach(D=>{if(D.cor!=='cinza'&&QD_RANK[D.cor]>QD_RANK[pior])pior=D.cor});
+    c.cor=pior;c.aEnv=Math.max(0,Math.round(c.dem-c.pote));c.sep=Math.round(Math.min(c.dem,c.pote));
+    c.pct=c.dem>0?Math.min(100,c.pote/c.dem*100):100;
+    c.rank=QD_RANK[pior]*1e6+c.dem;
+    return c;
+  }).filter(c=>c.dem>0).sort((a,b)=>b.rank-a.rank);
 }
-function tvlUrgencia(dias,semCreme){
-  if(dias===null)return['#8A6B3D','sem prazo',5];
-  if(dias<0)return[semCreme?'#D93636':'#E06A1E',semCreme?'atrasado · sem creme':'atrasado',0];
-  if(dias===0)return[semCreme?'#D93636':'#E06A1E',semCreme?'hoje · sem creme':'despacha hoje',1];
-  if(dias===1)return[semCreme?'#D93636':'#C9A227',semCreme?'amanhã · sem creme':'amanhã',2];
-  if(dias<=3)return[semCreme?'#C9A227':'#6B7F3A',semCreme?'em '+dias+' dias · sem creme':'em '+dias+' dias',3];
-  return[semCreme?'#C9A227':'#4A5F6B','em '+dias+' dias',4];
+function tvlCorCel(D,hj){
+  const aEnv=Math.max(0,D.dem-D.pote);
+  if(aEnv<=0.5)return'verde';
+  if(D.semBase)return'cinza';
+  const dias=D.dk==='sem-prazo'?99:Math.round((new Date(D.dk+'T12:00')-new Date(hj+'T12:00'))/86400000);
+  if(D.falta>0.5)return dias<=2?'verm':'amar';
+  if(D.pesado>0.5)return'amar';
+  return'verde';
 }
-function tvlCorCanal(n){
-  const s=(n||'').toLowerCase();
-  if(s.indexOf('tiktok')>=0)return'#B36BD4';
-  if(s.indexOf('shopee')>=0)return'#EE4D2D';
-  if(s.indexOf('mercado')>=0)return'#E8C400';
-  if(s.indexOf('varejo')>=0)return'#3E8FD0';
-  return'#8A6B3D';
+function tvlRotDia(dk,hj){
+  if(dk==='sem-prazo')return['SEM PRAZO',''];
+  const d=Math.round((new Date(dk+'T12:00')-new Date(hj+'T12:00'))/86400000);
+  const dm=new Date(dk+'T12:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
+  if(d<0)return['ATRASADO',dm];
+  if(d===0)return['HOJE',dm];
+  if(d===1)return['AMANHÃ',dm];
+  return[new Date(dk+'T12:00').toLocaleDateString('pt-BR',{weekday:'short'}).replace('.','').toUpperCase(),dm];
 }
 function tvlPintar(){
   const alvo=document.getElementById('tvlinha');if(!alvo)return;
   const s=EST.tvlSlide?1:0;
   const cab=`<div class="tvl-topo">
-      <div><h1 class="tvl-tit">${s?'📦 Separar e creme':'🫙 Envase de hoje'}</h1>
-      <div class="tvl-sub">${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'})} · dados de ${EST.tvlHora||'—'} · troca de tela a cada ${TVL_SEG} s</div></div>
+      <div><h1 class="tvl-tit">${s?'📦 Separação por canal':'🏭 Produção — envase do dia'}</h1>
+      <div class="tvl-sub">${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'})} · dados de ${EST.tvlHora||'—'} · troca a cada ${TVL_SEG} s</div></div>
       <div class="tvl-dir"><div class="tvl-pontos"><span class="tvl-ponto${s?'':' on'}"></span><span class="tvl-ponto${s?' on':''}"></span></div>
       <span class="tvl-rel" id="tvlClock">${hhmmAgora()}</span>
       <button class="tvl-sair" onclick="tvlSair()">sair</button></div>
     </div>`;
   if(EST.tvlErro||!EST.tvlD){
-    alvo.innerHTML=cab+`<div class="tvl-creme" style="margin-top:3vh"><div class="cn">Não consegui carregar os dados agora</div><div class="cd">${EST.tvlErro||'—'} — tento de novo em ${TVL_MIN} min.</div></div>`;
+    alvo.innerHTML=cab+`<div class="tvl-erro">Não consegui carregar os dados agora — ${EST.tvlErro||'—'}. Tento de novo em ${TVL_MIN} min.</div>`;
     return;
   }
   alvo.innerHTML=cab+(s?tvlTelaB(EST.tvlD):tvlTelaA(EST.tvlD));
 }
 function tvlTelaA(D){
-  const pri=D.pri?new Date(D.pri.criado_em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):null;
-  const hTxt=D.horas?(Math.floor(D.horas)+'h'+String(Math.round((D.horas%1)*60)).padStart(2,'0')):'—';
-  const kpis=`<div class="tvl-kpis">
-    <div class="tvl-kpi" style="border-left-color:#E06A1E"><div class="rot">falta envasar</div><div class="num">${fmt(D.totFalta,0)}<span class="un">potes</span></div><div class="conta">para cobrir todos os pedidos em aberto, já descontado o pote pronto</div></div>
-    <div class="tvl-kpi" style="border-left-color:#3FBF5F"><div class="rot">já envasado hoje</div><div class="num" style="color:#8FE39A">${fmt(D.totEnv,0)}<span class="un">potes</span></div><div class="conta">${D.pri?'entradas de pote desde '+pri+' · última '+new Date(D.ult.criado_em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'nenhuma entrada lançada ainda hoje'}</div></div>
-    <div class="tvl-kpi" style="border-left-color:#FFD84D"><div class="rot">ritmo</div><div class="num" style="color:#FFD84D">${D.pri?fmt(D.ritmo,0):'—'}<span class="un">potes/h</span></div><div class="conta">${D.pri?fmt(D.totEnv,0)+' potes ÷ '+hTxt+' desde o 1º lançamento':'começa a contar no primeiro lançamento'}</div></div>
-  </div>`;
-  const n=D.lista.length, mostra=D.lista.slice(0,8), resto=n-mostra.length;
-  const linhas=n?mostra.map(p=>`<div class="tvl-li" style="border-left-color:${p.cor}">
-      <div><div class="nm">${p.nome}</div><div class="tg" style="color:${p.cor}">${p.tag}${p.envasado?' · já saíram '+fmt(p.envasado,0)+' hoje':''}</div></div>
-      <div><div class="qt" style="color:${p.cor}">${fmt(p.falta,0)}</div><span class="qtr">potes a envasar</span></div>
-    </div>`).join(''):'<div class="tvl-ok">Nenhum pote pendente — a carteira inteira já tem pote pronto.</div>';
-  const mais=resto>0?`<div class="tvl-mais">+ ${resto} produto${resto>1?'s':''} com menos potes pendentes</div>`:'';
-  const feito=D.prontos.length?`<div class="tvl-feito">✔ fechados hoje: ${D.prontos.slice(0,5).map(p=>p.nome+' ('+fmt(p.q,0)+')').join(' · ')}${D.prontos.length>5?' · +'+(D.prontos.length-5):''}</div>`:'';
-  return kpis+`<div class="tvl-corpo">${linhas}${mais}</div>${feito}`;
+  const Q=D.Q;
+  return `<div class="qd-faixa">${Q.faixa||'<p class="tvl-vazio">Sem pedidos em aberto.</p>'}</div>
+    ${Q.blocoEnv}
+    <div class="tvl-cremes"><h2>🪣 Cremes — até quando o balde aguenta</h2><div class="tvl-cremes-grid">${Q.blocoBases}</div></div>
+    <div class="tvl-pe">O número grande é quanto falta envasar para os pedidos daquela data, já descontado o pote pronto; a barra é quanto já tem pote. <b>Envasados hoje</b> soma as entradas de pote do dia — ajuste de contagem fica fora. Cor calculada: vermelho falta creme com despacho em até 2 dias, amarelo só fecha com o moinho, verde tem pote ou creme no balde.</div>`;
 }
 function tvlTelaB(D){
-  const canais=D.canais.length?D.canais.map(c=>`<div class="tvl-canal" style="border-left-color:${tvlCorCanal(c.nome)}">
-      <div><div class="cn">${c.nome}</div><div class="cs">${c.atras>0?'⏰ '+fmt(c.atras,0)+' de pedido vencido':'no prazo'}</div></div>
-      <div class="cq" style="color:${tvlCorCanal(c.nome)}">${fmt(c.potes,0)}</div>
-    </div>`).join(''):'<div class="tvl-ok">Nada para separar — nenhum pedido vencido ou de hoje com pote pronto.</div>';
-  const cremes=D.cremes.length?D.cremes.map(b=>`<div class="tvl-creme">
-      <div class="cn">${b.nome}</div><div class="cq">faltam ${fmt(b.falta,0)} kg</div>
-      <div class="cd">balde tem ${fmt(b.balde,0)} kg · para de cobrir no despacho de ${b.quebra?new Date(b.quebra+'T12:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}):'—'}</div>
-    </div>`).join(''):'<div class="tvl-ok">Todos os cremes cobrem os pedidos em aberto.</div>';
-  return `<div class="tvl-2col">
-    <div class="tvl-bloco"><h2>📦 Potes a separar por canal — ${fmt(D.totSep,0)} no total</h2>${canais}</div>
-    <div class="tvl-bloco"><h2>🪣 Creme que não fecha</h2>${cremes}</div>
-  </div>
-  <div class="tvl-pe"><b>Separar</b> = pedidos com despacho vencido ou de hoje que já têm pote pronto (rateado por canal quando o mesmo produto e data têm mais de um). <b>Falta envasar</b> = pedido em aberto menos pote pronto, pela conta da tela Vendas / Despacho. Fonte: demanda_vendas + vendas_pedidos + produto_acabado_movimentos, relidos a cada ${TVL_MIN} min.</div>`;
+  const cs=D.canais;
+  if(!cs.length)return '<div class="tvl-vazio">Nenhum pedido em aberto em nenhum canal.</div>';
+  const cards=cs.slice(0,6).map(c=>{
+    const [bg,fg]=QD_COR[c.cor];
+    const chips=c.dias.filter(x=>x.dem>0).slice(0,5).map(x=>{
+      const [r1,r2]=tvlRotDia(x.dk,D.hj);const [b2,f2]=QD_COR[x.cor];
+      return `<span class="tvl-chip" style="background:${b2};color:${f2}"><b>${r1}</b> ${r2} · separar ${fmt(x.sep,0)} · envasar ${fmt(Math.round(x.aEnv),0)}</span>`;
+    }).join('');
+    return `<div class="qd-dia" style="background:${bg};color:${fg}">
+      <div class="qd-dia-rot">${c.nome.toUpperCase()}</div>
+      <div class="qd-dia-data">${fmt(c.dem,0)} potes em aberto</div>
+      <div class="qd-dia-num mono">${fmt(c.sep,0)}</div>
+      <div class="qd-dia-sub">potes a separar — já estão em pote</div>
+      <div class="qd-dia-barra" style="background:${fg}33"><div style="width:${c.pct.toFixed(1)}%;background:${fg}"></div></div>
+      <div class="qd-dia-pronto mono">faltam envasar ${fmt(c.aEnv,0)}${c.semRec>0?' · '+fmt(Math.round(c.semRec),0)+' sem receita':''}</div>
+      <div class="tvl-chips">${chips}</div>
+    </div>`;
+  }).join('');
+  const tSep=cs.reduce((s,c)=>s+c.sep,0), tEnv=cs.reduce((s,c)=>s+c.aEnv,0);
+  return `<div class="tvl-canais">${cards}</div>
+    <div class="tvl-pe"><b>Separar</b> = pedido em aberto que já tem pote pronto; <b>envasar</b> = o que falta virar pote. Quando o mesmo produto e a mesma data têm pedido de mais de um canal, o pote pronto é rateado entre eles — o banco não guarda a qual canal cada pote foi prometido. Total: ${fmt(tSep,0)} a separar e ${fmt(tEnv,0)} a envasar. Fonte: demanda_vendas + vendas_pedidos em aberto, relidos a cada ${TVL_MIN} min.</div>`;
 }
 
 boot();
