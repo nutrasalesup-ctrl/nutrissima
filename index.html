@@ -302,7 +302,8 @@ body.tvl-body{background:#100A05;overflow:hidden}
 .tvl-dir{display:flex;align-items:center;gap:1.2vw}
 .tvl-rel{font-size:3.2vh;font-weight:900;font-variant-numeric:tabular-nums}
 .tvl-pontos{display:flex;gap:.7vw}
-.tvl-ponto{width:1.3vh;height:1.3vh;border-radius:50%;background:#4A3A28}
+.tvl-ponto{width:1.5vh;height:1.5vh;border-radius:50%;background:#4A3A28;cursor:pointer}
+.tvl-nav{border:1px solid #ffffff2e;background:transparent;color:#FFD84D;border-radius:1vh;width:4.4vh;height:4.4vh;font-size:2.6vh;font-weight:900;cursor:pointer;line-height:1}
 .tvl-ponto.on{background:#FFD84D}
 .tvl-sair{border:1px solid #ffffff2e;background:transparent;color:#8A7A64;border-radius:1vh;padding:.6vh 1vw;font-size:1.5vh;cursor:pointer}
 .tvl-vazio{color:#8A7A64;font-size:2.4vh;padding:3vh 0}
@@ -369,7 +370,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-09-18 · Painel TV: canal com progresso + top 10';
+const APP_VERSAO='2026-09-18 · Painel da produção: 2 telas com navegação';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -1050,7 +1051,7 @@ async function tInicio(){
       <button onclick="tela('producao')"><span class="ico" style="background:#EAF3EA">📊</span><span><b>Relatório de Produção</b><small>Entradas e saídas do dia — meça como foi</small></span></button>
       <button onclick="tela('estoque')"><span class="ico" style="background:#E4EDF2">📋</span><span><b>Conferir estoque</b><small>Matéria-prima, balde e potes</small></span></button>
       <button onclick="tela('metas')"><span class="ico" style="background:#F6ECD6">🎯</span><span><b>Metas do dia</b><small>Definir o quadro (PIN do gestor)</small></span></button>
-      <button onclick="tela('tv')"><span class="ico" style="background:#33200F;color:#fff">📺</span><span><b>Modo TV</b><small>Quadro do dia em tela cheia</small></span></button>
+      <button onclick="tela('tv')"><span class="ico" style="background:#33200F;color:#fff">📺</span><span><b>Compras e estoque em tela cheia</b><small>Quadro antigo — pedidos a fazer, mínimos, tarefas</small></span></button>
       <button onclick="tela('treinamento')"><span class="ico" style="background:#F3EAD8">📚</span><span><b>Treinamento</b><small>Procedimentos operacionais padrão (POP)</small></span></button>
     </div>
     <button class="btnSec" style="margin-top:20px" onclick="sb.auth.signOut().then(boot)">Sair da conta</button>
@@ -5164,6 +5165,15 @@ async function tTvLinha(){
   },TVL_SEG*1000);
   EST.tvlRel=setInterval(()=>{const r=document.getElementById('tvlClock');if(r)r.textContent=hhmmAgora()},20000);
 }
+function tvlIr(n){
+  EST.tvlSlide=(n===undefined)?(EST.tvlSlide?0:1):n;
+  if(EST.tvlGiro){clearInterval(EST.tvlGiro);EST.tvlGiro=null}
+  EST.tvlGiro=setInterval(()=>{
+    if(!document.getElementById('tvlinha'))return tvlParar();
+    EST.tvlSlide=EST.tvlSlide?0:1;tvlPintar();
+  },TVL_SEG*1000);
+  tvlPintar();
+}
 function hhmmAgora(){return new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
 function tvlParar(){['tvlTimer','tvlGiro','tvlRel'].forEach(k=>{if(EST[k]){clearInterval(EST[k]);EST[k]=null}});document.body.classList.remove('tvl-body')}
 function tvlSair(){tvlParar();if(location.hash)history.replaceState(null,'',location.pathname);tela('inicio')}
@@ -5249,7 +5259,9 @@ function tvlPintar(){
   const cab=`<div class="tvl-topo">
       <div><h1 class="tvl-tit">${s?'📦 Separação por canal':'🏭 Produção — envase do dia'}</h1>
       <div class="tvl-sub">${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'2-digit'})} · dados de ${EST.tvlHora||'—'} · troca a cada ${TVL_SEG} s</div></div>
-      <div class="tvl-dir"><div class="tvl-pontos"><span class="tvl-ponto${s?'':' on'}"></span><span class="tvl-ponto${s?' on':''}"></span></div>
+      <div class="tvl-dir"><button class="tvl-nav" onclick="tvlIr(0)">‹</button>
+      <div class="tvl-pontos"><span class="tvl-ponto${s?'':' on'}" onclick="tvlIr(0)"></span><span class="tvl-ponto${s?' on':''}" onclick="tvlIr(1)"></span></div>
+      <button class="tvl-nav" onclick="tvlIr(1)">›</button>
       <span class="tvl-rel" id="tvlClock">${hhmmAgora()}</span>
       <button class="tvl-sair" onclick="tvlSair()">sair</button></div>
     </div>`;
