@@ -4443,11 +4443,21 @@ async function ligarCodigo(codigo, selectId, descricao){
     if(ri.error) return msg("Não deu para gravar: "+ri.error.message, true);
   }
 
+  /* .select() é obrigatório: sem ele o Supabase não devolve as linhas afetadas, e
+     update recusado por RLS volta sem erro e com zero linhas — foi assim que o botão
+     ficou meses dizendo "ligado" sem ligar nada (corrigido em 18/09/2026). */
   var rr = await sb.from("nf_venda_item").update({ produto_acabado_id: pa })
-    .eq("codigo", codigo).is("produto_acabado_id", null);
-  if(rr.error) return msg("Código ligado, mas as notas antigas não foram atualizadas: "+rr.error.message, true);
+    .eq("codigo", codigo).is("produto_acabado_id", null).select("id");
+  if(rr.error) return msg("Código ligado no de-para, mas as notas antigas não foram atualizadas: "+rr.error.message, true);
+  var n = (rr.data || []).length;
+  if(!n){
+    msg("Código "+codigo+" gravado no de-para, mas NENHUMA linha de nota foi atualizada — "+
+        "pode ser permissão ou o código já estar ligado. Confira antes de seguir.", true);
+    telaPendencias();
+    return;
+  }
 
-  msg("Código "+codigo+" ligado ao produto");
+  msg("Código "+codigo+" ligado ao produto · "+n+" linha(s) de nota atualizada(s)");
   telaPendencias();
 }
 
