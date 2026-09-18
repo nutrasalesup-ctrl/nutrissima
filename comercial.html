@@ -3174,8 +3174,10 @@ async function carregarPedido(cotacaoId){
   var ids = itens.map(function(i){ return i.produto_acabado_id; }).filter(Boolean);
   var sku = {}, peso = {};
   if(ids.length){
+    /* vigente = o codigo de hoje na loja. Um produto tem varios codigos historicos
+       (ate 4) sob a mesma plataforma; filtrar por plataforma pegaria um qualquer. */
     var rS = await sb.from("depara_sku").select("codigo,produto_acabado_id")
-      .eq("plataforma","UpSeller").in("produto_acabado_id", ids);
+      .eq("vigente", true).in("produto_acabado_id", ids);
     (rS.data||[]).forEach(function(s){ sku[s.produto_acabado_id] = s.codigo; });
     var rP = await sb.from("produto_acabado").select("id,peso_pote_kg").in("id", ids);
     (rP.data||[]).forEach(function(p){ peso[p.id] = Number(p.peso_pote_kg)||0; });
