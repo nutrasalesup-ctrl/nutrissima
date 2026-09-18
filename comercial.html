@@ -275,6 +275,7 @@ button:focus-visible{outline:2px solid var(--pist);outline-offset:2px}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 "use strict";
 
@@ -468,6 +469,7 @@ var TELAS = {
   importar:    { rotulo:"Importar NF-e",  sub:"Ler XML e alimentar o faturamento", fn:telaImportar, etapa:"Pedido" },
   pendencias:  { rotulo:"Pendências",     sub:"Códigos de NF sem produto cadastrado", fn:telaPendencias, etapa:"Pedido" },
   controladoria:{ rotulo:"Controladoria", sub:"DRE e apuração fiscal (e-commerce)", fn:telaControladoria, etapa:"" },
+  carteira:    { rotulo:"Carteira",       sub:"Propostas, pedidos e faturamento UpSeller", fn:telaCarteira, etapa:"Pedido" },
   precificacao:{ rotulo:"Precificação",  sub:"Custo por fórmula, preço de insumo e simulação", fn:telaPrecificacao, etapa:"" }
 };
 var telaAtual = "inicio";
@@ -509,6 +511,7 @@ var MENU = [
   ["faturamento",  "📊","#E4EDF2",""],
   ["clientes",     "🏢","#EAF3EA",""],
   ["representantes","🤝","#F3EAD8",""],
+  ["carteira",     "📦","#F3EAD8",""],
   ["liquidacao",   "💰","#E7F0E4",""],
   ["tabelaspreco", "🧾","#F6ECD6",""],
   ["importar",     "📥","#E7F0E4",""],
@@ -2453,8 +2456,8 @@ async function fecharOportunidade(id, ganhou){
 
 /* ---- proposta: criada de dentro da oportunidade (cliente + oportunidade já ---- */
 /* ---- vêm do card, sem seletor — evita o vínculo redundante que existia na Ficha) ---- */
-var STATUS_ROTULO_PROP = {rascunho:'Rascunho', enviada:'Enviada', aceita:'Aceita', recusada:'Recusada', expirada:'Expirada'};
-var STATUS_COR_PROP = {rascunho:'#7A6A57', enviada:'#B8862B', aceita:'#3E7C45', recusada:'#C63A3A', expirada:'#C63A3A'};
+var STATUS_ROTULO_PROP = {rascunho:'Rascunho', enviada:'Enviada', aceita:'Aceita', recusada:'Recusada', expirada:'Expirada', pedido:'Pedido', exportado:'Faturado, sem NF', faturado:'Faturado'};
+var STATUS_COR_PROP = {rascunho:'#7A6A57', enviada:'#B8862B', aceita:'#3E7C45', recusada:'#C63A3A', expirada:'#C63A3A', pedido:'#C97A1E', exportado:'#6B46C1', faturado:'#3E7C45'};
 async function abrirNovaProposta(oportunidadeId, clienteId, tituloEsc){
   var alvo = $("opPainelContainer");
   if(!alvo) return;
@@ -2467,7 +2470,7 @@ async function abrirNovaProposta(oportunidadeId, clienteId, tituloEsc){
     .eq("cliente_id", clienteId).eq("ativo", true).order("nome");
   var rPreco = await sb.schema("crm").from("preco_padrao").select("produto_acabado_id,preco");
   var rCot = await sb.schema("crm").from("cotacoes")
-    .select("id,numero,data_cotacao,validade,status,valor_total,contato_id")
+    .select("id,numero,data_cotacao,validade,status,valor_total,contato_id,numero_pedido_loja,faturado_em")
     .eq("oportunidade_id", oportunidadeId).order("numero", {ascending:false});
   var rTab = await sb.schema("crm").from("tabelas_preco")
     .select("id,nome,pedido_minimo").eq("ativa", true).order("pedido_minimo", {ascending:true});
@@ -2542,6 +2545,8 @@ async function abrirNovaProposta(oportunidadeId, clienteId, tituloEsc){
           '<button class="s mini" onclick="baixarPdfProposta(\''+x.id+'\')">📄 Baixar PDF</button>'+
           (x.status==='rascunho' ? '<button class="s mini" onclick="editarProposta(\''+x.id+'\')">✏️ Editar</button>' : '')+
           (x.status==='rascunho' ? '<button class="s mini" onclick="enviarProposta(\''+x.id+'\')">📤 Marcar como enviada</button>' : '')+
+          ((x.status==='enviada'||x.status==='aceita') ? '<button class="s mini" onclick="gerarPedido(\''+x.id+'\')">🧾 Gerar pedido</button>' : '')+
+          ((x.status==='pedido'||x.status==='exportado'||x.status==='faturado') ? '<button class="s mini" onclick="ir(\'carteira\')">📦 Ver na carteira</button>' : '')+
         '</div>'+
       '</div>';
     }).join("") : '<div class="vazio">Nenhuma proposta ainda pra essa oportunidade.</div>')+
@@ -3091,6 +3096,374 @@ async function baixarPdfProposta(cotacaoId){
 }
 
 /* ================= representantes ================= */
+/* ===== PEDIDO DE VENDA → UPSELLER (18/09/2026) =====================
+   Proposta enviada → "Gerar pedido" → carteira → "Faturar": calcula as
+   parcelas a partir de HOJE (data do faturamento), gera a planilha no
+   navegador e só então grava o estado. Nada é calculado antes do comando. */
+
+var UPS_LOJA = "Loja Padrão";
+var UF_EXTENSO = {AC:"Acre",AL:"Alagoas",AP:"Amapá",AM:"Amazonas",BA:"Bahia",CE:"Ceará",
+  DF:"Distrito Federal",ES:"Espírito Santo",GO:"Goiás",MA:"Maranhão",MT:"Mato Grosso",
+  MS:"Mato Grosso do Sul",MG:"Minas Gerais",PA:"Pará",PB:"Paraíba",PR:"Paraná",
+  PE:"Pernambuco",PI:"Piauí",RJ:"Rio de Janeiro",RN:"Rio Grande do Norte",
+  RS:"Rio Grande do Sul",RO:"Rondônia",RR:"Roraima",SC:"Santa Catarina",
+  SP:"São Paulo",SE:"Sergipe",TO:"Tocantins"};
+
+var UPS_OBS = "Observação:Preencha o modelo de acordo com as regras abaixo para evitar falhas na importação. Caso a importação falhe, corrija os erros com base nos motivos informados e reimporte apenas os pedidos que falharam.";
+var UPS_CAT = ["Categoria","Informação do Pedido","","","","Informação do Destinatário","","","","","","","","","","","","","Informação do Produto","","","","Informação de Envio","","","","","","","","","","","Detalhes da Transportador para NF-e (Deixe em branco caso não seja necessária a emissão de nota fiscal. Caso seja necessária, preencha conforme aplicável.)","","","","","","","Informação de Pagamento","","",""];
+var UPS_CAB = ["Nome do Campo","Nome da Loja*","Nº do Pedido da Loja*","Observação","Necessita Emitir NF-e*","Nome do Destinatário (Obrigatório para NF-e)","Nº de Celular","Tipo de Tributação (Obrigatório para NF-e)","Número de Tributação (Obrigatório para NF-e)","Nome da Empresa","IE","CEP (Obrigatório para NF-e)","Estado (Obrigatório para NF-e)","Cidade (Obrigatório para NF-e)","Bairro (Obrigatório para NF-e)","Número","Endereço 1","Endereço 2","Nome do Armazém","SKU*","Quantidade*","Preço Unitário* ","Método de Custo de Envio","Tipo de Pacote","Número","Método de Envio","Nº de Rastreio","Quantidade de Pacote","Peso Bruto (g)","Peso Líquido (g)","Tamanho do Pacote/Comprimento (cm)","Tamanho do Pacote/Largura (cm)","Tamanho do Pacote/Altura (cm)","Tipo de Tributação (Opcional)","Número de Tributação (Opcional)","Nome (Opcional)","IE","Estado(Opcional)","Cidade","Endereço","Método de Pagamento","Custo do Frete do Comprador","Desconto","Custo do Frete do Vendedor"];
+
+function padNum(n, t){ var s = String(n); while(s.length < t) s = "0"+s; return s; }
+function numeroPedidoLoja(numero){ return "NUT-"+padNum(numero, 6); }
+function somaDiasISO(iso, d){
+  var p = String(iso).split("-");
+  var dt = new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
+  dt.setDate(dt.getDate() + (Number(d)||0));
+  return gerIsoData(dt);
+}
+function precoLiquidoItem(it){
+  var v = Number(it.valor_unitario)||0, d = Number(it.desconto_pct)||0;
+  return Math.round(v*(1 - d/100)*100)/100;
+}
+
+/* Parcelas: a condição é texto ("Boleto 28 dias", "À vista",
+   "Cartão em até 3x sem juros"). Cartão não vira boleto — vira 1 lançamento
+   na data do faturamento, com a observação dizendo que foi no cartão. */
+function calcularParcelas(cond, total, dataBase){
+  var txt = String(cond||"");
+  var cartao = /cart/i.test(txt);
+  var prazos = cartao ? [0] : (txt.match(/\d+/g)||[]).map(Number).filter(function(n){ return n > 0; });
+  if(!prazos.length) prazos = [0];
+  var n = prazos.length;
+  var cent = Math.round((Number(total)||0)*100);
+  var base = Math.floor(cent/n), out = [];
+  for(var i=0;i<n;i++){
+    var v = (i === n-1) ? (cent - base*(n-1)) : base;
+    out.push({
+      numero_parcela: i+1, total_parcelas: n, prazo_dias: prazos[i],
+      valor: v/100, vencimento: somaDiasISO(dataBase, prazos[i])
+    });
+  }
+  return out;
+}
+function textoObservacaoPagamento(cond, parcelas, numped){
+  var t = "PAGAMENTO: "+String(cond||"a combinar").toUpperCase();
+  if(parcelas.length === 1 && !parcelas[0].prazo_dias){
+    t += " — R$ "+brl(parcelas[0].valor)+" NA EMISSAO";
+  }else{
+    t += " — "+parcelas.length+"x: "+parcelas.map(function(p){
+      return "R$ "+brl(p.valor)+" venc. "+dataBR(p.vencimento);
+    }).join(" · ");
+  }
+  return t+". PEDIDO ERP "+numped+".";
+}
+
+async function carregarPedido(cotacaoId){
+  var rC = await sb.schema("crm").from("cotacoes")
+    .select("id,numero,cliente_id,status,condicao_pagamento,frete,valor_total,numero_pedido_loja,faturado_em,faturado_por,arquivo_exportacao")
+    .eq("id", cotacaoId).single();
+  if(rC.error || !rC.data) return null;
+  var cot = rC.data;
+  var rCli = await sb.from("clientes")
+    .select("id,razao_social,nome_fantasia,documento,tipo_doc,ie,cep,uf,municipio,bairro,numero,logradouro,complemento")
+    .eq("id", cot.cliente_id).single();
+  var rI = await sb.schema("crm").from("cotacao_itens")
+    .select("produto_acabado_id,descricao,qtd,valor_unitario,desconto_pct,bonificado")
+    .eq("cotacao_id", cot.id);
+  var itens = rI.data || [];
+  var ids = itens.map(function(i){ return i.produto_acabado_id; }).filter(Boolean);
+  var sku = {}, peso = {};
+  if(ids.length){
+    var rS = await sb.from("depara_sku").select("codigo,produto_acabado_id")
+      .eq("plataforma","UpSeller").in("produto_acabado_id", ids);
+    (rS.data||[]).forEach(function(s){ sku[s.produto_acabado_id] = s.codigo; });
+    var rP = await sb.from("produto_acabado").select("id,peso_pote_kg").in("id", ids);
+    (rP.data||[]).forEach(function(p){ peso[p.id] = Number(p.peso_pote_kg)||0; });
+  }
+  var rCt = await sb.schema("crm").from("contatos").select("telefone")
+    .eq("cliente_id", cot.cliente_id).eq("ativo", true).limit(1);
+  return { cot:cot, cli:rCli.data||{}, itens:itens, sku:sku, peso:peso,
+           tel:((rCt.data||[])[0]||{}).telefone || "" };
+}
+
+var CAMPOS_NFE = [["razao_social","Nome do destinatário"],["documento","CPF/CNPJ"],
+  ["cep","CEP"],["uf","Estado"],["municipio","Cidade"],["bairro","Bairro"],
+  ["numero","Número"],["logradouro","Endereço"]];
+function pendenciasPedido(P){
+  var c = P.cli || {}, falta = [];
+  CAMPOS_NFE.forEach(function(x){ if(!c[x[0]]) falta.push(x[1]); });
+  var semSku = P.itens.filter(function(it){
+    return !it.bonificado && (!it.produto_acabado_id || !P.sku[it.produto_acabado_id]);
+  });
+  return { cliente:falta, semSku:semSku };
+}
+function itensVendaveis(P){ return P.itens.filter(function(it){ return !it.bonificado; }); }
+function totalCobradoPedido(P){
+  return itensVendaveis(P).reduce(function(s,it){
+    return s + precoLiquidoItem(it)*(Number(it.qtd)||0);
+  }, 0);
+}
+
+function linhasUpseller(P, parcelas){
+  var c = P.cli;
+  var numped = P.cot.numero_pedido_loja || numeroPedidoLoja(P.cot.numero);
+  var obs = textoObservacaoPagamento(P.cot.condicao_pagamento, parcelas, numped);
+  var tipo = String(c.tipo_doc||"").toUpperCase().indexOf("CPF") >= 0 ? "CPF" : "CNPJ";
+  var pag = /cart/i.test(String(P.cot.condicao_pagamento||"")) ? "Cartão de Crédito" : "Outros";
+  return itensVendaveis(P).map(function(it, idx){
+    var L = []; for(var i=0;i<44;i++) L.push("");
+    L[1] = UPS_LOJA;
+    L[2] = numped;
+    L[3] = idx === 0 ? obs : "";
+    L[4] = "SIM";
+    L[5] = c.razao_social || "";
+    L[6] = P.tel || "";
+    L[7] = tipo;
+    L[8] = digitos(c.documento||"");
+    L[9] = c.nome_fantasia || "";
+    L[10] = c.ie || "";
+    L[11] = c.cep || "";
+    L[12] = UF_EXTENSO[String(c.uf||"").toUpperCase()] || c.uf || "";
+    L[13] = c.municipio || "";
+    L[14] = c.bairro || "";
+    L[15] = c.numero || "";
+    L[16] = c.logradouro || "";
+    L[17] = c.complemento || "";
+    L[19] = P.sku[it.produto_acabado_id] || "";
+    L[20] = Number(it.qtd)||0;
+    L[21] = precoLiquidoItem(it);
+    var g = Math.round((P.peso[it.produto_acabado_id]||0)*(Number(it.qtd)||0)*1000);
+    if(g > 0){ L[28] = g; L[29] = g; }
+    L[40] = pag;
+    return L;
+  });
+}
+function gerarXlsxUpseller(linhas, nomeArquivo){
+  if(typeof XLSX === "undefined") throw new Error("biblioteca de planilha não carregou");
+  var aoa = [[UPS_OBS], UPS_CAT.slice(), UPS_CAB.slice()];
+  linhas.forEach(function(l){ aoa.push(l); });
+  var ws = XLSX.utils.aoa_to_sheet(aoa);
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "order_");
+  XLSX.writeFile(wb, nomeArquivo);
+}
+
+async function gerarPedido(cotacaoId){
+  if(!confirm("Gerar pedido a partir desta proposta?\n\nDepois disso os itens e preços ficam congelados.")) return;
+  var r = await sb.schema("crm").from("cotacoes").select("numero,status").eq("id", cotacaoId).single();
+  if(r.error || !r.data){ msg("Não consegui abrir a proposta.", true); return; }
+  if(["rascunho","recusada","expirada"].indexOf(r.data.status) >= 0){
+    msg("Só proposta enviada ou aceita vira pedido.", true); return;
+  }
+  var u = await sb.schema("crm").from("cotacoes").update({
+    status: "pedido",
+    numero_pedido_loja: numeroPedidoLoja(r.data.numero),
+    pedido_gerado_em: new Date().toISOString()
+  }).eq("id", cotacaoId);
+  if(u.error){ msg("Não deu para gerar o pedido: "+u.error.message, true); return; }
+  msg("Pedido "+numeroPedidoLoja(r.data.numero)+" gerado. Abra a Carteira para faturar.");
+  ir("carteira");
+}
+async function voltarParaProposta(cotacaoId){
+  if(!confirm("Voltar este pedido para proposta? Ele sai da fila de faturamento.")) return;
+  var u = await sb.schema("crm").from("cotacoes")
+    .update({ status:"enviada", numero_pedido_loja:null, pedido_gerado_em:null }).eq("id", cotacaoId);
+  if(u.error){ msg("Não consegui voltar: "+u.error.message, true); return; }
+  msg("Voltou para proposta."); telaCarteira();
+}
+
+/* FATURAR: gera o arquivo primeiro; só grava o estado depois que ele saiu. */
+async function faturarPedidos(ids){
+  if(!ids || !ids.length){ msg("Selecione ao menos um pedido.", true); return; }
+  var hoje = hojeISO(), pacote = [], recusados = [];
+  for(var i=0;i<ids.length;i++){
+    var P = await carregarPedido(ids[i]);
+    if(!P){ recusados.push("pedido não encontrado"); continue; }
+    var pend = pendenciasPedido(P);
+    if(pend.cliente.length || pend.semSku.length){
+      recusados.push("#"+P.cot.numero+": "+
+        (pend.cliente.length ? "falta "+pend.cliente.join(", ") : "")+
+        (pend.cliente.length && pend.semSku.length ? " · " : "")+
+        (pend.semSku.length ? pend.semSku.length+" item(ns) sem código UpSeller" : ""));
+      continue;
+    }
+    var total = totalCobradoPedido(P);
+    pacote.push({ P:P, parcelas: calcularParcelas(P.cot.condicao_pagamento, total, hoje), total: total });
+  }
+  if(!pacote.length){ msg("Nada foi faturado. "+recusados.join(" · "), true); return; }
+  if(!confirm("Faturar "+pacote.length+" pedido(s) com data de hoje ("+dataBR(hoje)+")?\n\nOs vencimentos serão calculados a partir dessa data.")) return;
+
+  var linhas = [];
+  pacote.forEach(function(x){ linhas = linhas.concat(linhasUpseller(x.P, x.parcelas)); });
+  var nome = "upseller_"+hoje.replace(/-/g,"")+"_"+pacote.length+"pedido"+(pacote.length>1?"s":"")+".xlsx";
+  try{ gerarXlsxUpseller(linhas, nome); }
+  catch(e){ msg("Não consegui gerar a planilha: "+e.message+". Nada foi marcado como faturado.", true); return; }
+
+  var falhas = [];
+  for(var j=0;j<pacote.length;j++){
+    var x = pacote[j], id = x.P.cot.id;
+    await sb.schema("crm").from("pedido_parcela").delete().eq("cotacao_id", id);
+    var rows = x.parcelas.map(function(p){
+      return { cotacao_id:id, numero_parcela:p.numero_parcela, total_parcelas:p.total_parcelas,
+               prazo_dias:p.prazo_dias, valor:p.valor, vencimento:p.vencimento,
+               status:"aberta", criado_por:ST.email,
+               observacao:String(x.P.cot.condicao_pagamento||"") };
+    });
+    var rp = await sb.schema("crm").from("pedido_parcela").insert(rows);
+    var ru = await sb.schema("crm").from("cotacoes").update({
+      status:"exportado", faturado_em:hoje, faturado_por:ST.email, arquivo_exportacao:nome
+    }).eq("id", id);
+    if(rp.error || ru.error) falhas.push("#"+x.P.cot.numero);
+  }
+  var t = "Planilha gerada: "+nome+" · "+pacote.length+" pedido(s), "+linhas.length+" linha(s).";
+  if(recusados.length) t += " Ficaram de fora: "+recusados.join(" · ")+".";
+  if(falhas.length) t += " ATENÇÃO: o arquivo saiu, mas não consegui gravar o estado de "+falhas.join(", ")+" — confira antes de importar.";
+  msg(t, falhas.length ? true : false);
+  telaCarteira();
+}
+
+/* Baixar de novo o MESMO arquivo: não recalcula nada, lê as parcelas gravadas. */
+async function baixarPlanilhaNovamente(cotacaoId){
+  var P = await carregarPedido(cotacaoId);
+  if(!P){ msg("Não consegui abrir o pedido.", true); return; }
+  var rp = await sb.schema("crm").from("pedido_parcela")
+    .select("numero_parcela,total_parcelas,prazo_dias,valor,vencimento")
+    .eq("cotacao_id", cotacaoId).order("numero_parcela");
+  var parcelas = rp.data || [];
+  if(!parcelas.length){ msg("Esse pedido não tem parcelas gravadas.", true); return; }
+  try{ gerarXlsxUpseller(linhasUpseller(P, parcelas), P.cot.arquivo_exportacao || ("upseller_"+P.cot.numero_pedido_loja+".xlsx")); }
+  catch(e){ msg("Não consegui gerar: "+e.message, true); return; }
+  msg("Mesmo arquivo gerado de novo. Nada mudou no pedido.");
+}
+
+/* ---------- tela Carteira ---------- */
+var CART = { sel:{}, aberto:null };
+var STATUS_ORDEM = ["rascunho","enviada","aceita","pedido","exportado","faturado"];
+var STATUS_CART = {
+  rascunho:{r:"Rascunho", c:"#7A6A57"}, enviada:{r:"Proposta enviada", c:"#B8862B"},
+  aceita:{r:"Proposta aceita", c:"#B8862B"}, pedido:{r:"Pedido a faturar", c:"#C97A1E"},
+  exportado:{r:"Faturado, sem NF", c:"#6B46C1"}, faturado:{r:"Faturado com NF", c:"#3E7C45"},
+  recusada:{r:"Recusada", c:"#C63A3A"}, expirada:{r:"Expirada", c:"#C63A3A"}
+};
+async function telaCarteira(){
+  var r = await sb.schema("crm").from("cotacoes")
+    .select("id,numero,cliente_id,status,valor_total,data_cotacao,condicao_pagamento,numero_pedido_loja,faturado_em,faturado_por,arquivo_exportacao")
+    .in("status", STATUS_ORDEM).order("numero", {ascending:false}).limit(300);
+  if(r.error){ pinta('<div class="card" style="--u:#C63A3A">Não consegui carregar a carteira: '+esc(r.error.message)+'</div>'); return; }
+  var L = r.data || [];
+  var ids = L.map(function(x){ return x.cliente_id; }).filter(Boolean);
+  var nomes = {};
+  if(ids.length){
+    var rc = await sb.from("clientes").select("id,razao_social").in("id", ids);
+    (rc.data||[]).forEach(function(c){ nomes[c.id] = c.razao_social; });
+  }
+  CART.lista = L; CART.nomes = nomes;
+  renderCarteira();
+}
+function renderCarteira(){
+  var L = CART.lista || [], nomes = CART.nomes || {}, hj = hojeISO();
+  var tot = {};
+  STATUS_ORDEM.forEach(function(s){ tot[s] = {n:0, v:0}; });
+  L.forEach(function(x){ if(tot[x.status]){ tot[x.status].n++; tot[x.status].v += Number(x.valor_total)||0; } });
+
+  var h = '<div class="card" style="--u:#B8862B"><h3>Carteira</h3>'+
+    '<div style="display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">'+
+    STATUS_ORDEM.map(function(s){
+      var t = tot[s], st = STATUS_CART[s];
+      return '<div class="card" style="--u:'+st.c+';margin:0"><div style="font-size:12px;color:var(--tinta2)">'+esc(st.r)+'</div>'+
+        '<div style="font-size:22px;font-weight:800">'+inte(t.n)+'</div>'+
+        '<div style="font-size:12px;color:var(--tinta2)">R$ '+brl(t.v)+'</div></div>';
+    }).join("")+'</div></div>';
+
+  var aFaturar = L.filter(function(x){ return x.status === "pedido"; });
+  var selN = aFaturar.filter(function(x){ return CART.sel[x.id]; }).length;
+  h += '<div class="card" style="--u:#C97A1E"><h3>A faturar hoje · '+dataBR(hj)+'</h3>'+
+    (aFaturar.length ? aFaturar.map(function(x){
+      return '<label style="display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--linha)">'+
+        '<input type="checkbox" '+(CART.sel[x.id]?"checked":"")+' onchange="CART.sel[\''+x.id+'\']=this.checked;renderCarteira()">'+
+        '<span style="flex:1"><b>'+esc(x.numero_pedido_loja||("#"+x.numero))+'</b> · '+esc(nomes[x.cliente_id]||"cliente")+
+        '<br><small style="color:var(--tinta2)">'+esc(x.condicao_pagamento||"sem condição")+'</small></span>'+
+        '<span style="font-weight:800;font-family:ui-monospace,Menlo,monospace">R$ '+brl(x.valor_total)+'</span></label>';
+    }).join("") : '<div class="vazio">Nenhum pedido esperando faturamento.</div>')+
+    (aFaturar.length ? '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'+
+      '<button onclick="faturarSelecionados()">💰 Faturar e gerar planilha'+(selN?" ("+selN+")":"")+'</button>'+
+      '<button class="s" onclick="marcarTodosCarteira()">Selecionar todos</button></div>'+
+      '<div style="font-size:12px;color:var(--tinta2);margin-top:8px">Os vencimentos são calculados a partir de hoje. '+
+      'Itens bonificados não vão na planilha — a bonificação sai em nota própria.</div>' : '')+
+    '</div>';
+
+  h += '<div class="card" style="--u:#6B46C1"><h3>Todos os pedidos e propostas</h3>'+
+    (L.length ? L.map(function(x){
+      var st = STATUS_CART[x.status] || {r:x.status, c:"#7A6A57"};
+      var dias = x.faturado_em ? diasAte(x.faturado_em) : null;
+      var alerta = (x.status === "exportado" && dias !== null && dias <= -3)
+        ? '<span class="tag" style="background:#C63A3A;margin-left:6px">'+Math.abs(dias)+' dias sem NF</span>' : '';
+      return '<div class="card" style="--u:'+st.c+';margin-bottom:8px">'+
+        '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">'+
+          '<div><b>'+esc(x.numero_pedido_loja||("Proposta #"+inte(x.numero)))+'</b> · '+esc(nomes[x.cliente_id]||"cliente")+
+          '<span class="tag" style="background:'+st.c+';margin-left:6px">'+esc(st.r)+'</span>'+alerta+'</div>'+
+          '<div style="font-weight:800;font-family:ui-monospace,Menlo,monospace">R$ '+brl(x.valor_total)+'</div>'+
+        '</div>'+
+        (x.faturado_em ? '<div style="font-size:12px;color:var(--tinta2);margin-top:4px">faturado em '+dataBR(x.faturado_em)+
+           ' por '+esc(x.faturado_por||"—")+(x.arquivo_exportacao?' · '+esc(x.arquivo_exportacao):'')+'</div>' : '')+
+        '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'+
+          '<button class="s mini" onclick="abrirConferenciaPedido(\''+x.id+'\')">🔎 Conferir</button>'+
+          (x.status==="pedido" ? '<button class="s mini" onclick="faturarPedidos([\''+x.id+'\'])">💰 Faturar</button>' : '')+
+          (x.status==="pedido" ? '<button class="s mini" onclick="voltarParaProposta(\''+x.id+'\')">↩️ Voltar a proposta</button>' : '')+
+          (x.status==="exportado"||x.status==="faturado" ? '<button class="s mini" onclick="baixarPlanilhaNovamente(\''+x.id+'\')">⬇️ Baixar a planilha de novo</button>' : '')+
+        '</div>'+
+        '<div id="conf-'+x.id+'"></div>'+
+      '</div>';
+    }).join("") : '<div class="vazio">Nada na carteira ainda.</div>')+'</div>';
+  pinta(h);
+}
+function marcarTodosCarteira(){
+  (CART.lista||[]).forEach(function(x){ if(x.status === "pedido") CART.sel[x.id] = true; });
+  renderCarteira();
+}
+function faturarSelecionados(){
+  var ids = (CART.lista||[]).filter(function(x){ return x.status==="pedido" && CART.sel[x.id]; })
+    .map(function(x){ return x.id; });
+  if(!ids.length){ msg("Marque os pedidos que vão ser faturados.", true); return; }
+  CART.sel = {};
+  faturarPedidos(ids);
+}
+async function abrirConferenciaPedido(cotacaoId){
+  var alvo = $("conf-"+cotacaoId);
+  if(!alvo) return;
+  if(alvo.innerHTML){ alvo.innerHTML = ""; return; }
+  alvo.innerHTML = '<div class="vazio">Conferindo…</div>';
+  var P = await carregarPedido(cotacaoId);
+  if(!P){ alvo.innerHTML = '<div class="vazio">Não consegui abrir.</div>'; return; }
+  var pend = pendenciasPedido(P);
+  var total = totalCobradoPedido(P);
+  var prev = calcularParcelas(P.cot.condicao_pagamento, total, P.cot.faturado_em || hojeISO());
+  var bonif = P.itens.filter(function(i){ return i.bonificado; });
+  var h = '<div style="margin-top:10px;border-top:1px solid var(--linha);padding-top:8px;font-size:13px">';
+  if(pend.cliente.length){
+    h += '<div style="color:#C63A3A"><b>Cadastro incompleto:</b> '+esc(pend.cliente.join(", "))+'</div>'+
+         '<div style="font-size:12px;color:var(--tinta2)">Com NF-e = SIM a UpSeller exige todos. Corrija na ficha do cliente.</div>';
+  }
+  if(pend.semSku.length){
+    h += '<div style="color:#C63A3A;margin-top:4px"><b>Sem código UpSeller:</b> '+
+         esc(pend.semSku.map(function(i){ return i.descricao||"item"; }).join(", "))+'</div>';
+  }
+  if(!pend.cliente.length && !pend.semSku.length) h += '<div style="color:#3E7C45"><b>Pronto para exportar.</b></div>';
+  h += '<div style="margin-top:6px"><b>Total cobrado R$ '+brl(total)+'</b>'+
+       '<div style="font-size:12px;color:var(--tinta2)">'+itensVendaveis(P).length+' item(ns) · '+
+       esc(P.cot.condicao_pagamento||"sem condição")+
+       (P.cot.faturado_em ? ' · vencimentos de '+dataBR(P.cot.faturado_em) : ' · vencimentos calculados no comando Faturar')+'</div></div>';
+  h += '<div style="margin-top:6px">'+prev.map(function(p){
+      return '<div style="display:flex;justify-content:space-between"><span>'+p.numero_parcela+'/'+p.total_parcelas+
+        ' · '+p.prazo_dias+' dias</span><span>R$ '+brl(p.valor)+' · '+dataBR(p.vencimento)+'</span></div>';
+    }).join("")+'</div>';
+  if(bonif.length) h += '<div style="margin-top:6px;color:#B8862B">'+bonif.length+
+    ' item(ns) bonificado(s) fora da planilha — lançar em nota própria.</div>';
+  h += '<div style="margin-top:6px;font-size:12px;color:var(--tinta2)">Peso bruto sai igual ao líquido (sem tara de caixa).</div>';
+  alvo.innerHTML = h + '</div>';
+}
+/* ===== fim pedido de venda → UpSeller ===== */
+
 async function telaRepres(){
   var r = await sb.from("representantes").select("*").order("nome");
   var L = (r.data||[]);
