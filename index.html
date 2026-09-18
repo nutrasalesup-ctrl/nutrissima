@@ -301,7 +301,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-09-17 · CNPJ do fornecedor opcional';
+const APP_VERSAO='2026-09-18 · mapear código com busca';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -2966,7 +2966,7 @@ async function quadroRender(){
 async function calcCobertura(){
   const [dem,pa,vp,vb]=await Promise.all([
     sb.from('demanda_vendas').select('produto_acabado_id,qtd_potes,data_despacho,plataforma,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto').neq('origem','import_varejo'),
-    sb.from('produto_acabado').select('id,nome').eq('ativo',true).order('nome'),
+    sb.from('produto_acabado').select('id,nome,linha').eq('ativo',true).order('nome'),
     sb.from('vendas_pedidos').select('produto_acabado_id,canal,entrega,qtd,qtd_separada,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto').in('canal',['Varejo','Shopee Full','Mercado Livre Full']),
     sb.from('vw_sku_bases').select('produto_acabado_id,base_id,base_nome,kg_por_pote,origem,saldo_balde_kg,kg_pesado,kg_mistura,kg_refino,kg_a_pesar')
   ]);
@@ -4094,16 +4094,54 @@ function imprimirEnvase(){
   setTimeout(()=>{w.focus();w.print();},800);
 }
 
-async function mapearCodigo(cod){
+/* Mapear codigo -> SKU. NAO usar prompt(): o dialogo do iOS TRUNCA a mensagem
+   e some com os SKUs do meio da lista pra frente (87 ativos hoje). Painel proprio,
+   com busca por texto e a linha ao lado do nome. */
+function mapEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function mapearCodigo(cod){
   if(precisaOperador())return;
   const pas=EST.cache.paLista||[];if(!pas.length)return msg('Recarregue a tela',true);
-  const nomes=pas.map((p,i)=>(i+1)+') '+p.nome).join('\n');
-  const esc=prompt('SKU interno para o código '+cod+':\n'+nomes+'\n\nDigite o número:');if(esc==null)return;
-  const p=pas[parseInt(esc)-1];if(!p)return msg('Número inválido',true);
+  EST.mapCod=cod;
+  let ov=document.getElementById('ovMapear');
+  if(!ov){ov=document.createElement('div');ov.id='ovMapear';document.body.appendChild(ov);}
+  ov.setAttribute('style','position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-end;justify-content:center');
+  ov.innerHTML='<div style="background:var(--leite);width:100%;max-width:520px;height:88vh;border-radius:16px 16px 0 0;display:flex;flex-direction:column;overflow:hidden">'
+    +'<div style="padding:12px 14px;border-bottom:1px solid var(--linha)">'
+    +'<b style="color:var(--cacau)">Ligar c\u00f3digo a um SKU</b>'
+    +'<div class="mono" style="font-size:12px;color:#7A6A57;word-break:break-all;margin-top:2px">'+mapEsc(cod)+'</div>'
+    +'<input id="mapBusca" placeholder="buscar por nome ou linha\u2026" oninput="mapFiltrar()" autocomplete="off" '
+    +'style="width:100%;margin-top:8px;padding:10px;border:1px solid var(--linha);border-radius:10px;font-size:16px">'
+    +'<div id="mapConta" style="font-size:11px;color:#7A6A57;margin-top:4px"></div>'
+    +'</div>'
+    +'<div id="mapLista" style="overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch"></div>'
+    +'<button onclick="mapFechar()" style="border:0;border-top:1px solid var(--linha);background:#fff;padding:14px;font-size:15px;color:#7A6A57">cancelar</button>'
+    +'</div>';
+  mapFiltrar();
+}
+function mapFiltrar(){
+  const cx=document.getElementById('mapBusca');
+  const t=((cx&&cx.value)||'').trim().toLowerCase();
+  const todos=EST.cache.paLista||[];
+  const pas=t?todos.filter(p=>((p.linha||'')+' '+(p.nome||'')).toLowerCase().includes(t)):todos;
+  const el=document.getElementById('mapLista');if(!el)return;
+  const cta=document.getElementById('mapConta');
+  if(cta)cta.textContent=pas.length+' de '+todos.length+' SKUs ativos';
+  el.innerHTML=pas.length
+    ?pas.map(p=>'<div style="padding:11px 14px;border-bottom:1px solid var(--linha);display:flex;justify-content:space-between;gap:10px;align-items:center">'
+      +'<span><b style="color:var(--cacau)">'+mapEsc(p.nome)+'</b><br><small style="color:#7A6A57">'+mapEsc(p.linha||'sem linha')+'</small></span>'
+      +'<button onclick="mapGravar(\''+mapEsc(p.id)+'\')" style="border:1px solid var(--pistache);color:var(--pistache);background:#fff;border-radius:8px;padding:8px 14px;white-space:nowrap">ligar</button>'
+      +'</div>').join('')
+    :'<div style="padding:22px;text-align:center;color:#7A6A57">nenhum SKU com esse texto</div>';
+}
+function mapFechar(){const o=document.getElementById('ovMapear');if(o)o.remove();}
+async function mapGravar(paId){
+  const cod=EST.mapCod, p=(EST.cache.paLista||[]).find(x=>x.id===paId);
+  if(!cod||!p)return msg('Recarregue a tela',true);
   const {error}=await sb.from('depara_sku').insert({codigo:cod,produto_acabado_id:p.id,criado_por:EST.operador});
   if(error)return msg(error.message,true);
+  mapFechar();
   EST.cache.naoMapeados=(EST.cache.naoMapeados||[]).filter(x=>String(x.codigo)!==String(cod));
-  msg('✅ Mapeado para '+p.nome+'. Reimporte a planilha pra puxar a demanda.');tela('vendas');
+  msg('\u2705 Mapeado para '+p.nome+'. Reimporte a planilha pra puxar a demanda.');tela('vendas');
 }
 
 /* ================= PESAGEM ================= */
