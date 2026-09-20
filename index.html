@@ -3611,19 +3611,22 @@ async function importarVarejo(files){
 async function tDataPedido(){
   document.getElementById('app').innerHTML=topo('Alterar data de entrega','pedidos em aberto — Varejo e Full')+'<main><div class="center">Carregando…</div></main>';
   const {data,error}=await sb.from('vendas_pedidos')
-    .select('canal,pedido_numero,entrega,qtd')
+    .select('canal,pedido_numero,cliente,entrega,qtd')
     .eq('status','aberto').in('canal',['Varejo','Shopee Full','Mercado Livre Full']);
   if(error){document.getElementById('app').innerHTML=topo('Alterar data de entrega','erro')+'<main><div class="card"><p>'+error.message+'</p></div></main>';return;}
   const gr={};
   (data||[]).forEach(r=>{
     const k=r.canal+'|'+(r.pedido_numero||'');
-    if(!gr[k])gr[k]={canal:r.canal,ped:r.pedido_numero||'',ent:r.entrega||'',linhas:0,potes:0};
+    if(!gr[k])gr[k]={canal:r.canal,ped:r.pedido_numero||'',cli:'',ent:r.entrega||'',linhas:0,potes:0};
     const g=gr[k];g.linhas++;g.potes+=Number(r.qtd)||0;
+    if(!g.cli&&r.cliente)g.cli=r.cliente;
     if(r.entrega&&(!g.ent||r.entrega<g.ent))g.ent=r.entrega;
   });
   const lista=Object.values(gr).sort((a,b)=>String(a.ent||'9999-99-99').localeCompare(String(b.ent||'9999-99-99'))||String(a.ped).localeCompare(String(b.ped)));
   EST.cache.dpLista=lista;
   const hj=hojeLocal();
+  const podeVer=EST.gestor===true;
+  const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const dbr=s=>s?new Date(s+'T12:00').toLocaleDateString('pt-BR'):'sem prazo';
   const corCanal=n=>{const x=(n||'').toLowerCase();
     if(x.includes('shopee'))return ['#EE4D2D','#fff'];
@@ -3640,10 +3643,12 @@ async function tDataPedido(){
     const dias=g.ent?Math.round((new Date(g.ent+'T12:00')-new Date(hj+'T12:00'))/86400000):null;
     const cor=dias===null?'#7A6A57':(dias<0?'#C63A3A':(dias<=1?'#D9772B':(dias<=4?'#B8862B':'#3E7C45')));
     const quando=dias===null?'sem prazo definido':(dias<0?('vencido há '+(-dias)+(dias===-1?' dia':' dias')):(dias===0?'vence hoje':('faltam '+dias+(dias===1?' dia':' dias'))));
-    return '<div style="background:#fff;border:1.5px solid var(--linha);border-left:6px solid '+cor+';border-radius:12px;padding:12px 14px;margin-bottom:10px">'+
+    const chave=((g.ped||'')+' '+g.canal+' '+(podeVer?(g.cli||''):'')+' '+dbr(g.ent)).toLowerCase();
+    return '<div data-dpbusca="'+esc(chave)+'" style="background:#fff;border:1.5px solid var(--linha);border-left:6px solid '+cor+';border-radius:12px;padding:12px 14px;margin-bottom:10px">'+
       '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">'+
-        '<div><span style="display:inline-block;background:'+bg+';color:'+fg+';font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:3px 8px;border-radius:999px">'+String(g.canal).toUpperCase()+'</span>'+
+        '<div style="min-width:0"><span style="display:inline-block;background:'+bg+';color:'+fg+';font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:3px 8px;border-radius:999px">'+String(g.canal).toUpperCase()+'</span>'+
         '<div class="mono" style="font-size:16px;font-weight:700;margin-top:5px">'+(g.ped||'—')+'</div>'+
+        (podeVer&&g.cli?'<div style="font-size:12.5px;color:#4A3B2A;margin-top:2px;font-weight:600">'+esc(g.cli)+'</div>':'')+
         '<div style="font-size:12px;color:#7A6A57;margin-top:2px">'+fmt(g.potes,0)+' potes · '+g.linhas+(g.linhas===1?' linha':' linhas')+'</div></div>'+
         '<div style="text-align:right"><small style="color:#7A6A57;font-weight:700;letter-spacing:.08em">ENTREGA HOJE</small>'+
         '<div class="mono" style="font-size:15px;font-weight:700">'+dbr(g.ent)+'</div>'+
@@ -3655,12 +3660,35 @@ async function tDataPedido(){
         '<button class="btnP" style="width:auto;flex:0 0 auto;min-height:50px;padding:0 20px;font-size:15px;margin-top:0" onclick="dpSalvar('+i+')">Salvar</button>'+
       '</div></div>';
   }).join('');
+  const selo=podeVer
+    ? '<span style="background:#3E7C45;color:#fff;padding:5px 10px;border-radius:6px;font-size:10px;font-weight:800;letter-spacing:.08em">🔓 CLIENTE VISÍVEL</span>'
+    : '<button onclick="destravarPINValores(\'dataPedido\')" style="background:#B8862B;color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:12px;font-weight:700">🔒 Mostrar e buscar por cliente</button>';
+  const busca='<div class="card" style="margin-bottom:12px">'+
+    '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'+
+      '<span class="step-label" style="margin:0">buscar pedido</span>'+selo+'</div>'+
+    '<input type="search" id="dpBusca" placeholder="'+(podeVer?'número do pedido, cliente ou canal':'número do pedido ou canal')+'" oninput="dpFiltrar()" autocomplete="off">'+
+    '<div id="dpConta" style="font-size:12px;color:#7A6A57;margin-top:8px">'+lista.length+(lista.length===1?' pedido em aberto':' pedidos em aberto')+'</div></div>';
   document.getElementById('app').innerHTML=topo('Alterar data de entrega','pedidos em aberto — Varejo e Full')+
   '<main><div class="card"><p style="margin:0;font-size:13.5px;color:#7A6A57">Remarca o prazo de <b>todas as linhas</b> do pedido. Não mexe em estoque nem em separação — só no prazo que a produção enxerga.</p></div>'+
-  cards+
-  '<div class="card"><small style="color:#7A6A57"><b>Como ler.</b> A tarja colorida é o prazo <i>atual</i> contra hoje: vermelha vencido, laranja até amanhã, amarela até 4 dias, verde com folga. Só aparecem os pedidos que moram na carteira — <b>Varejo, Shopee Full e Mercado Livre Full</b>. A demanda do Up Seller (TikTok, Shopee, Mercado Livre) não entra: ela é uma foto apagada e refeita a cada import, e a data remarcada se perderia no import seguinte.</small></div>'+
+  busca+
+  '<div id="dpCards">'+cards+'</div>'+
+  '<div class="card"><small style="color:#7A6A57"><b>Como ler.</b> A tarja colorida é o prazo <i>atual</i> contra hoje: vermelha vencido, laranja até amanhã, amarela até 4 dias, verde com folga. O nome do cliente fica atrás do PIN do gestor, como no Relatório comercial — sem PIN a busca acha por número do pedido e canal. Só aparecem os pedidos que moram na carteira — <b>Varejo, Shopee Full e Mercado Livre Full</b>. A demanda do Up Seller (TikTok, Shopee, Mercado Livre) não entra: ela é uma foto apagada e refeita a cada import, e a data remarcada se perderia no import seguinte.</small></div>'+
   '<button class="btnSec" onclick="tela(\'carteira\')">Ir para a Carteira de pedidos</button>'+
   '</main>';
+}
+
+function dpFiltrar(){
+  const campo=document.getElementById('dpBusca');
+  const q=(campo?campo.value:'').trim().toLowerCase();
+  const cards=document.querySelectorAll('#dpCards [data-dpbusca]');
+  let vis=0;
+  cards.forEach(el=>{
+    const ok=!q||String(el.getAttribute('data-dpbusca')||'').indexOf(q)>=0;
+    el.style.display=ok?'':'none';
+    if(ok)vis++;
+  });
+  const c=document.getElementById('dpConta');
+  if(c)c.textContent=q?('mostrando '+vis+' de '+cards.length+(cards.length===1?' pedido':' pedidos')):(cards.length+(cards.length===1?' pedido em aberto':' pedidos em aberto'));
 }
 
 async function dpSalvar(i){
