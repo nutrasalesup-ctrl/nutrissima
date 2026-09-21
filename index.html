@@ -4531,20 +4531,62 @@ async function sepPiso(){
   return new Date(ts[ts.length-1]).toLocaleDateString('sv-SE',{timeZone:'America/Sao_Paulo'});
 }
 const BX_CANAIS=['Varejo','Shopee Full','Mercado Livre Full','TikTok Shop','Shopee','Mercado Libre'];
+/* ===== Faixas de prazo na separacao por canal ===== */
+function bxFatias(k){
+  const b=(EST.cache.bxData||{})[k]||{hoje:0,amanha:0,depois:0,sem:0};
+  let fez=(EST.cache.bxSep||{})[k]||0;const out={};
+  ['hoje','amanha','depois','sem'].forEach(n=>{const u=Math.min(fez,b[n]);out[n]=b[n]-u;fez-=u});
+  return out;
+}
+function bxCorPrazo(f){return f.hoje>0?'var(--morango)':(f.amanha>0?'#D9772B':((f.depois+f.sem)>0?'var(--mel)':'var(--pistache)'))}
+function bxPilulas(f){
+  const am=EST.cache.bxAm?new Date(EST.cache.bxAm+'T12:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}):'';
+  const p=(rot,v,cor)=>'<span style="display:inline-block;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:800;'+
+    (v>0?'background:'+cor+';color:#fff':'background:#0000000a;color:#A89A88')+'">'+rot+' '+fmt(v,0)+'</span>';
+  return '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 6px">'+
+    p('HOJE',f.hoje,'var(--morango)')+p('AMANHÃ'+(am?' '+am:''),f.amanha,'#D9772B')+p('DEPOIS',f.depois,'var(--mel)')+
+    (f.sem>0?p('SEM DATA',f.sem,'#7A6A57'):'')+'</div>';
+}
+function bxResumoPrazo(cn,todos){
+  const t={hoje:0,amanha:0,depois:0,sem:0};let n=0;
+  (todos||[]).forEach(x=>{const f=bxFatias(cn+'|'+x.id);['hoje','amanha','depois','sem'].forEach(z=>t[z]+=f[z]);if(f.hoje>0)n++});
+  const tot=t.hoje+t.amanha+t.depois+t.sem;
+  if(tot<=0)return '';
+  return '<div class="card" style="border-left:7px solid '+bxCorPrazo(t)+'">'+
+    '<span class="step-label" style="margin:0 0 4px">falta separar em '+cn+', por prazo de despacho</span>'+bxPilulas(t)+
+    '<small style="color:#7A6A57">'+fmt(t.hoje,0)+' hoje + '+fmt(t.amanha,0)+' amanhã + '+fmt(t.depois,0)+' depois'+(t.sem>0?' + '+fmt(t.sem,0)+' sem data':'')+' = <b>'+fmt(tot,0)+'</b> potes'+
+    (n?' · '+n+(n===1?' produto vence':' produtos vencem')+' hoje':'')+'</small></div>';
+}
+function bxComoLer(){
+  return '<div class="card"><small style="color:#7A6A57"><b>Como ler.</b> <b>HOJE</b> inclui o que já passou do prazo. Os produtos vêm ordenados pelo que falta para hoje, depois amanhã. '+
+    'A tarja é a urgência: vermelha tem pote para hoje, laranja só para amanhã, amarela só depois, verde completo. '+
+    '<b>Premissa:</b> a separação não registra para qual data foi, então o que já foi separado desde o último import abate primeiro o prazo mais apertado. '+
+    'Prazos vêm da data de despacho do import (marketplace) e da data de entrega da carteira (Varejo e Full).</small></div>';
+}
 async function tBaixa(){
   if(!EST.bx)EST.bx={paId:null,potes:0,caixa:28,canal:null};
   const piso=await sepPiso();
   const [paR,dvR,vpR,seR]=await Promise.all([
     sb.from('produto_acabado').select('id,nome,linha,saldo_potes').eq('ativo',true).order('linha').order('nome'),
-    sb.from('demanda_vendas').select('plataforma,produto_acabado_id,qtd_potes').eq('status','aberto').neq('origem','import_varejo'),
-    sb.from('vendas_pedidos').select('canal,produto_acabado_id,qtd,qtd_separada').eq('status','aberto').in('canal',['Varejo','Shopee Full','Mercado Livre Full']),
+    sb.from('demanda_vendas').select('plataforma,produto_acabado_id,qtd_potes,data_despacho').eq('status','aberto').neq('origem','import_varejo'),
+    sb.from('vendas_pedidos').select('canal,produto_acabado_id,qtd,qtd_separada,entrega').eq('status','aberto').in('canal',['Varejo','Shopee Full','Mercado Livre Full']),
     sb.from('separacao_ecommerce').select('canal,produto_acabado_id,potes').gte('data',piso)
   ]);
   const pedido={},sep={};
   (dvR.data||[]).forEach(r=>{const k=(r.plataforma||'sem canal')+'|'+r.produto_acabado_id;pedido[k]=(pedido[k]||0)+(Number(r.qtd_potes)||0)});
   (vpR.data||[]).forEach(r=>{const k=r.canal+'|'+r.produto_acabado_id;pedido[k]=(pedido[k]||0)+(Number(r.qtd)||0);sep[k]=(sep[k]||0)+(Number(r.qtd_separada)||0)});
   (seR.data||[]).forEach(r=>{const k=r.canal+'|'+r.produto_acabado_id;sep[k]=(sep[k]||0)+(Number(r.potes)||0)});
-  EST.cache.bxPedido=pedido;EST.cache.bxSep=sep;EST.cache.bxPiso=piso;
+  /* Prazo de despacho por faixa (hoje+vencido / amanha / depois / sem data).
+     O que ja foi separado abate PRIMEIRO o prazo mais apertado (FIFO) — a
+     separacao nao guarda para qual data foi, entao essa e a premissa. */
+  const bxHj=hojeLocal();const bxD1=new Date(bxHj+'T12:00');bxD1.setDate(bxD1.getDate()+1);
+  const bxAm=bxD1.getFullYear()+'-'+String(bxD1.getMonth()+1).padStart(2,'0')+'-'+String(bxD1.getDate()).padStart(2,'0');
+  const bxFaixa=d=>{const s=d?String(d).slice(0,10):'';if(!s)return 'sem';if(s<=bxHj)return 'hoje';if(s===bxAm)return 'amanha';return 'depois'};
+  const dat={};
+  const bxSoma=(k,d,q)=>{if(!dat[k])dat[k]={hoje:0,amanha:0,depois:0,sem:0};dat[k][bxFaixa(d)]+=q};
+  (dvR.data||[]).forEach(r=>bxSoma((r.plataforma||'sem canal')+'|'+r.produto_acabado_id,r.data_despacho,Number(r.qtd_potes)||0));
+  (vpR.data||[]).forEach(r=>bxSoma(r.canal+'|'+r.produto_acabado_id,r.entrega,Number(r.qtd)||0));
+  EST.cache.bxPedido=pedido;EST.cache.bxSep=sep;EST.cache.bxPiso=piso;EST.cache.bxData=dat;EST.cache.bxAm=bxAm;
   const todos=paR.data||[];
   EST.cache.paBaixa=todos;
   const cn=EST.bx.canal;
@@ -4558,7 +4600,7 @@ async function tBaixa(){
       <button onclick="bxCanal('')" style="${cn===''?'outline:3px solid var(--linha)':''}">sem canal <small>(só tirar do estoque)</small></button>
     </div>
     ${cn?`<p style="margin:10px 0 0;font-size:12.5px;color:#7A6A57">Contando o que já foi separado desde o último import (${new Date(piso+'T12:00').toLocaleDateString('pt-BR')}).</p>`:''}
-  </div>`;
+  </div>${cn?bxResumoPrazo(cn,todos):''}`;
   let corpo;
   if(cn===null){
     corpo='<div class="card"><div class="center" style="color:#7A6A57">Escolha o canal acima para ver o que ele está esperando.</div></div>';
@@ -4566,17 +4608,18 @@ async function tBaixa(){
     let lista;
     if(cn){
       const itens=todos.map(x=>{const k=cn+'|'+x.id,ped=pedido[k]||0,fez=sep[k]||0;
-        return {x:x,ped:ped,fez:fez,falta:Math.max(0,ped-fez)}}).filter(i=>i.ped>0||i.fez>0)
-        .sort((a,b)=>b.falta-a.falta||b.ped-a.ped);
+        return {x:x,ped:ped,fez:fez,falta:Math.max(0,ped-fez),f:bxFatias(k)}}).filter(i=>i.ped>0||i.fez>0)
+        .sort((a,b)=>b.f.hoje-a.f.hoje||b.f.amanha-a.f.amanha||b.falta-a.falta||b.ped-a.ped);
       lista=itens.length?itens.map(i=>{
         const pct=i.ped>0?Math.min(100,i.fez/i.ped*100):100;
-        const cor=i.falta<=0?'var(--pistache)':(i.fez>0?'#C9A227':'var(--morango)');
+        const cor=bxCorPrazo(i.f);
         const semEstoque=i.x.saldo_potes<=0;
         return `<button class="linha-item" onclick="bxEscolheProduto('${i.x.id}')" style="display:block;width:100%;text-align:left;border-left:7px solid ${cor};background:#fff;border-radius:12px;padding:10px 12px;margin-bottom:8px">
           <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><b style="font-size:15.5px">${i.x.nome}</b><b class="mono" style="font-size:20px;color:${cor}">${fmt(i.falta,0)}</b></div>
           <div style="height:8px;background:#0000000f;border-radius:5px;overflow:hidden;margin:6px 0 4px"><div style="width:${pct.toFixed(1)}%;height:100%;background:${cor}"></div></div>
+          ${bxPilulas(i.f)}
           <small style="color:#7A6A57">pedido ${fmt(i.ped,0)} · separado ${fmt(i.fez,0)} · falta ${fmt(i.falta,0)} · estoque ${fmt(i.x.saldo_potes,0)}${semEstoque?' ⚠️ sem pote':''}</small>
-        </button>`}).join(''):'<div class="card"><div class="center">Este canal não tem pedido em aberto.</div></div>';
+        </button>`}).join('')+bxComoLer():'<div class="card"><div class="center">Este canal não tem pedido em aberto.</div></div>';
     }else{
       const comSaldo=todos.filter(x=>Number(x.saldo_potes)>0);
       const porLinha={};comSaldo.forEach(x=>{(porLinha[x.linha||'Outros']=porLinha[x.linha||'Outros']||[]).push(x)});
@@ -4585,12 +4628,12 @@ async function tBaixa(){
           ${items.map(x=>`<button onclick="bxEscolheProduto('${x.id}')">${x.nome} <small>(${fmt(x.saldo_potes,0)})</small></button>`).join('')}
         </div></div>`).join(''):'<div class="card"><div class="center">Nenhum produto com saldo em estoque agora.</div></div>';
     }
-    corpo=`<div class="card"><span class="step-label">② toca no produto que você separou</span><small style="color:#7A6A57">${cn?'ordenado pelo que mais falta neste canal':'só aparecem produtos com saldo em estoque'}</small></div>${lista}`;
+    corpo=`<div class="card"><span class="step-label">② toca no produto que você separou</span><small style="color:#7A6A57">${cn?'ordenado pelo prazo: primeiro o que tem pote para hoje, depois amanhã':'só aparecem produtos com saldo em estoque'}</small></div>${lista}`;
   }else{
-    const k=(cn||'')+'|'+p.id, ped=pedido[k]||0, fez=sep[k]||0, falta=Math.max(0,ped-fez);
+    const k=(cn||'')+'|'+p.id, ped=pedido[k]||0, fez=sep[k]||0, falta=Math.max(0,ped-fez), fx=bxFatias(k);
     corpo=`<div class="card" style="text-align:center;margin-top:0">
       <span class="step-label" style="margin-bottom:2px">produto${cn?' · '+cn:''}</span><b style="font-size:20px">${p.nome}</b>
-      ${cn&&ped>0?`<p style="margin:8px 0 0;font-size:13px;color:#7A6A57">pedido <b>${fmt(ped,0)}</b> · já separado <b>${fmt(fez,0)}</b> · falta <b style="color:var(--morango)">${fmt(falta,0)}</b></p>`:''}
+      ${cn&&ped>0?`<p style="margin:8px 0 0;font-size:13px;color:#7A6A57">pedido <b>${fmt(ped,0)}</b> · já separado <b>${fmt(fez,0)}</b> · falta <b style="color:var(--morango)">${fmt(falta,0)}</b></p><div style="display:flex;justify-content:center">${bxPilulas(fx)}</div>`:''}
       <p style="color:#7A6A57;margin:10px 0 0;font-size:12.5px">em estoque agora</p><b class="mono">${fmt(p.saldo_potes,0)} potes</b>
       <span class="step-label" style="margin:18px 0 2px">③ conte em unidades (a caixa é só um atalho)</span>
       <div style="font-size:60px;font-weight:900;margin:2px 0 2px;color:var(--morango);line-height:1">${EST.bx.potes||0}</div>
@@ -4598,6 +4641,7 @@ async function tBaixa(){
       <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
         <button class="btnP" style="min-height:64px;font-size:19px;padding:0 22px;background:var(--morango);border-color:var(--morango)" onclick="bxAdd(${EST.bx.caixa})">📦 +1 caixa (${EST.bx.caixa})</button>
         <button class="btnSec" style="min-height:64px;font-size:19px;padding:0 20px" onclick="bxAdd(1)">+1 pote</button>
+        ${cn&&fx.hoje>0&&fx.hoje<falta?`<button class="btnSec" style="min-height:64px;font-size:19px;padding:0 20px;border-color:var(--morango);color:var(--morango)" onclick="bxSetPotes(${fx.hoje})">só o de hoje (${fmt(fx.hoje,0)})</button>`:''}
         ${cn&&falta>0?`<button class="btnSec" style="min-height:64px;font-size:19px;padding:0 20px" onclick="bxSetPotes(${falta})">tudo que falta (${fmt(falta,0)})</button>`:''}
       </div>
       <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;align-items:center">
