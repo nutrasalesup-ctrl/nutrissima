@@ -2994,14 +2994,16 @@ async function quadroRender(){
   let Q,erro=null;
   try{
     const iniISO=new Date(hj+'T00:00:00-03:00').toISOString(), fimISO=new Date(hj+'T23:59:59-03:00').toISOString();
-    const [C,i1,i2,env,atrVp,atrDv]=await Promise.all([
+    const [C,i1,i2,env,atrVp,atrDv,sepVp]=await Promise.all([
       calcCobertura(),
       sb.from('atividades').select('criado_em').ilike('descricao','Demanda de vendas%').order('criado_em',{ascending:false}).limit(1),
       sb.from('atividades').select('criado_em').ilike('descricao','Carteira Varejo%').order('criado_em',{ascending:false}).limit(1),
       sb.from('produto_acabado_movimentos').select('produto_acabado_id,quantidade,lote,criado_em,produto_acabado(nome)').eq('tipo','entrada').gte('criado_em',iniISO).lte('criado_em',fimISO),
       sb.from('vendas_pedidos').select('pedido_numero,cliente,canal,entrega,qtd,qtd_separada,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').in('canal',['Varejo','Shopee Full','Mercado Livre Full']).lt('entrega',hj),
-      sb.from('demanda_vendas').select('plataforma,data_despacho,qtd_potes,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').neq('origem','import_varejo').lt('data_despacho',hj)
+      sb.from('demanda_vendas').select('plataforma,data_despacho,qtd_potes,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').neq('origem','import_varejo').lt('data_despacho',hj),
+      sepVpCarregar()
     ]);
+    vpAplicaSep(atrVp.data,sepVp);
     const ts=[(i1.data||[])[0],(i2.data||[])[0]].filter(Boolean).map(r=>r.criado_em).sort();
     Q=quadroMontar(C,hj,ts.length?ts[ts.length-1]:null,env.data||[],{vp:atrVp.data||[],dv:atrDv.data||[]});
   }catch(e){erro=e&&e.message?e.message:String(e)}
@@ -3036,12 +3038,14 @@ async function quadroRender(){
 /* ================= COBERTURA DE CREME (conta única) =================
    Usada pela tela Vendas/Despacho e pelo Painel da produção. Não duplicar esta conta. */
 async function calcCobertura(){
-  const [dem,pa,vp,vb]=await Promise.all([
+  const [dem,pa,vp,vb,sepVp]=await Promise.all([
     sb.from('demanda_vendas').select('produto_acabado_id,qtd_potes,data_despacho,plataforma,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto').neq('origem','import_varejo'),
     sb.from('produto_acabado').select('id,nome,linha').eq('ativo',true).order('nome'),
     sb.from('vendas_pedidos').select('produto_acabado_id,canal,entrega,qtd,qtd_separada,produto_acabado(nome,saldo_potes,embalagem)').eq('status','aberto').in('canal',['Varejo','Shopee Full','Mercado Livre Full']),
-    sb.from('vw_sku_bases').select('produto_acabado_id,base_id,base_nome,kg_por_pote,origem,saldo_balde_kg,kg_pesado,kg_mistura,kg_refino,kg_a_pesar')
+    sb.from('vw_sku_bases').select('produto_acabado_id,base_id,base_nome,kg_por_pote,origem,saldo_balde_kg,kg_pesado,kg_mistura,kg_refino,kg_a_pesar'),
+    sepVpCarregar()
   ]);
+  vpAplicaSep(vp.data,sepVp);
   // Varejo e Shopee Full vêm direto da Carteira (vendas_pedidos), não da foto congelada do import:
   // demanda real = qtd - qtd_separada (o que a Sabrina já separou não conta mais como necessidade).
   const vpDemanda=(vp.data||[]).filter(r=>r.produto_acabado_id).map(r=>({
@@ -4531,6 +4535,36 @@ async function sepPiso(){
   return new Date(ts[ts.length-1]).toLocaleDateString('sv-SE',{timeZone:'America/Sao_Paulo'});
 }
 const BX_CANAIS=['Varejo','Shopee Full','Mercado Livre Full','TikTok Shop','Shopee','Mercado Libre'];
+/* ---- separação de canais de PEDIDO (Varejo, Shopee Full, Mercado Livre Full) ----
+   Esses pedidos moram em vendas_pedidos e NÃO são substituídos pelo import de demanda.
+   Por isso o piso do último import não vale para eles: o evento de separação conta desde
+   a criação do pedido aberto mais antigo daquele canal+produto, e é somado ao pedido como
+   qtd_separada (só em memória), abatendo o que falta em vez de inflar o total. */
+const VP_CANAIS=['Varejo','Shopee Full','Mercado Livre Full'];
+async function sepVpCarregar(){
+  const vp=await sb.from('vendas_pedidos').select('canal,produto_acabado_id,criado_em').eq('status','aberto').in('canal',VP_CANAIS);
+  const piso={};let min=null;
+  (vp.data||[]).forEach(r=>{if(!r.produto_acabado_id||!r.criado_em)return;
+    const d=new Date(r.criado_em).toLocaleDateString('sv-SE',{timeZone:'America/Sao_Paulo'});
+    const k=r.canal+'|'+r.produto_acabado_id;if(!piso[k]||d<piso[k])piso[k]=d;if(!min||d<min)min=d});
+  const soma={};
+  if(!min)return soma;
+  const se=await sb.from('separacao_ecommerce').select('canal,produto_acabado_id,potes,data').in('canal',VP_CANAIS).gte('data',min);
+  (se.data||[]).forEach(r=>{const k=r.canal+'|'+r.produto_acabado_id;
+    if(piso[k]&&String(r.data).slice(0,10)>=piso[k])soma[k]=(soma[k]||0)+(Number(r.potes)||0)});
+  return soma;
+}
+function vpAplicaSep(rows,soma){
+  if(!rows||!soma)return rows;
+  const resto=Object.assign({},soma);
+  rows.filter(r=>r.status===undefined||r.status==='aberto')
+    .sort((a,b)=>String(a.entrega||'9999-12-31')<String(b.entrega||'9999-12-31')?-1:1)
+    .forEach(r=>{const k=r.canal+'|'+r.produto_acabado_id;const q=resto[k]||0;if(q<=0)return;
+      const livre=Math.max(0,(Number(r.qtd)||0)-(Number(r.qtd_separada)||0));const u=Math.min(q,livre);
+      r.qtd_separada=(Number(r.qtd_separada)||0)+u;resto[k]=q-u});
+  return rows;
+}
+function seSemVp(rows){return (rows||[]).filter(r=>VP_CANAIS.indexOf(r.canal)<0)}
 /* ===== Faixas de prazo na separacao por canal ===== */
 function bxFatias(k){
   const b=(EST.cache.bxData||{})[k]||{hoje:0,amanha:0,depois:0,sem:0};
@@ -4566,12 +4600,14 @@ function bxComoLer(){
 async function tBaixa(){
   if(!EST.bx)EST.bx={paId:null,potes:0,caixa:28,canal:null};
   const piso=await sepPiso();
-  const [paR,dvR,vpR,seR]=await Promise.all([
+  const [paR,dvR,vpR,seR,sepVp]=await Promise.all([
     sb.from('produto_acabado').select('id,nome,linha,saldo_potes').eq('ativo',true).order('linha').order('nome'),
     sb.from('demanda_vendas').select('plataforma,produto_acabado_id,qtd_potes,data_despacho').eq('status','aberto').neq('origem','import_varejo'),
     sb.from('vendas_pedidos').select('canal,produto_acabado_id,qtd,qtd_separada,entrega').eq('status','aberto').in('canal',['Varejo','Shopee Full','Mercado Livre Full']),
-    sb.from('separacao_ecommerce').select('canal,produto_acabado_id,potes').gte('data',piso)
+    sb.from('separacao_ecommerce').select('canal,produto_acabado_id,potes').gte('data',piso),
+    sepVpCarregar()
   ]);
+  vpAplicaSep(vpR.data,sepVp);seR.data=seSemVp(seR.data);
   const pedido={},sep={};
   (dvR.data||[]).forEach(r=>{const k=(r.plataforma||'sem canal')+'|'+r.produto_acabado_id;pedido[k]=(pedido[k]||0)+(Number(r.qtd_potes)||0)});
   (vpR.data||[]).forEach(r=>{const k=r.canal+'|'+r.produto_acabado_id;pedido[k]=(pedido[k]||0)+(Number(r.qtd)||0);sep[k]=(sep[k]||0)+(Number(r.qtd_separada)||0)});
@@ -5401,14 +5437,16 @@ async function tvlCarregar(){
   const hj=hojeLocal();
   try{
     const iniISO=new Date(hj+'T00:00:00-03:00').toISOString(), fimISO=new Date(hj+'T23:59:59-03:00').toISOString();
-    const [C,env,atrVp,atrDv,vpTudo,seR]=await Promise.all([
+    const [C,env,atrVp,atrDv,vpTudo,seR,sepVp]=await Promise.all([
       calcCobertura(),
       sb.from('produto_acabado_movimentos').select('produto_acabado_id,quantidade,lote,criado_em,produto_acabado(nome)').eq('tipo','entrada').gte('criado_em',iniISO).lte('criado_em',fimISO),
       sb.from('vendas_pedidos').select('pedido_numero,cliente,canal,entrega,qtd,qtd_separada,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').in('canal',['Varejo','Shopee Full','Mercado Livre Full']).lt('entrega',hj),
       sb.from('demanda_vendas').select('plataforma,data_despacho,qtd_potes,produto_acabado_id,produto_acabado(nome)').eq('status','aberto').neq('origem','import_varejo').lt('data_despacho',hj),
       sb.from('vendas_pedidos').select('canal,produto_acabado_id,qtd,qtd_separada,status,baixado_em').in('canal',['Varejo','Shopee Full','Mercado Livre Full']),
-      sepPiso().then(p=>sb.from('separacao_ecommerce').select('canal,produto_acabado_id,potes,data').gte('data',p))
+      sepPiso().then(p=>sb.from('separacao_ecommerce').select('canal,produto_acabado_id,potes,data').gte('data',p)),
+      sepVpCarregar()
     ]);
+    vpAplicaSep(vpTudo.data,sepVp);vpAplicaSep(atrVp.data,sepVp);if(seR)seR.data=seSemVp(seR.data);
     const Q=quadroMontar(C,hj,null,env.data||[],{vp:atrVp.data||[],dv:atrDv.data||[]});
     EST.tvlD={Q:Q,canais:tvlCanais(C,hj),produtos:tvlProdutos(C,hj),sep:tvlSeparados(vpTudo.data||[],(seR&&seR.data)||[],hj),atend:tvlAtendimento(C,vpTudo.data||[],(seR&&seR.data)||[],hj),hj:hj};
     EST.tvlErro=null;EST.tvlHora=hhmmAgora();
