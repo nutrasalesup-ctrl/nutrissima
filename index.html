@@ -476,7 +476,7 @@ async function tSeparacao(arg){
   let corpo;
   if(!p){
     corpo='<div class="card" style="margin-top:0"><span class="step-label">① toque no pedido que você vai separar</span><small style="color:#7A6A57">ordenados pela entrega mais apertada</small></div>'+
-      (lista.length?lista.map(x=>{
+      (lista.length?(()=>{const _cardPed=x=>{
         const falta=x.un-x.sep;
         const estado=x.sep===0?'não começou':(falta<=0?'✅ tudo separado':'⏳ falta '+fmt(falta,0)+' un');
         return '<div class="card" style="border-left:7px solid '+corDe(x.entrega)+'">'+
@@ -488,7 +488,11 @@ async function tSeparacao(arg){
           '<p style="margin:8px 0 0;font-size:13.5px">'+x.linhas.length+' itens · <span class="mono">'+fmt(x.un,0)+'</span> un · '+estado+'</p>'+
           (x.obs?'<p style="margin:8px 0 0;background:#C63A3A;color:#FFFDF9;font-weight:800;font-size:13.5px;padding:8px 10px;border-radius:8px">'+x.obs+'</p>':'')+'</div>'+
           '<button class="btnSec" style="margin-top:10px;min-height:44px;width:100%" onclick="sepEtiquetas(\''+x.pedido+'\')">🏷️ Etiquetas · '+sepCaixasEstimadas(x.un)+' cx</button></div>';
-      }).join(''):'<div class="card"><div class="center">Nenhum pedido em aberto.</div></div>');
+      };
+      const _pend=lista.filter(x=>!(x.un>0&&x.sep>=x.un)), _prontos=lista.filter(x=>x.un>0&&x.sep>=x.un);
+      return (_pend.length?_pend.map(_cardPed).join(''):'<div class="card"><div class="center">Nada pendente de separação.</div></div>')+
+        (_prontos.length?'<div class="card" style="border-left:7px solid var(--pistache);margin-top:18px"><b>✅ Separados — aguardando faturamento</b><br><small style="color:#7A6A57">saem da lista sozinhos no próximo import da carteira, depois de faturados</small></div>'+_prontos.map(_cardPed).join(''):'');
+      })():'<div class="card"><div class="center">Nenhum pedido em aberto.</div></div>');
   }else{
     const cards=p.linhas.map(l=>{
       const saldo=Number(l.produto_acabado?.saldo_potes||0);
@@ -517,6 +521,8 @@ async function tSeparacao(arg){
         '<p style="text-align:center;margin:8px 0 0"><a href="#" onclick="sepSemBaixa(\''+l.id+'\');return false" style="color:#7A6A57;font-size:12px">'+(sb2?'☑':'☐')+' já separei antes (só marcar, sem tirar do estoque)</a></p>'+
       '</div>';
     }).join('');
+    const _mudou=p.linhas.some(l=>EST.sep.itens[l.id]!==undefined&&EST.sep.itens[l.id]!==Number(l.qtd_separada||0));
+    const _tudoSep=p.un>0&&p.sep>=p.un&&!_mudou;
     const totalSep=p.linhas.reduce((s,l)=>s+((EST.sep.itens[l.id]!==undefined)?EST.sep.itens[l.id]:Number(l.qtd_separada||0)),0);
     corpo='<div class="card" style="margin-top:0;border-left:7px solid '+corDe(p.entrega)+'">'+
       '<b style="font-size:18px">'+(p.cliente||'—')+'</b><br><small style="color:#7A6A57">pedido <span class="mono">'+p.pedido+'</span>'+(p.cidade?' · '+p.cidade:'')+' · <span style="color:'+corDe(p.entrega)+';font-weight:700">'+rotulo(p.entrega)+'</span></small>'+
@@ -524,7 +530,7 @@ async function tSeparacao(arg){
       '<p style="margin:10px 0 0;font-size:13px"><span class="step-label" style="margin:0">② confira cada item e toque no ✓</span></p></div>'+
       cards+
       '<div class="card" style="text-align:center"><p style="margin:0 0 10px;font-size:13.5px">total do pedido: <span class="mono">'+fmt(p.un,0)+'</span> un · marcadas agora: <span class="mono" style="font-size:20px;font-weight:900">'+fmt(totalSep,0)+'</span></p>'+
-      '<button class="btnP" style="min-height:56px;font-size:18px;width:100%;background:var(--morango);border-color:var(--morango)" onclick="sepConfirmar()">📤 Confirmar separação</button>'+
+      (_tudoSep?'<div style="min-height:56px;display:flex;align-items:center;justify-content:center;background:var(--pistache);color:#FFFDF9;font-weight:800;font-size:17px;border-radius:10px">✅ Pedido já separado</div><p style="margin:6px 0 0;font-size:12px;color:#7A6A57">aguardando faturamento · mexa numa quantidade para corrigir</p>':'<button class="btnP" style="min-height:56px;font-size:18px;width:100%;background:var(--morango);border-color:var(--morango)" onclick="sepConfirmar()">📤 Confirmar separação</button>')+
       '<button class="btnSec" style="min-height:50px;font-size:15px;width:100%;margin-top:8px" onclick="sepEtiquetas(\''+p.pedido+'\')">🏷️ Imprimir etiquetas das caixas</button></div>';
   }
   document.getElementById('app').innerHTML=trilha('Separar')+topo('Separar pedido','check no que já foi pra caixa')+
