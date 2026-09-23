@@ -715,7 +715,7 @@ async function sepConferirEan(l,cod,diz){
   return 'segue';
 }
 
-const TELAS={inicio:tInicio,linha:tLinha,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,dataPedido:tDataPedido,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao,treinamento:tTreinamento,separacao:tSeparacao,relComercial:tRelComercial,quadro:tTvLinha,quadrosemana:tQuadro,tvlinha:tTvLinha,pedidoCompra:tPedidoCompra,cockpitCompras:tCockpitCompras,relCompras:tRelCompras};
+const TELAS={inicio:tInicio,linha:tLinha,painel:tPainel,estoque:tEstoque,receber:tReceber,programacao:tProg,pesagem:tPesagem,envase:tEnvase,envaseAvancado:tEnvaseAvancado,mrp:tMRP,vendas:tVendas,metas:tMetas,tv:tTV,lote:tLote,carteira:tCarteira,dataPedido:tDataPedido,baixa:tBaixa,movimento:tMovimento,baldeEntrada:tBaldeEntrada,producao:tProducao,treinamento:tTreinamento,separacao:tSeparacao,relComercial:tRelComercial,quadro:tTvLinha,quadrosemana:tQuadro,tvlinha:tTvLinha,pedidoCompra:tPedidoCompra,cockpitCompras:tCockpitCompras,relCompras:tRelCompras,solicitacoes:tSolicitacoes};
 function tela(n,arg){TELAS[n](arg)}
 
 /* ================= MISTURA & REFINO (área da linha) ================= */
@@ -2287,7 +2287,7 @@ function painelForns(l,i){
   return h;
 }
 /* ---------- rascunho do pedido (memoria; nada vai ao banco ate "Criar pedido") ---------- */
-function pcNovo(){EST.pc={forn:null,cond:'',prazo:'',entrega:'',obs:'',linhas:[],abertoEm:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}}
+function pcNovo(){EST.pc={forn:null,cond:'',prazo:'',entrega:'',obs:'',linhas:[],sols:[],abertoEm:new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}}
 function pcZerar(){
   if(EST.pc&&EST.pc.linhas.length&&!confirm('Apagar os '+EST.pc.linhas.length+' item(ns) do rascunho e começar do zero?'))return;
   pcEntrar();
@@ -2502,9 +2502,128 @@ async function pcSalvar(){
   if(error)return msg(error.message,true);
   await sb.from('atividades').insert({tipo:'compra',
     descricao:'Pedido '+num+' criado — '+rows.length+' item(ns) · '+p.forn.nome,responsavel:EST.operador});
+  const sols=(p.sols||[]).filter(s=>p.linhas.some(l=>l.item_id===s.item_id));
+  for(const s of sols){
+    const r=await sb.rpc('vincular_solicitacao_pedido',{p_numero:s.numero,p_pedido_numero:num,p_responsavel:EST.operador});
+    if(r.error||!(r.data&&r.data.ok))msg('Pedido criado, mas '+s.numero+' não foi marcada: '+((r.data&&r.data.erro)||(r.error&&r.error.message)),true);
+  }
   pcNovo();
-  msg('✅ Pedido '+num+' criado');
+  msg('✅ Pedido '+num+' criado'+(sols.length?' · '+sols.map(s=>s.numero).join(', ')+' marcada(s) como comprada(s)':''));
   tela('cockpitCompras');
+}
+
+/* ---------- SOLICITAÇÕES DE COMPRA (pedidas pela página pública solicitar.html) ----------
+   Fluxo: nova → aprovada (Telegram ou aqui) → comprada (ao salvar o pedido de compra) | recusada.
+   Gravação só por RPC: decidir_solicitacao, vincular_solicitacao_pedido. */
+function solEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+async function solContar(){
+  const b=document.getElementById('btnSol'); if(!b)return;
+  const {count}=await sb.from('solicitacoes_compra').select('id',{count:'exact',head:true}).in('status',['nova','aprovada']);
+  if(count>0){b.innerHTML='🛒 Solicitações da fábrica <span class="chip" style="background:#FBEEE2;color:#D9772B;font-weight:800;margin-left:6px">'+count+' aguardando</span>';b.style.borderColor='#D9772B';}
+}
+async function tSolicitacoes(){
+  document.getElementById('app').innerHTML=trilha('Compra')+topo('Solicitações da fábrica','carregando…')+'<main><div class="center">Carregando…</div></main>';
+  const desde=new Date(Date.now()-30*864e5).toISOString();
+  const [ab,fe,its]=await Promise.all([
+    sb.from('solicitacoes_compra').select('*').in('status',['nova','aprovada']).order('criado_em'),
+    sb.from('solicitacoes_compra').select('*').in('status',['recusada','comprada','cancelada']).gte('criado_em',desde).order('criado_em',{ascending:false}),
+    EST.cache.itensSol?Promise.resolve({data:EST.cache.itensSol}):sb.from('itens').select('id,nome,unidade').order('nome')
+  ]);
+  if(ab.error)return msg(ab.error.message,true);
+  EST.cache.itensSol=its.data||[];
+  EST.cache.sol={}; [...(ab.data||[]),...(fe.data||[])].forEach(s=>EST.cache.sol[s.numero]=s);
+  const hj=hojeLocal();
+  const peso={parada:0,urgente:1,normal:2};
+  const ord=(a,b)=>(peso[a.urgencia]-peso[b.urgencia])||((a.precisa_ate||'9')<(b.precisa_ate||'9')?-1:1)||(a.criado_em<b.criado_em?-1:1);
+  const novas=(ab.data||[]).filter(s=>s.status==='nova').sort(ord);
+  const aprov=(ab.data||[]).filter(s=>s.status==='aprovada').sort(ord);
+  /* cor calculada: urgência declarada + prazo real (vencido pesa mais que o rótulo) */
+  const cor=s=>{
+    const venc=s.precisa_ate&&s.precisa_ate<hj, hoje=s.precisa_ate===hj;
+    if(s.urgencia==='parada'||venc)return ['#C63A3A','#FDECEC',s.urgencia==='parada'?'PRODUÇÃO PARADA':'PRAZO VENCIDO'];
+    if(s.urgencia==='urgente'||hoje)return ['#D9772B','#FBEEE2',hoje?'PRECISA HOJE':'URGENTE'];
+    return ['#B8862B','#FBF3E0','NORMAL'];
+  };
+  const idade=s=>{const h=Math.round((Date.now()-new Date(s.criado_em))/36e5);return h<1?'agora há pouco':h<24?'há '+h+' h':'há '+Math.round(h/24)+' dia(s)';};
+  const corpo=s=>`<b style="font-size:16.5px">${solEsc(s.descricao)}</b>
+      <div style="font-size:14px;color:#5A4C3C;margin-top:6px;line-height:1.55">
+        ${s.quantidade?'<div>Quantidade: <b class="mono">'+fmt(s.quantidade,3)+' '+solEsc(s.unidade||'')+'</b></div>':''}
+        <div>Pedido por <b>${solEsc(s.solicitante)}</b> · ${idade(s)} · <span class="mono">${s.numero}</span></div>
+        ${s.precisa_ate?'<div>Precisa até: <b>'+brData(s.precisa_ate)+'</b></div>':''}
+        ${s.motivo?'<div style="color:#7A6A57">Obs.: '+solEsc(s.motivo)+'</div>':''}
+      </div>`;
+  const card=(s,acoes)=>{const [c,bg,tag]=cor(s);return `
+    <div style="border-top:1px solid var(--linha);border-left:4px solid ${c};padding:12px 0 12px 12px;margin-top:2px">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div>${corpo(s)}</div>
+        <span class="chip" style="background:${bg};color:${c};font-weight:700;white-space:nowrap">${tag}</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${acoes}</div>
+    </div>`;};
+  const bt=(t,f,p)=>`<button class="${p?'btnP':'btnSec'}" style="width:auto;flex:1;min-width:130px;margin-top:0;min-height:46px" onclick="${f}">${t}</button>`;
+  const fechadas=(fe.data||[]).map(s=>{
+    const st=s.status==='comprada'?'<span style="color:var(--pistache)">✓ comprada · '+solEsc(s.compra_pedido_numero||'')+'</span>'
+      :s.status==='recusada'?'<span style="color:var(--morango)">✕ recusada por '+solEsc(s.decidido_por||'—')+' — '+solEsc(s.motivo_recusa||'')+'</span>'
+      :'<span style="color:#7A6A57">cancelada</span>';
+    return `<div class="item-row"><span><b>${solEsc(s.descricao)}</b><br><small style="color:#7A6A57">${s.numero} · ${solEsc(s.solicitante)} · ${brData(s.criado_em.slice(0,10))}</small><br><small>${st}</small></span></div>`;}).join('');
+  document.getElementById('app').innerHTML=`
+  ${trilha('Compra')}${topo('Solicitações da fábrica',novas.length+' aguardando decisão · '+aprov.length+' aprovada(s) sem pedido')}
+  <main>
+    <div class="card"><b>Aguardando decisão</b><small style="color:#7A6A57;display:block;margin-bottom:6px">também dá para decidir pelo Telegram — o que for decidido lá aparece aqui</small>
+      ${novas.length?novas.map(s=>card(s,bt('✅ Aprovar',"solDecidir('"+s.numero+"','aprovar')",true)+bt('❌ Recusar',"solDecidir('"+s.numero+"','recusar')"))).join(''):'<div class="center">Nenhuma solicitação nova. ✅</div>'}
+    </div>
+    <div class="card"><b>Aprovadas — falta comprar</b><small style="color:#7A6A57;display:block;margin-bottom:6px">escolha o item cadastrado e siga para o pedido de compra; ao salvar o pedido, a solicitação fica marcada como comprada</small>
+      ${aprov.length?aprov.map(s=>card(s,
+        `<select id="solIt_${s.numero}" style="flex:2;min-width:200px;min-height:46px;border:1.5px solid var(--linha);border-radius:12px;padding:0 10px;font-size:15px;background:#fff">
+           <option value="">— item cadastrado —</option>${EST.cache.itensSol.map(i=>'<option value="'+i.id+'"'+(i.id===s.item_id?' selected':'')+'>'+solEsc(i.nome)+'</option>').join('')}</select>`
+        +bt('🛒 Comprar',"solComprar('"+s.numero+"')",true)
+        +bt('Comprado fora do sistema',"solFora('"+s.numero+"')")
+        +`<div style="flex-basis:100%;font-size:13px;color:#7A6A57">aprovada por ${solEsc(s.decidido_por||'—')} via ${s.decidido_via||'—'}</div>`)).join(''):'<div class="center">Nada aprovado esperando compra.</div>'}
+    </div>
+    <details class="card"><summary style="cursor:pointer;font-weight:700">Resolvidas nos últimos 30 dias (${(fe.data||[]).length})</summary>${fechadas||'<div class="center">Nenhuma.</div>'}</details>
+    <div class="card" style="font-size:13.5px;color:#5A4C3C;line-height:1.55"><b>Como ler</b><br>
+      A cor soma a urgência que a pessoa marcou com o prazo real: prazo vencido fica vermelho mesmo se ela marcou “normal”.
+      Quem pede usa a página <b>solicitar.html</b> (sem login, com o código da fábrica); o aviso chega no Telegram de quem aprova compras.
+      Aprovar não compra: a compra só existe quando o pedido é salvo em Compras.</div>
+  </main>`;
+}
+async function solDecidir(numero,decisao){
+  if(precisaOperador())return;
+  let motivo=null;
+  if(decisao==='recusar'){
+    motivo=prompt('Motivo da recusa de '+numero+':');
+    if(motivo==null)return;
+    if(motivo.trim().length<3)return msg('Escreva o motivo da recusa',true);
+  }
+  const {data,error}=await sb.rpc('decidir_solicitacao',{p_numero:numero,p_decisao:decisao,p_motivo:motivo,p_responsavel:EST.operador,p_item_id:null});
+  if(error)return msg(error.message,true);
+  if(!data.ok){msg(data.erro,true);return tela('solicitacoes');}
+  msg(decisao==='aprovar'?'✅ '+numero+' aprovada':'❌ '+numero+' recusada');
+  tela('solicitacoes');
+}
+async function solComprar(numero){
+  if(precisaOperador())return;
+  const s=EST.cache.sol[numero]; if(!s)return;
+  const sel=document.getElementById('solIt_'+numero), id=sel&&sel.value;
+  if(!id)return msg('Escolha o item cadastrado. Se não existe cadastro, use “Comprado fora do sistema”.',true);
+  const it=EST.cache.itensSol.find(i=>i.id===id);
+  if(!EST.pc)pcNovo();
+  if(EST.pc.linhas.length&&!EST.pc.linhas.some(l=>l.item_id===id)
+     &&!confirm('Já existe um rascunho de pedido com '+EST.pc.linhas.length+' item(ns).\n\nOK = juntar este item ao rascunho\nCancelar = voltar'))return;
+  EST.pc.sols=(EST.pc.sols||[]).filter(x=>x.numero!==numero);
+  EST.pc.sols.push({numero:numero,item_id:id});
+  const qtd=(s.unidade&&it.unidade&&s.unidade.toLowerCase()===it.unidade.toLowerCase())?Number(s.quantidade)||0:0;
+  if(s.quantidade&&!qtd)msg('Confira a quantidade: a solicitação pediu '+fmt(s.quantidade,3)+' '+(s.unidade||'')+' e o item é em '+it.unidade);
+  tela('pedidoCompra',{item_id:id,nome:it.nome,unidade:it.unidade,qtd:qtd});
+}
+async function solFora(numero){
+  if(precisaOperador())return;
+  const ref=prompt('Onde/como foi comprado? (ex.: mercado, nota 1234, cartão)\nFica registrado no lugar do número do pedido.');
+  if(ref==null)return;
+  if(ref.trim().length<3)return msg('Escreva uma referência da compra',true);
+  const {data,error}=await sb.rpc('vincular_solicitacao_pedido',{p_numero:numero,p_pedido_numero:'FORA: '+ref.trim(),p_responsavel:EST.operador});
+  if(error)return msg(error.message,true);
+  if(!data.ok)return msg(data.erro,true);
+  msg('✓ '+numero+' marcada como comprada');
+  tela('solicitacoes');
 }
 /* ---------- COCKPIT: agrupado pela decisão, não pelo status do banco ---------- */
 async function tCockpitCompras(){
@@ -2686,7 +2805,7 @@ async function tMRP(){
   ${trilha('Compra')}${topo('Compras / MRP','necessidade calculada da programação dos moinhos')}
   <main>
     <div class="card"><b>➕ Pedido avulso</b><small style="color:#7A6A57;display:block;margin-bottom:8px">pra pedidos que não vêm da sugestão do MRP — ex.: programação de potes com o fornecedor, reposição combinada, etc.</small>
-      <button class="btnP" onclick="pcEntrar()">➕ Novo pedido de compra</button><button class="btnSec" onclick="tela('cockpitCompras')">🎯 Acompanhar pedidos</button><button class="btnSec" onclick="tela('relCompras')">📊 Relatórios de compras</button>
+      <button class="btnP" onclick="pcEntrar()">➕ Novo pedido de compra</button><button class="btnSec" onclick="tela('cockpitCompras')">🎯 Acompanhar pedidos</button><button class="btnSec" id="btnSol" onclick="tela('solicitacoes')">🛒 Solicitações da fábrica</button><button class="btnSec" onclick="tela('relCompras')">📊 Relatórios de compras</button>
     </div>
     <div class="card"><b>Sugestões de compra</b><small style="color:#7A6A57;display:block;margin-bottom:6px">demanda dos refinos + reposição do mínimo − saldo · ordenado por criticidade: <b style="color:#C63A3A">falta produzir</b> › <b style="color:#D9772B">atrasado</b> › <b style="color:#B8862B">esta semana</b> › <b style="color:#3E7C45">com folga</b></small>
     ${sug.length?sug.map(m=>{const g=grade(m);const u=m.unidade||'';return `
@@ -2715,6 +2834,7 @@ async function tMRP(){
       <div class="item-row"><span>${c.itens.nome} — ${fmt(c.quantidade_solicitada)} ${c.itens.unidade}<br><small style="color:#7A6A57">${c.fornecedor_nome||'—'} · entrega ${c.data_prevista_entrega?brData(c.data_prevista_entrega):'—'}</small></span><span style="display:flex;gap:8px;align-items:center"><span class="chip azul">${c.status.replace('_',' ')}</span><button onclick="editarPedido('${c.id}')" style="border:1px solid var(--linha);background:#fff;border-radius:8px;padding:8px 11px;font-size:15px" title="Editar pedido">✏️</button></span></div>`).join(''):'<div class="center">Nenhum pedido em aberto.</div>'}
     <button class="btnSec" onclick="tela('receber')">📦 Ir para Receber</button></div>
   </main>`;
+  solContar();
 }
 async function criarPedidoAvulso(){
   if(precisaOperador())return;
