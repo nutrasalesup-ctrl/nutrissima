@@ -4661,6 +4661,8 @@ async function sepPiso(){
   return new Date(ts[ts.length-1]).toLocaleDateString('sv-SE',{timeZone:'America/Sao_Paulo'});
 }
 const BX_PH='14de9ebe-09df-483d-8c03-9bb6eef186d6';
+const BX_MOTIVOS=[['AMOSTRA','🎁 Amostra / brinde'],['DEGUSTACAO','😋 Degustação'],['AVARIA','💥 Avaria / quebra'],['USO-INTERNO','🏭 Uso interno'],['OUTRO','✏️ Outro']];
+function bxMotivo(m){if(m==='OUTRO'){const t=prompt('Qual o motivo da saída?',EST.bx.obs||'');if(t==null)return;if(!t.trim())return msg('Descreva o motivo',true);EST.bx.obs=t.trim().slice(0,200);}else EST.bx.obs=null;EST.bx.motivo=m;tela('baixa')}
 const BX_CANAIS=['Varejo','Shopee Full','Mercado Livre Full','TikTok Shop','Shopee','Mercado Libre'];
 /* ---- separação de canais de PEDIDO (Varejo, Shopee Full, Mercado Livre Full) ----
    Esses pedidos moram em vendas_pedidos e NÃO são substituídos pelo import de demanda.
@@ -4760,7 +4762,7 @@ async function tBaixa(){
     <div class="chips" style="margin-top:8px">
       ${BX_CANAIS.map(c=>{const [ped,fez]=totCanal(c);const falta=Math.max(0,ped-fez);
         return `<button onclick="bxCanal('${c}')" style="${cn===c?'outline:3px solid var(--linha)':''}">${c}${ped>0?` <small>(faltam ${fmt(falta,0)})</small>`:''}</button>`}).join('')}
-      <button onclick="bxCanal('')" style="${cn===''?'outline:3px solid var(--linha)':''}">sem canal <small>(só tirar do estoque)</small></button>
+      <button onclick="bxCanal('')" style="${cn===''?'outline:3px solid var(--linha)':''}">sem canal <small>(amostra, avaria, uso interno — não é pedido)</small></button>
     </div>
     ${cn?`<p style="margin:10px 0 0;font-size:12.5px;color:#7A6A57">Contando o que já foi separado desde o último import (${new Date(piso+'T12:00').toLocaleDateString('pt-BR')}).</p>`:''}
   </div>${cn?bxResumoPrazo(cn,todos):''}`;
@@ -4811,6 +4813,7 @@ async function tBaixa(){
       <span class="step-label" style="margin-bottom:2px">produto${cn?' · '+cn:''}</span><b style="font-size:20px">${p.nome}</b>
       ${cn&&ped>0?`<p style="margin:8px 0 0;font-size:13px;color:#7A6A57">pedido <b>${fmt(ped,0)}</b> · já separado <b>${fmt(fez,0)}</b> · falta <b style="color:var(--morango)">${fmt(falta,0)}</b></p><div style="display:flex;justify-content:center">${bxPilulas(fx)}</div>`:''}
       <p style="color:#7A6A57;margin:10px 0 0;font-size:12.5px">em estoque agora</p><b class="mono">${fmt(p.saldo_potes,0)} potes</b>
+      ${cn===''?`<span class="step-label" style="margin:18px 0 6px">por que esse pote está saindo?</span><div class="chips" style="justify-content:center">${BX_MOTIVOS.map(([m,t])=>`<button onclick="bxMotivo('${m}')" style="${EST.bx.motivo===m?'outline:3px solid var(--morango);font-weight:800':''}">${t}</button>`).join('')}</div>${EST.bx.motivo==='OUTRO'&&EST.bx.obs?`<p style="margin:6px 0 0;font-size:13px;color:#7A6A57">“${EST.bx.obs.replace(/</g,'&lt;')}” · <a href="#" onclick="bxMotivo('OUTRO');return false">mudar</a></p>`:''}`:''}
       <span class="step-label" style="margin:18px 0 2px">③ conte em unidades (a caixa é só um atalho)</span>
       <div style="font-size:60px;font-weight:900;margin:2px 0 2px;color:var(--morango);line-height:1">${EST.bx.potes||0}</div>
       <p style="color:#7A6A57;margin:0 0 16px;font-size:12.5px">potes separados pra tirar do estoque</p>
@@ -4827,7 +4830,7 @@ async function tBaixa(){
       </div>
       ${EST.bx.potes>p.saldo_potes?`<p style="color:var(--morango);font-size:13px;margin-top:10px">⚠️ Isso é mais do que tem em estoque (${fmt(p.saldo_potes,0)}). Confere a contagem antes de confirmar.</p>`:''}
       <p style="margin-top:14px"><a href="#" onclick="bxMudarCaixa();return false" style="color:#7A6A57;font-size:12.5px">caixa tem ${EST.bx.caixa} potes · toque pra mudar</a></p>
-      <button class="btnP" style="margin-top:16px;min-height:56px;font-size:18px;width:100%;background:var(--morango);border-color:var(--morango)" ${!(EST.bx.potes>0)?'disabled':''} onclick="confBaixa()">📤 Confirmar separação</button>
+      <button class="btnP" style="margin-top:16px;min-height:56px;font-size:18px;width:100%;background:var(--morango);border-color:var(--morango)" ${!(EST.bx.potes>0)||(cn===''&&!EST.bx.motivo)?'disabled':''} onclick="confBaixa()">${cn===''?(EST.bx.motivo?'📤 Confirmar saída':'escolha o motivo acima'):'📤 Confirmar separação'}</button>
     </div>`;
   }
   document.getElementById('app').innerHTML=`
@@ -4855,9 +4858,9 @@ async function confBaixa(){
   const cn=EST.bx.canal;
   const {error}=cn
     ? await sb.rpc('separar_canal',{p_pa:p.id,p_canal:cn,p_potes:n,p_responsavel:EST.operador})
-    : await sb.rpc('baixa_despacho',{p_pa:p.id,p_potes:n,p_responsavel:EST.operador});
+    : await sb.rpc('baixa_sem_canal',{p_pa:p.id,p_potes:n,p_motivo:EST.bx.motivo||null,p_obs:EST.bx.obs||null,p_responsavel:EST.operador});
   if(error)return msg(error.message,true);
-  msg('✅ '+n+' potes de '+p.nome+(cn?' separados para '+cn:' baixados'));
+  msg('✅ '+n+' potes de '+p.nome+(cn?' separados para '+cn:' baixados · '+((BX_MOTIVOS.find(x=>x[0]===EST.bx.motivo)||[])[1]||'')));
   EST.bx={paId:null,potes:0,caixa:EST.bx.caixa,canal:cn};
   tela('baixa');
 }
