@@ -3541,6 +3541,15 @@ function carregarXLSX(){
   });
   return window._xlsxP;
 }
+/* Prazo de Envio da UpSeller: texto 'AAAA-MM-DD HH:MM:SS' (horário de Brasília, premissa) ou data do Excel. */
+function upPrazo(v){
+  if(v===''||v==null)return {d:null,ts:null};
+  if(typeof v==='number'&&typeof XLSX!=='undefined'&&XLSX.SSF){const c=XLSX.SSF.parse_date_code(v);if(!c)return {d:null,ts:null};
+    const z=n=>String(n).padStart(2,'0');const d=c.y+'-'+z(c.m)+'-'+z(c.d);return {d:d,ts:d+'T'+z(c.H)+':'+z(c.M)+':00-03:00'};}
+  const t=String(v).trim(),m=t.match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+  if(!m)return {d:t.slice(0,10)||null,ts:null};
+  return {d:m[1],ts:m[2]?m[1]+'T'+m[2]+':'+m[3]+':00-03:00':null};
+}
 async function importarUpSeller(files){
   if(precisaOperador())return;
   const arq=Array.isArray(files)?files:[files];
@@ -3570,15 +3579,15 @@ async function importarUpSeller(files){
     const cod=String(r['SKU']||'').trim();if(!cod){ign++;continue;}
     const q=Number(r['Qtd. do Produto'])||0;if(!q)continue;
     const plat=String(r['Plataformas']||'').trim();
-    const prazo=String(r['Prazo de Envio']||'').slice(0,10)||null;
+    const pz=upPrazo(r['Prazo de Envio']);const prazo=pz.d, prazoTs=pz.ts;
     let pid=mapa[cod];
     if(!pid){pid='14de9ebe-09df-483d-8c03-9bb6eef186d6';nao[cod]=nao[cod]||{codigo:cod,plataforma:plat,nome:String(r['Nome do Anúncio']||''),qtd:0};nao[cod].qtd+=q;}
-    const k=pid+'|'+(prazo||'')+'|'+plat;
-    agg[k]=agg[k]||{produto_acabado_id:pid,data_despacho:prazo,plataforma:plat,qtd_potes:0};
+    const k=pid+'|'+(prazoTs||prazo||'')+'|'+plat;
+    agg[k]=agg[k]||{produto_acabado_id:pid,data_despacho:prazo,prazo_envio:prazoTs,plataforma:plat,qtd_potes:0};
     agg[k].qtd_potes+=q;
   }
   await sb.from('demanda_vendas').delete().eq('origem','import_upseller').eq('status','aberto');
-  const rows=Object.values(agg).map(a=>({produto_acabado_id:a.produto_acabado_id,data_despacho:a.data_despacho,plataforma:a.plataforma,qtd_potes:a.qtd_potes,status:'aberto',origem:'import_upseller',criado_por:EST.operador}));
+  const rows=Object.values(agg).map(a=>({produto_acabado_id:a.produto_acabado_id,data_despacho:a.data_despacho,prazo_envio:a.prazo_envio,plataforma:a.plataforma,qtd_potes:a.qtd_potes,status:'aberto',origem:'import_upseller',criado_por:EST.operador}));
   if(rows.length){const {error}=await sb.from('demanda_vendas').insert(rows);if(error)return msg(error.message,true);}
   await sb.from('atividades').insert({tipo:'compra',descricao:'Demanda de vendas importada — '+arq.length+(arq.length>1?' planilhas, ':' planilha, ')+rows.length+' linhas, '+Object.keys(nao).length+' a mapear',responsavel:EST.operador});
   EST.cache.naoMapeados=Object.values(nao);
@@ -4695,6 +4704,38 @@ function vpAplicaSep(rows,soma){
 }
 function seSemVp(rows){return (rows||[]).filter(r=>VP_CANAIS.indexOf(r.canal)<0)}
 /* ===== Faixas de prazo na separacao por canal ===== */
+function bxProxCorte(k){
+  const a=(EST.cache.bxHoras||{})[k];if(!a||!a.length)return null;
+  let fez=(EST.cache.bxSep||{})[k]||0;
+  for(const x of a){const u=Math.min(fez,x.q);fez-=u;if(x.q-u>0)return {t:x.t,h:x.h,q:x.q-u};}
+  return null;
+}
+function bxQuando(t){
+  const d=new Date(t),hj=new Date(),am=new Date();am.setDate(am.getDate()+1);
+  const mesmo=(a,b)=>a.toDateString()===b.toDateString();
+  const dia=mesmo(d,hj)?'hoje':(mesmo(d,am)?'amanhã':d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}));
+  return dia+' '+d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+}
+function bxHoraTxt(c){
+  if(!c||c.t==null)return '';
+  if(!c.h)return '<div style="font-size:13px;color:#7A6A57;margin-top:4px">📅 até '+new Date(c.t).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' <small>(sem horário — reimporte a planilha)</small></div>';
+  const mn=Math.round((c.t-Date.now())/60000);
+  const rest=mn<0?'':(mn<60?mn+' min':(mn<1440?Math.floor(mn/60)+'h'+String(mn%60).padStart(2,'0'):Math.floor(mn/1440)+(mn<2880?' dia':' dias')));
+  const alerta=mn<120;
+  return '<div style="font-size:13.5px;margin-top:4px;font-weight:'+(alerta?'800':'600')+';color:'+(alerta?'var(--morango)':'#33200F')+'">'+
+    (mn<0?'⛔ VENCIDO desde '+bxQuando(c.t):'⏰ até '+bxQuando(c.t)+' · faltam '+rest)+' <small style="font-weight:600">('+fmt(c.q,0)+' potes)</small></div>';
+}
+function bxResumoCorte(cn,todos){
+  let min=null,q=0,venc=0;
+  (todos||[]).forEach(x=>{const c=bxProxCorte(cn+'|'+x.id);if(!c||!c.h||c.t==null)return;
+    if(c.t<Date.now())venc+=c.q;
+    if(min===null||c.t<min){min=c.t;q=c.q}else if(c.t===min)q+=c.q});
+  if(min===null)return '';
+  const mn=Math.round((min-Date.now())/60000),al=mn<120;
+  return '<div style="font-size:15px;font-weight:800;margin:2px 0 4px;color:'+(al?'var(--morango)':'#33200F')+'">'+
+    (mn<0?'⛔ Corte vencido: '+bxQuando(min):'⏰ Próximo corte: '+bxQuando(min))+' · '+fmt(q,0)+' potes</div>'+
+    (venc>0&&mn>=0?'':'')+(venc>0?'<div style="font-size:12.5px;color:var(--morango);margin-bottom:4px">'+fmt(venc,0)+' potes já passaram do horário</div>':'');
+}
 function bxFatias(k){
   const b=(EST.cache.bxData||{})[k]||{hoje:0,amanha:0,depois:0,sem:0};
   let fez=(EST.cache.bxSep||{})[k]||0;const out={};
@@ -4716,7 +4757,7 @@ function bxResumoPrazo(cn,todos){
   const tot=t.hoje+t.amanha+t.depois+t.sem;
   if(tot<=0)return '';
   return '<div class="card" style="border-left:7px solid '+bxCorPrazo(t)+'">'+
-    '<span class="step-label" style="margin:0 0 4px">falta separar em '+cn+', por prazo de despacho</span>'+bxPilulas(t)+
+    '<span class="step-label" style="margin:0 0 4px">falta separar em '+cn+', por prazo de despacho</span>'+bxResumoCorte(cn,todos)+bxPilulas(t)+
     '<small style="color:#7A6A57">'+fmt(t.hoje,0)+' hoje + '+fmt(t.amanha,0)+' amanhã + '+fmt(t.depois,0)+' depois'+(t.sem>0?' + '+fmt(t.sem,0)+' sem data':'')+' = <b>'+fmt(tot,0)+'</b> potes'+
     (n?' · '+n+(n===1?' produto vence':' produtos vencem')+' hoje':'')+'</small></div>';
 }
@@ -4724,14 +4765,15 @@ function bxComoLer(){
   return '<div class="card"><small style="color:#7A6A57"><b>Como ler.</b> <b>HOJE</b> inclui o que já passou do prazo. Os produtos vêm ordenados pelo que falta para hoje, depois amanhã. '+
     'A tarja é a urgência: vermelha tem pote para hoje, laranja só para amanhã, amarela só depois, verde completo. '+
     '<b>Premissa:</b> a separação não registra para qual data foi, então o que já foi separado desde o último import abate primeiro o prazo mais apertado. '+
-    'Prazos vêm da data de despacho do import (marketplace) e da data de entrega da carteira (Varejo e Full).</small></div>';
+    'Prazos vêm da data de despacho do import (marketplace) e da data de entrega da carteira (Varejo e Full). '+
+    '<b>⏰ Horário:</b> é o Prazo de Envio da planilha UpSeller, tratado como horário de Brasília; em vermelho quando venceu ou faltam menos de 2h. A separação abate primeiro o horário mais cedo. Varejo e Full não têm horário.</small></div>';
 }
 async function tBaixa(){
   if(!EST.bx)EST.bx={paId:null,potes:0,caixa:28,canal:null};
   const piso=await sepPiso();
   const [paR,dvR,vpR,seR,sepVp]=await Promise.all([
     sb.from('produto_acabado').select('id,nome,linha,saldo_potes').eq('ativo',true).order('linha').order('nome'),
-    sb.from('demanda_vendas').select('plataforma,produto_acabado_id,qtd_potes,data_despacho').eq('status','aberto').neq('origem','import_varejo'),
+    sb.from('demanda_vendas').select('plataforma,produto_acabado_id,qtd_potes,data_despacho,prazo_envio').eq('status','aberto').neq('origem','import_varejo'),
     sb.from('vendas_pedidos').select('canal,produto_acabado_id,qtd,qtd_separada,entrega').eq('status','aberto').in('canal',['Varejo','Shopee Full','Mercado Livre Full']),
     sb.from('separacao_ecommerce').select('canal,produto_acabado_id,potes').gte('data',piso),
     sepVpCarregar()
@@ -4751,6 +4793,11 @@ async function tBaixa(){
   const bxSoma=(k,d,q)=>{if(!dat[k])dat[k]={hoje:0,amanha:0,depois:0,sem:0};dat[k][bxFaixa(d)]+=q};
   (dvR.data||[]).forEach(r=>bxSoma((r.plataforma||'sem canal')+'|'+r.produto_acabado_id,r.data_despacho,Number(r.qtd_potes)||0));
   (vpR.data||[]).forEach(r=>bxSoma(r.canal+'|'+r.produto_acabado_id,r.entrega,Number(r.qtd)||0));
+  const hrs={};(dvR.data||[]).forEach(r=>{const k=(r.plataforma||'sem canal')+'|'+r.produto_acabado_id;
+    const t=r.prazo_envio?new Date(r.prazo_envio).getTime():(r.data_despacho?new Date(String(r.data_despacho).slice(0,10)+'T23:59:00-03:00').getTime():null);
+    (hrs[k]=hrs[k]||[]).push({t:t,h:!!r.prazo_envio,q:Number(r.qtd_potes)||0})});
+  Object.values(hrs).forEach(a=>a.sort((x,y)=>(x.t??9e15)-(y.t??9e15)));
+  EST.cache.bxHoras=hrs;
   EST.cache.bxPedido=pedido;EST.cache.bxSep=sep;EST.cache.bxPiso=piso;EST.cache.bxData=dat;EST.cache.bxAm=bxAm;
   const todos=paR.data||[];
   EST.cache.paBaixa=todos;
@@ -4782,8 +4829,8 @@ async function tBaixa(){
     }else if(cn){
       const phPed=pedido[cn+'|'+BX_PH]||0, phFez=sep[cn+'|'+BX_PH]||0;
       const itens=todos.filter(x=>x.id!==BX_PH).map(x=>{const k=cn+'|'+x.id,ped=pedido[k]||0,fez=sep[k]||0;
-        return {x:x,ped:ped,fez:fez,falta:Math.max(0,ped-fez),f:bxFatias(k)}}).filter(i=>i.ped>0||i.fez>0)
-        .sort((a,b)=>b.f.hoje-a.f.hoje||b.f.amanha-a.f.amanha||b.falta-a.falta||b.ped-a.ped);
+        return {x:x,k:k,ped:ped,fez:fez,falta:Math.max(0,ped-fez),f:bxFatias(k),c:bxProxCorte(k)}}).filter(i=>i.ped>0||i.fez>0)
+        .sort((a,b)=>((a.c&&a.c.t)??9e15)-((b.c&&b.c.t)??9e15)||b.f.hoje-a.f.hoje||b.f.amanha-a.f.amanha||b.falta-a.falta||b.ped-a.ped);
       /* Separado acima do pedido num produto = presumido que cobriu o código sem cadastro (premissa). */
       const phExc=itens.reduce((t,i)=>t+Math.max(0,i.fez-i.ped),0), phFalta=Math.max(0,phPed-phFez-phExc);
       const avisoPh=phPed>0?`<div class="card" style="border-left:7px solid ${phFalta>0?'var(--mel)':'var(--pistache)'}"><b>${phFalta>0?'⚠️ '+fmt(phFalta,0)+' potes com código sem cadastro':'✅ Código sem cadastro coberto'}</b><p style="margin:6px 0 10px;font-size:13px;color:#7A6A57">${phFalta>0?`O pedido de ${cn} tem ${fmt(phPed,0)} potes cujo anúncio não está ligado a produto. Confira na etiqueta qual é e toque em <b>➕ Produto não está na lista</b>.`:`${fmt(phPed,0)} potes sem cadastro, cobertos por separação fora da lista. Cadastre o código no de-para para aparecer certo no próximo import.`}</p><button class="btnSec" style="min-height:48px;width:100%" onclick="bxTodos(true)">➕ Produto não está na lista</button></div>`:'';
@@ -4794,7 +4841,7 @@ async function tBaixa(){
         return `<button class="linha-item" onclick="bxEscolheProduto('${i.x.id}')" style="display:block;width:100%;text-align:left;border-left:7px solid ${cor};background:#fff;border-radius:12px;padding:10px 12px;margin-bottom:8px">
           <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"><b style="font-size:15.5px">${i.x.nome}</b><b class="mono" style="font-size:20px;color:${cor}">${fmt(i.falta,0)}</b></div>
           <div style="height:8px;background:#0000000f;border-radius:5px;overflow:hidden;margin:6px 0 4px"><div style="width:${pct.toFixed(1)}%;height:100%;background:${cor}"></div></div>
-          ${bxPilulas(i.f)}
+          ${bxHoraTxt(i.c)}${bxPilulas(i.f)}
           <small style="color:#7A6A57">pedido ${fmt(i.ped,0)} · separado ${fmt(i.fez,0)} · falta ${fmt(i.falta,0)} · estoque ${fmt(i.x.saldo_potes,0)}${semEstoque?' ⚠️ sem pote':''}</small>
         </button>`}).join('')+bxComoLer():(phPed>0?'':'<div class="card"><div class="center">Este canal não tem pedido em aberto.</div></div>'))+
         (phPed>0?'':`<button class="btnSec" style="width:100%;min-height:48px;margin-top:4px" onclick="bxTodos(true)">➕ Produto não está na lista</button>`);
