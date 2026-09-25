@@ -4660,6 +4660,7 @@ async function sepPiso(){
   if(!ts.length)return hojeLocal();
   return new Date(ts[ts.length-1]).toLocaleDateString('sv-SE',{timeZone:'America/Sao_Paulo'});
 }
+const BX_PH='14de9ebe-09df-483d-8c03-9bb6eef186d6';
 const BX_CANAIS=['Varejo','Shopee Full','Mercado Livre Full','TikTok Shop','Shopee','Mercado Libre'];
 /* ---- separação de canais de PEDIDO (Varejo, Shopee Full, Mercado Livre Full) ----
    Esses pedidos moram em vendas_pedidos e NÃO são substituídos pelo import de demanda.
@@ -4768,11 +4769,23 @@ async function tBaixa(){
     corpo='<div class="card"><div class="center" style="color:#7A6A57">Escolha o canal acima para ver o que ele está esperando.</div></div>';
   }else if(!p){
     let lista;
-    if(cn){
-      const itens=todos.map(x=>{const k=cn+'|'+x.id,ped=pedido[k]||0,fez=sep[k]||0;
+    if(cn&&EST.bx.todos){
+      const comSaldo=todos.filter(x=>x.id!==BX_PH&&Number(x.saldo_potes)>0);
+      const porLinha={};comSaldo.forEach(x=>{(porLinha[x.linha||'Outros']=porLinha[x.linha||'Outros']||[]).push(x)});
+      lista=`<button class="btnSec" style="width:100%;margin-bottom:8px" onclick="bxTodos(false)">← voltar à lista de ${cn}</button><div class="card" style="border-left:7px solid var(--mel)"><b>Produto fora da lista de ${cn}</b><p style="margin:6px 0 0;font-size:13px;color:#7A6A57">Toque no produto que você pegou. A baixa sai dele e conta como separado para ${cn}.</p></div>`+
+        (comSaldo.length?Object.entries(porLinha).map(([linha,items])=>`
+        <div class="card"><small style="color:#7A6A57;font-weight:700">${linha}</small><div class="chips" style="margin-top:8px">
+          ${items.map(x=>`<button onclick="bxEscolheProduto('${x.id}')">${x.nome} <small>(${fmt(x.saldo_potes,0)})</small></button>`).join('')}
+        </div></div>`).join(''):'<div class="card"><div class="center">Nenhum produto com saldo em estoque agora.</div></div>');
+    }else if(cn){
+      const phPed=pedido[cn+'|'+BX_PH]||0, phFez=sep[cn+'|'+BX_PH]||0;
+      const itens=todos.filter(x=>x.id!==BX_PH).map(x=>{const k=cn+'|'+x.id,ped=pedido[k]||0,fez=sep[k]||0;
         return {x:x,ped:ped,fez:fez,falta:Math.max(0,ped-fez),f:bxFatias(k)}}).filter(i=>i.ped>0||i.fez>0)
         .sort((a,b)=>b.f.hoje-a.f.hoje||b.f.amanha-a.f.amanha||b.falta-a.falta||b.ped-a.ped);
-      lista=itens.length?itens.map(i=>{
+      /* Separado acima do pedido num produto = presumido que cobriu o código sem cadastro (premissa). */
+      const phExc=itens.reduce((t,i)=>t+Math.max(0,i.fez-i.ped),0), phFalta=Math.max(0,phPed-phFez-phExc);
+      const avisoPh=phPed>0?`<div class="card" style="border-left:7px solid ${phFalta>0?'var(--mel)':'var(--pistache)'}"><b>${phFalta>0?'⚠️ '+fmt(phFalta,0)+' potes com código sem cadastro':'✅ Código sem cadastro coberto'}</b><p style="margin:6px 0 10px;font-size:13px;color:#7A6A57">${phFalta>0?`O pedido de ${cn} tem ${fmt(phPed,0)} potes cujo anúncio não está ligado a produto. Confira na etiqueta qual é e toque em <b>➕ Produto não está na lista</b>.`:`${fmt(phPed,0)} potes sem cadastro, cobertos por separação fora da lista. Cadastre o código no de-para para aparecer certo no próximo import.`}</p><button class="btnSec" style="min-height:48px;width:100%" onclick="bxTodos(true)">➕ Produto não está na lista</button></div>`:'';
+      lista=avisoPh+(itens.length?itens.map(i=>{
         const pct=i.ped>0?Math.min(100,i.fez/i.ped*100):100;
         const cor=bxCorPrazo(i.f);
         const semEstoque=i.x.saldo_potes<=0;
@@ -4781,7 +4794,8 @@ async function tBaixa(){
           <div style="height:8px;background:#0000000f;border-radius:5px;overflow:hidden;margin:6px 0 4px"><div style="width:${pct.toFixed(1)}%;height:100%;background:${cor}"></div></div>
           ${bxPilulas(i.f)}
           <small style="color:#7A6A57">pedido ${fmt(i.ped,0)} · separado ${fmt(i.fez,0)} · falta ${fmt(i.falta,0)} · estoque ${fmt(i.x.saldo_potes,0)}${semEstoque?' ⚠️ sem pote':''}</small>
-        </button>`}).join('')+bxComoLer():'<div class="card"><div class="center">Este canal não tem pedido em aberto.</div></div>';
+        </button>`}).join('')+bxComoLer():(phPed>0?'':'<div class="card"><div class="center">Este canal não tem pedido em aberto.</div></div>'))+
+        (phPed>0?'':`<button class="btnSec" style="width:100%;min-height:48px;margin-top:4px" onclick="bxTodos(true)">➕ Produto não está na lista</button>`);
     }else{
       const comSaldo=todos.filter(x=>Number(x.saldo_potes)>0);
       const porLinha={};comSaldo.forEach(x=>{(porLinha[x.linha||'Outros']=porLinha[x.linha||'Outros']||[]).push(x)});
@@ -4825,6 +4839,7 @@ async function tBaixa(){
     ${corpo}
   </main>`;
 }
+function bxTodos(v){EST.bx={paId:null,potes:0,caixa:EST.bx?.caixa||28,canal:EST.bx?.canal,todos:!!v};tela('baixa')}
 function bxCanal(c){EST.bx={paId:null,potes:0,caixa:EST.bx?.caixa||28,canal:c};tela('baixa')}
 function bxEscolheProduto(id){EST.bx={paId:id,potes:0,caixa:EST.bx.caixa||28,canal:EST.bx.canal};tela('baixa')}
 function bxVoltar(){EST.bx={paId:null,potes:0,caixa:EST.bx?.caixa||28,canal:EST.bx?.canal};tela('baixa')}
