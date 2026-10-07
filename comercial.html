@@ -3096,10 +3096,16 @@ async function baixarPdfProposta(cotacaoId){
 }
 
 /* ================= representantes ================= */
-/* ===== PEDIDO DE VENDA → UPSELLER (18/09/2026) =====================
-   Proposta enviada → "Gerar pedido" → carteira → "Faturar": calcula as
-   parcelas a partir de HOJE (data do faturamento), gera a planilha no
-   navegador e só então grava o estado. Nada é calculado antes do comando. */
+/* ===== PEDIDO DE VENDA → UPSELLER (18/09/2026, refeito 07/10/2026) ==========
+   Carteira = o fluxo inteiro num lugar só:
+     1 Orçamentos  → gerar, ver, editar, marcar enviado, gerar pedido
+     2 Pedidos     → ficha UpSeller (todas as colunas da planilha) → faturar
+     3 Faturados   → baixar de novo, reabrir se a UpSeller recusou
+   Ficha: crm.pedido_upseller (campos por LETRA de coluna da planilha).
+   Campo vazio = automático (cadastro, cálculo ou padrão). A ficha mais recente
+   do cliente (e, para campos de operação, a mais recente de qualquer cliente)
+   pré-preenche o próximo pedido — o operador não repete o que já digitou.
+   Nada trava: faltando obrigatório, o app avisa e o operador decide. */
 
 var UPS_LOJA = "Loja Padrão";
 var UF_EXTENSO = {AC:"Acre",AL:"Alagoas",AP:"Amapá",AM:"Amazonas",BA:"Bahia",CE:"Ceará",
@@ -3108,10 +3114,85 @@ var UF_EXTENSO = {AC:"Acre",AL:"Alagoas",AP:"Amapá",AM:"Amazonas",BA:"Bahia",CE
   PE:"Pernambuco",PI:"Piauí",RJ:"Rio de Janeiro",RN:"Rio Grande do Norte",
   RS:"Rio Grande do Sul",RO:"Rondônia",RR:"Roraima",SC:"Santa Catarina",
   SP:"São Paulo",SE:"Sergipe",TO:"Tocantins"};
+function ufSigla(v){
+  var s = String(v||"").trim();
+  if(UF_EXTENSO[s.toUpperCase()]) return s.toUpperCase();
+  for(var k in UF_EXTENSO){ if(UF_EXTENSO[k].toLowerCase() === s.toLowerCase()) return k; }
+  return "";
+}
+function ufExtenso(v){ var s = ufSigla(v); return s ? UF_EXTENSO[s] : String(v||""); }
 
 var UPS_OBS = "Observação:Preencha o modelo de acordo com as regras abaixo para evitar falhas na importação. Caso a importação falhe, corrija os erros com base nos motivos informados e reimporte apenas os pedidos que falharam.";
 var UPS_CAT = ["Categoria","Informação do Pedido","","","","Informação do Destinatário","","","","","","","","","","","","","Informação do Produto","","","","Informação de Envio","","","","","","","","","","","Detalhes da Transportador para NF-e (Deixe em branco caso não seja necessária a emissão de nota fiscal. Caso seja necessária, preencha conforme aplicável.)","","","","","","","Informação de Pagamento","","",""];
 var UPS_CAB = ["Nome do Campo","Nome da Loja*","Nº do Pedido da Loja*","Observação","Necessita Emitir NF-e*","Nome do Destinatário (Obrigatório para NF-e)","Nº de Celular","Tipo de Tributação (Obrigatório para NF-e)","Número de Tributação (Obrigatório para NF-e)","Nome da Empresa","IE","CEP (Obrigatório para NF-e)","Estado (Obrigatório para NF-e)","Cidade (Obrigatório para NF-e)","Bairro (Obrigatório para NF-e)","Número","Endereço 1","Endereço 2","Nome do Armazém","SKU*","Quantidade*","Preço Unitário* ","Método de Custo de Envio","Tipo de Pacote","Número","Método de Envio","Nº de Rastreio","Quantidade de Pacote","Peso Bruto (g)","Peso Líquido (g)","Tamanho do Pacote/Comprimento (cm)","Tamanho do Pacote/Largura (cm)","Tamanho do Pacote/Altura (cm)","Tipo de Tributação (Opcional)","Número de Tributação (Opcional)","Nome (Opcional)","IE","Estado(Opcional)","Cidade","Endereço","Método de Pagamento","Custo do Frete do Comprador","Desconto","Custo do Frete do Vendedor"];
+
+/* letra da coluna → índice 0..43 (A=0) */
+function colIdx(L){ var n = 0; for(var i=0;i<L.length;i++) n = n*26 + (L.charCodeAt(i)-64); return n-1; }
+
+/* Listas suspensas do modelo (o valor tem que bater exatamente) */
+var UPS_LISTA = {
+  simnao: ["SIM","NÃO"],
+  trib:   ["CNPJ","CPF"],
+  uf:     Object.keys(UF_EXTENSO).map(function(k){ return UF_EXTENSO[k]; }).sort(),
+  pacote: ["Volume(s)","Caixa(s)","Pacote(s)","Unidade(s)","Envelope(s)","Outros(s)"],
+  pagto:  ["Outros","PIX","Transferência Bancária","Dinheiro","Cheque","Cartão de Crédito","Cartão de Débito","Mercado Pago"],
+  /* códigos de modalidade de frete da NF-e (modFrete) — os mesmos 0/1/2/3/4/9 do modelo */
+  frete:  [["0","0 · Por conta do remetente (CIF)"],["1","1 · Por conta do destinatário (FOB)"],
+           ["2","2 · Por conta de terceiros"],["3","3 · Transporte próprio do remetente"],
+           ["4","4 · Transporte próprio do destinatário"],["9","9 · Sem transporte"]]
+};
+
+/* Nível: S = obrigatório sempre · N = obrigatório p/ NF-e · R = recomendado p/ NF-e · O = opcional
+   Origem: cad = cadastro do cliente (e a ficha completa o cadastro) · mem = lembra da última ficha
+           ped = só deste pedido · fix = o app define
+   'um' = só na 1ª linha do pedido (número que a UpSeller poderia somar entre linhas) */
+var UPS_CAMPOS = [
+  {g:"Pedido", c:"B", n:"S", o:"mem", t:"txt", r:"Nome da Loja"},
+  {g:"Pedido", c:"C", n:"S", o:"fix", t:"ro",  r:"Nº do Pedido da Loja"},
+  {g:"Pedido", c:"D", n:"O", o:"ped", t:"area",r:"Observação (complemento)", um:1},
+  {g:"Pedido", c:"E", n:"S", o:"mem", t:"sel", l:"simnao", r:"Necessita emitir NF-e"},
+  {g:"Destinatário", c:"F", n:"N", o:"cad", k:"razao_social", t:"txt", r:"Nome do destinatário"},
+  {g:"Destinatário", c:"G", n:"O", o:"mem", t:"txt", r:"Nº de celular"},
+  {g:"Destinatário", c:"H", n:"N", o:"cad", k:"tipo_doc", t:"sel", l:"trib", r:"Tipo de tributação"},
+  {g:"Destinatário", c:"I", n:"N", o:"cad", k:"documento", t:"txt", r:"CPF/CNPJ (só números)"},
+  {g:"Destinatário", c:"J", n:"O", o:"cad", k:"nome_fantasia", t:"txt", r:"Nome da empresa"},
+  {g:"Destinatário", c:"K", n:"O", o:"cad", k:"ie", t:"txt", r:"IE"},
+  {g:"Destinatário", c:"L", n:"N", o:"cad", k:"cep", t:"txt", r:"CEP"},
+  {g:"Destinatário", c:"M", n:"N", o:"cad", k:"uf", t:"sel", l:"uf", r:"Estado"},
+  {g:"Destinatário", c:"N", n:"N", o:"cad", k:"municipio", t:"txt", r:"Cidade"},
+  {g:"Destinatário", c:"O", n:"N", o:"cad", k:"bairro", t:"txt", r:"Bairro"},
+  {g:"Destinatário", c:"P", n:"R", o:"cad", k:"numero", t:"txt", r:"Número"},
+  {g:"Destinatário", c:"Q", n:"R", o:"cad", k:"logradouro", t:"txt", r:"Endereço 1 (rua)"},
+  {g:"Destinatário", c:"R", n:"O", o:"cad", k:"complemento", t:"txt", r:"Endereço 2 (complemento)"},
+  {g:"Produto", c:"S", n:"O", o:"mem", t:"txt", r:"Nome do armazém"},
+  {g:"Envio", c:"W", n:"O", o:"ped", t:"sel", l:"frete", r:"Método de custo de envio"},
+  {g:"Envio", c:"X", n:"O", o:"mem", t:"sel", l:"pacote", r:"Tipo de pacote"},
+  {g:"Envio", c:"Y", n:"O", o:"ped", t:"txt", r:"Numeração dos volumes"},
+  {g:"Envio", c:"Z", n:"O", o:"mem", t:"txt", r:"Método de envio"},
+  {g:"Envio", c:"AA",n:"O", o:"ped", t:"txt", r:"Nº de rastreio"},
+  {g:"Envio", c:"AB",n:"O", o:"ped", t:"num", r:"Quantidade de volumes", um:1},
+  {g:"Envio", c:"AC",n:"O", o:"ped", t:"num", r:"Peso bruto (g)", um:1},
+  {g:"Envio", c:"AD",n:"O", o:"ped", t:"num", r:"Peso líquido (g)", um:1},
+  {g:"Envio", c:"AE",n:"O", o:"mem", t:"num", r:"Comprimento (cm)", um:1},
+  {g:"Envio", c:"AF",n:"O", o:"mem", t:"num", r:"Largura (cm)", um:1},
+  {g:"Envio", c:"AG",n:"O", o:"mem", t:"num", r:"Altura (cm)", um:1},
+  {g:"Transportadora", c:"AH",n:"R", o:"mem", t:"sel", l:"trib", r:"Tipo de tributação"},
+  {g:"Transportadora", c:"AI",n:"R", o:"mem", t:"txt", r:"CPF/CNPJ (só números)"},
+  {g:"Transportadora", c:"AJ",n:"R", o:"mem", t:"txt", r:"Nome"},
+  {g:"Transportadora", c:"AK",n:"O", o:"mem", t:"txt", r:"IE"},
+  {g:"Transportadora", c:"AL",n:"R", o:"mem", t:"sel", l:"uf", r:"Estado"},
+  {g:"Transportadora", c:"AM",n:"O", o:"mem", t:"txt", r:"Cidade"},
+  {g:"Transportadora", c:"AN",n:"O", o:"mem", t:"txt", r:"Endereço"},
+  {g:"Pagamento", c:"AO",n:"O", o:"ped", t:"sel", l:"pagto", r:"Método de pagamento"},
+  {g:"Pagamento", c:"AP",n:"O", o:"ped", t:"num", r:"Custo do frete do comprador (R$)", um:1},
+  {g:"Pagamento", c:"AQ",n:"O", o:"ped", t:"num", r:"Desconto no pedido (R$)", um:1},
+  {g:"Pagamento", c:"AR",n:"O", o:"ped", t:"num", r:"Custo do frete do vendedor (R$)", um:1}
+];
+var UPS_NIVEL = {
+  S:{r:"Obrigatório", c:"#C63A3A"}, N:{r:"Obrigatório p/ NF-e", c:"#C97A1E"},
+  R:{r:"Recomendado p/ NF-e", c:"#B8862B"}, O:{r:"Opcional", c:"#7A6A57"}
+};
+/* Colunas de item (T, U, V) são obrigatórias sempre e vêm da proposta: SKU, quantidade, preço. */
 
 function padNum(n, t){ var s = String(n); while(s.length < t) s = "0"+s; return s; }
 function numeroPedidoLoja(numero){ return "NUT-"+padNum(numero, 6); }
@@ -3158,9 +3239,10 @@ function textoObservacaoPagamento(cond, parcelas, numped){
   return t+". PEDIDO ERP "+numped+".";
 }
 
+/* ---------- carregar pedido + ficha + memória ---------- */
 async function carregarPedido(cotacaoId){
   var rC = await sb.schema("crm").from("cotacoes")
-    .select("id,numero,cliente_id,status,condicao_pagamento,frete,valor_total,numero_pedido_loja,faturado_em,faturado_por,arquivo_exportacao")
+    .select("id,numero,cliente_id,oportunidade_id,status,condicao_pagamento,frete,valor_total,numero_pedido_loja,faturado_em,faturado_por,arquivo_exportacao")
     .eq("id", cotacaoId).single();
   if(rC.error || !rC.data) return null;
   var cot = rC.data;
@@ -3174,8 +3256,8 @@ async function carregarPedido(cotacaoId){
   var ids = itens.map(function(i){ return i.produto_acabado_id; }).filter(Boolean);
   var sku = {}, peso = {};
   if(ids.length){
-    /* vigente = o codigo de hoje na loja. Um produto tem varios codigos historicos
-       (ate 4) sob a mesma plataforma; filtrar por plataforma pegaria um qualquer. */
+    /* vigente = o código de hoje na loja. Um produto tem vários códigos históricos
+       (até 4) sob a mesma plataforma; filtrar por plataforma pegaria um qualquer. */
     var rS = await sb.from("depara_sku").select("codigo,produto_acabado_id")
       .eq("vigente", true).in("produto_acabado_id", ids);
     (rS.data||[]).forEach(function(s){ sku[s.produto_acabado_id] = s.codigo; });
@@ -3184,59 +3266,131 @@ async function carregarPedido(cotacaoId){
   }
   var rCt = await sb.schema("crm").from("contatos").select("telefone")
     .eq("cliente_id", cot.cliente_id).eq("ativo", true).limit(1);
+
+  /* ficha deste pedido, última ficha do cliente, última ficha de qualquer cliente */
+  var rF = await sb.schema("crm").from("pedido_upseller").select("campos,itens,atualizado_em,atualizado_por")
+    .eq("cotacao_id", cot.id).maybeSingle();
+  var rMc = await sb.schema("crm").from("pedido_upseller").select("campos")
+    .eq("cliente_id", cot.cliente_id).neq("cotacao_id", cot.id)
+    .order("atualizado_em", {ascending:false}).limit(1);
+  var rMg = await sb.schema("crm").from("pedido_upseller").select("campos")
+    .neq("cotacao_id", cot.id).order("atualizado_em", {ascending:false}).limit(1);
+
   return { cot:cot, cli:rCli.data||{}, itens:itens, sku:sku, peso:peso,
-           tel:((rCt.data||[])[0]||{}).telefone || "" };
+           tel:((rCt.data||[])[0]||{}).telefone || "",
+           ficha: rF.data || null,
+           memCli: ((rMc.data||[])[0]||{}).campos || {},
+           memGer: ((rMg.data||[])[0]||{}).campos || {},
+           fichaErro: rF.error ? rF.error.message : "" };
 }
 
-var CAMPOS_NFE = [["razao_social","Nome do destinatário"],["documento","CPF/CNPJ"],
-  ["cep","CEP"],["uf","Estado"],["municipio","Cidade"],["bairro","Bairro"],
-  ["numero","Número"],["logradouro","Endereço"]];
-function pendenciasPedido(P){
-  var c = P.cli || {}, falta = [];
-  CAMPOS_NFE.forEach(function(x){ if(!c[x[0]]) falta.push(x[1]); });
-  var semSku = P.itens.filter(function(it){
-    return !it.bonificado && (!it.produto_acabado_id || !P.sku[it.produto_acabado_id]);
-  });
-  return { cliente:falta, semSku:semSku };
-}
 function itensVendaveis(P){ return P.itens.filter(function(it){ return !it.bonificado; }); }
 function totalCobradoPedido(P){
   return itensVendaveis(P).reduce(function(s,it){
     return s + precoLiquidoItem(it)*(Number(it.qtd)||0);
   }, 0);
 }
+function pesoCalculadoG(P){
+  return Math.round(itensVendaveis(P).reduce(function(s,it){
+    return s + (P.peso[it.produto_acabado_id]||0)*(Number(it.qtd)||0)*1000;
+  }, 0));
+}
+function pagtoPelaCondicao(cond){
+  var t = String(cond||"");
+  if(/cart.*d[eé]bito/i.test(t)) return "Cartão de Débito";
+  if(/cart/i.test(t)) return "Cartão de Crédito";
+  if(/pix/i.test(t)) return "PIX";
+  if(/transf|ted|dep[oó]sito/i.test(t)) return "Transferência Bancária";
+  return "Outros";
+}
+function freteCodigoPelaProposta(frete){
+  var f = String(frete||"CIF").toUpperCase();
+  if(f.indexOf("FOB") >= 0) return "1";
+  if(f.indexOf("SEM") >= 0) return "9";
+  return "0";
+}
 
+/* Valor sugerido de cada coluna, na ordem: ficha deste pedido → cadastro do
+   cliente (campos 'cad') → memória do cliente → memória geral (só 'mem') → padrão. */
+function valorSugerido(P, f){
+  var fic = (P.ficha && P.ficha.campos) || {};
+  if(fic[f.c] != null && fic[f.c] !== "") return String(fic[f.c]);
+  var c = P.cli || {};
+  if(f.c === "C") return P.cot.numero_pedido_loja || numeroPedidoLoja(P.cot.numero);
+  if(f.o === "cad"){
+    var v = c[f.k];
+    if(f.c === "H"){ v = String(c.tipo_doc||"").toUpperCase().indexOf("CPF") >= 0 ? "CPF" : (c.documento ? (digitos(c.documento).length === 11 ? "CPF" : "CNPJ") : ""); }
+    if(f.c === "I") v = digitos(c.documento||"");
+    if(f.c === "M") v = c.uf ? ufExtenso(c.uf) : "";
+    if(v) return String(v);
+    if(P.memCli[f.c]) return String(P.memCli[f.c]);
+    return "";
+  }
+  if(f.o === "mem"){
+    if(P.memCli[f.c] != null && P.memCli[f.c] !== "") return String(P.memCli[f.c]);
+    var geral = ["B","E","S","X","Z","AE","AF","AG","AH","AI","AJ","AK","AL","AM","AN"];
+    if(geral.indexOf(f.c) >= 0 && P.memGer[f.c] != null && P.memGer[f.c] !== "") return String(P.memGer[f.c]);
+  }
+  if(f.c === "B") return UPS_LOJA;
+  if(f.c === "E") return "SIM";
+  if(f.c === "G") return P.tel || "";
+  if(f.c === "W") return freteCodigoPelaProposta(P.cot.frete);
+  if(f.c === "AO") return pagtoPelaCondicao(P.cot.condicao_pagamento);
+  return "";
+}
+/* valor que vai na planilha (peso vazio = calculado) */
+function valorFinal(P, f){
+  var v = valorSugerido(P, f);
+  if((f.c === "AC" || f.c === "AD") && !v){ var g = pesoCalculadoG(P); return g > 0 ? String(g) : ""; }
+  return v;
+}
+function skuItem(P, it){
+  var fi = (P.ficha && P.ficha.itens) || {};
+  var x = fi[it.produto_acabado_id];
+  if(x && x.T) return String(x.T);
+  return P.sku[it.produto_acabado_id] || "";
+}
+
+/* O que falta, por nível. Não trava nada: serve para avisar. */
+function pendenciasPedido(P){
+  var nfe = valorFinal(P, {c:"E", o:"mem"}) !== "NÃO";
+  var falta = { S:[], N:[], R:[] };
+  UPS_CAMPOS.forEach(function(f){
+    if(f.n === "O") return;
+    if((f.n === "N" || f.n === "R") && !nfe) return;
+    if(!valorFinal(P, f)) falta[f.n].push(f.r);
+  });
+  var semSku = itensVendaveis(P).filter(function(it){ return !skuItem(P, it); });
+  if(semSku.length) falta.S.push(semSku.length+" item(ns) sem SKU UpSeller");
+  if(!itensVendaveis(P).length) falta.S.push("nenhum item cobrado");
+  return falta;
+}
+function resumoPendencias(p){
+  var t = [];
+  if(p.S.length) t.push(p.S.length+" obrigatório(s)");
+  if(p.N.length) t.push(p.N.length+" obrigatório(s) p/ NF-e");
+  if(p.R.length) t.push(p.R.length+" recomendado(s)");
+  return t.join(" · ");
+}
+
+/* ---------- planilha ---------- */
 function linhasUpseller(P, parcelas){
-  var c = P.cli;
   var numped = P.cot.numero_pedido_loja || numeroPedidoLoja(P.cot.numero);
-  var obs = textoObservacaoPagamento(P.cot.condicao_pagamento, parcelas, numped);
-  var tipo = String(c.tipo_doc||"").toUpperCase().indexOf("CPF") >= 0 ? "CPF" : "CNPJ";
-  var pag = /cart/i.test(String(P.cot.condicao_pagamento||"")) ? "Cartão de Crédito" : "Outros";
+  var obsAuto = textoObservacaoPagamento(P.cot.condicao_pagamento, parcelas, numped);
+  var obsExtra = valorSugerido(P, {c:"D", o:"ped"});
+  var obs = obsExtra ? obsAuto+" "+obsExtra : obsAuto;
   return itensVendaveis(P).map(function(it, idx){
     var L = []; for(var i=0;i<44;i++) L.push("");
-    L[1] = UPS_LOJA;
-    L[2] = numped;
-    L[3] = idx === 0 ? obs : "";
-    L[4] = "SIM";
-    L[5] = c.razao_social || "";
-    L[6] = P.tel || "";
-    L[7] = tipo;
-    L[8] = digitos(c.documento||"");
-    L[9] = c.nome_fantasia || "";
-    L[10] = c.ie || "";
-    L[11] = c.cep || "";
-    L[12] = UF_EXTENSO[String(c.uf||"").toUpperCase()] || c.uf || "";
-    L[13] = c.municipio || "";
-    L[14] = c.bairro || "";
-    L[15] = c.numero || "";
-    L[16] = c.logradouro || "";
-    L[17] = c.complemento || "";
-    L[19] = P.sku[it.produto_acabado_id] || "";
-    L[20] = Number(it.qtd)||0;
-    L[21] = precoLiquidoItem(it);
-    var g = Math.round((P.peso[it.produto_acabado_id]||0)*(Number(it.qtd)||0)*1000);
-    if(g > 0){ L[28] = g; L[29] = g; }
-    L[40] = pag;
+    UPS_CAMPOS.forEach(function(f){
+      if(f.um && idx > 0) return;
+      var v = f.c === "D" ? obs : valorFinal(P, f);
+      if(v === "") return;
+      if(f.t === "num"){ var n = Number(String(v).replace(",", ".")); L[colIdx(f.c)] = isNaN(n) ? v : n; }
+      else L[colIdx(f.c)] = v;
+    });
+    L[colIdx("T")] = skuItem(P, it);
+    L[colIdx("U")] = Number(it.qtd)||0;
+    L[colIdx("V")] = precoLiquidoItem(it);
     return L;
   });
 }
@@ -3250,50 +3404,91 @@ function gerarXlsxUpseller(linhas, nomeArquivo){
   XLSX.writeFile(wb, nomeArquivo);
 }
 
+/* ---------- estados ---------- */
 async function gerarPedido(cotacaoId){
-  if(!confirm("Gerar pedido a partir desta proposta?\n\nDepois disso os itens e preços ficam congelados.")) return;
   var r = await sb.schema("crm").from("cotacoes").select("numero,status").eq("id", cotacaoId).single();
-  if(r.error || !r.data){ msg("Não consegui abrir a proposta.", true); return; }
-  if(["rascunho","recusada","expirada"].indexOf(r.data.status) >= 0){
-    msg("Só proposta enviada ou aceita vira pedido.", true); return;
+  if(r.error || !r.data){ msg("Não consegui abrir o orçamento.", true); return; }
+  var st = r.data.status;
+  if(["recusada","expirada"].indexOf(st) >= 0){ msg("Orçamento recusado ou expirado não vira pedido.", true); return; }
+  if(["rascunho","enviada","aceita"].indexOf(st) < 0){ msg("Esse orçamento já virou pedido.", true); return; }
+  if(!confirm("Gerar o pedido "+numeroPedidoLoja(r.data.numero)+"?\n\nDepois disso itens e preços ficam congelados."+
+     (st === "rascunho" ? "\n\nO orçamento ainda é rascunho: ele será marcado como enviado (confere o pedido mínimo)." : ""))) return;
+  if(st === "rascunho"){
+    var e = await sb.schema("crm").from("cotacoes").update({ status:"enviada" }).eq("id", cotacaoId).select("id");
+    if(e.error){ msg(e.error.message.indexOf("mínimo") >= 0 ? e.error.message : "Não deu para gerar o pedido: "+e.error.message, true); return; }
+    if(!(e.data||[]).length){ msg("O banco não aceitou a mudança (nenhuma linha alterada).", true); return; }
   }
   var u = await sb.schema("crm").from("cotacoes").update({
     status: "pedido",
     numero_pedido_loja: numeroPedidoLoja(r.data.numero),
     pedido_gerado_em: new Date().toISOString()
-  }).eq("id", cotacaoId);
+  }).eq("id", cotacaoId).select("id");
   if(u.error){ msg("Não deu para gerar o pedido: "+u.error.message, true); return; }
-  msg("Pedido "+numeroPedidoLoja(r.data.numero)+" gerado. Abra a Carteira para faturar.");
-  ir("carteira");
+  if(!(u.data||[]).length){ msg("O banco não aceitou a mudança (nenhuma linha alterada).", true); return; }
+  msg("Pedido "+numeroPedidoLoja(r.data.numero)+" gerado. Preencha os dados UpSeller e fature.");
+  CART.aberto = cotacaoId;
+  if(telaAtual === "carteira") telaCarteira(); else ir("carteira");
 }
 async function voltarParaProposta(cotacaoId){
-  if(!confirm("Voltar este pedido para proposta? Ele sai da fila de faturamento.")) return;
+  if(!confirm("Voltar este pedido para orçamento? Ele sai da fila de faturamento. Os dados UpSeller ficam guardados.")) return;
   var u = await sb.schema("crm").from("cotacoes")
-    .update({ status:"enviada", numero_pedido_loja:null, pedido_gerado_em:null }).eq("id", cotacaoId);
-  if(u.error){ msg("Não consegui voltar: "+u.error.message, true); return; }
-  msg("Voltou para proposta."); telaCarteira();
+    .update({ status:"enviada", numero_pedido_loja:null, pedido_gerado_em:null }).eq("id", cotacaoId).select("id");
+  if(u.error || !(u.data||[]).length){ msg("Não consegui voltar: "+(u.error ? u.error.message : "nenhuma linha alterada"), true); return; }
+  msg("Voltou para orçamento."); telaCarteira();
+}
+/* Reabrir: a UpSeller recusou a importação → volta a "pedido" para corrigir e faturar de novo. */
+async function reabrirFaturamento(cotacaoId){
+  if(!confirm("Reabrir este pedido?\n\nUse quando a UpSeller recusou a importação. As parcelas calculadas são apagadas e ele volta para \"a faturar\".")) return;
+  var d = await sb.schema("crm").from("pedido_parcela").delete().eq("cotacao_id", cotacaoId);
+  if(d.error){ msg("Não consegui apagar as parcelas: "+d.error.message, true); return; }
+  var u = await sb.schema("crm").from("cotacoes")
+    .update({ status:"pedido", faturado_em:null, faturado_por:null, arquivo_exportacao:null })
+    .eq("id", cotacaoId).eq("status","exportado").select("id");
+  if(u.error || !(u.data||[]).length){ msg("Não consegui reabrir: "+(u.error ? u.error.message : "nenhuma linha alterada"), true); return; }
+  msg("Reaberto. Corrija os dados e fature de novo."); CART.aberto = cotacaoId; telaCarteira();
+}
+async function marcarEnviadoCarteira(cotacaoId){
+  var r = await sb.schema("crm").from("cotacoes").update({ status:"enviada" }).eq("id", cotacaoId).select("id");
+  if(r.error){ msg(r.error.message.indexOf("mínimo") >= 0 ? r.error.message : "Não deu para marcar como enviado: "+r.error.message, true); return; }
+  if(!(r.data||[]).length){ msg("Nenhuma linha alterada.", true); return; }
+  msg("Orçamento marcado como enviado."); telaCarteira();
+}
+async function editarDaCarteira(cotacaoId){
+  var x = (CART.lista||[]).filter(function(c){ return c.id === cotacaoId; })[0];
+  if(!x || !x.oportunidade_id){ msg("Esse orçamento não tem oportunidade ligada.", true); return; }
+  var rO = await sb.schema("crm").from("oportunidades").select("titulo").eq("id", x.oportunidade_id).single();
+  var titulo = (rO.data && rO.data.titulo) || "Oportunidade";
+  telaAtual = "oportunidades";
+  $("app").innerHTML = moldura('<div class="vazio">Carregando…</div>');
+  await TELAS.oportunidades.fn();
+  await abrirNovaProposta(x.oportunidade_id, x.cliente_id, esc(titulo));
+  await editarProposta(cotacaoId);
 }
 
-/* FATURAR: gera o arquivo primeiro; só grava o estado depois que ele saiu. */
+/* FATURAR: gera o arquivo primeiro; só grava o estado depois que ele saiu.
+   Não recusa pedido incompleto: avisa e deixa o operador decidir. */
 async function faturarPedidos(ids){
-  if(!ids || !ids.length){ msg("Selecione ao menos um pedido.", true); return; }
-  var hoje = hojeISO(), pacote = [], recusados = [];
+  if(!ids || !ids.length){ msg("Marque os pedidos que vão ser faturados.", true); return; }
+  var hoje = hojeISO(), pacote = [], avisos = [];
   for(var i=0;i<ids.length;i++){
     var P = await carregarPedido(ids[i]);
-    if(!P){ recusados.push("pedido não encontrado"); continue; }
+    if(!P){ msg("Não consegui abrir um dos pedidos. Nada foi faturado.", true); return; }
+    if(P.cot.status !== "pedido"){ continue; }
     var pend = pendenciasPedido(P);
-    if(pend.cliente.length || pend.semSku.length){
-      recusados.push("#"+P.cot.numero+": "+
-        (pend.cliente.length ? "falta "+pend.cliente.join(", ") : "")+
-        (pend.cliente.length && pend.semSku.length ? " · " : "")+
-        (pend.semSku.length ? pend.semSku.length+" item(ns) sem código UpSeller" : ""));
-      continue;
+    var numped = P.cot.numero_pedido_loja || numeroPedidoLoja(P.cot.numero);
+    if(pend.S.length || pend.N.length){
+      avisos.push(numped+": falta "+pend.S.concat(pend.N).join(", "));
     }
     var total = totalCobradoPedido(P);
     pacote.push({ P:P, parcelas: calcularParcelas(P.cot.condicao_pagamento, total, hoje), total: total });
   }
-  if(!pacote.length){ msg("Nada foi faturado. "+recusados.join(" · "), true); return; }
-  if(!confirm("Faturar "+pacote.length+" pedido(s) com data de hoje ("+dataBR(hoje)+")?\n\nOs vencimentos serão calculados a partir dessa data.")) return;
+  if(!pacote.length){ msg("Nenhum pedido a faturar na seleção.", true); return; }
+  var pergunta = "Faturar "+pacote.length+" pedido(s) com data de hoje ("+dataBR(hoje)+")?\n\nOs vencimentos serão calculados a partir dessa data.";
+  if(avisos.length){
+    pergunta += "\n\n⚠️ A UpSeller deve RECUSAR na importação:\n• "+avisos.join("\n• ")+
+      "\n\nSe recusar, use \"Reabrir\" na Carteira, complete e fature de novo.\n\nFaturar assim mesmo?";
+  }
+  if(!confirm(pergunta)) return;
 
   var linhas = [];
   pacote.forEach(function(x){ linhas = linhas.concat(linhasUpseller(x.P, x.parcelas)); });
@@ -3311,20 +3506,20 @@ async function faturarPedidos(ids){
                status:"aberta", criado_por:ST.email,
                observacao:String(x.P.cot.condicao_pagamento||"") };
     });
-    var rp = await sb.schema("crm").from("pedido_parcela").insert(rows);
+    var rp = await sb.schema("crm").from("pedido_parcela").insert(rows).select("id");
     var ru = await sb.schema("crm").from("cotacoes").update({
       status:"exportado", faturado_em:hoje, faturado_por:ST.email, arquivo_exportacao:nome
-    }).eq("id", id);
-    if(rp.error || ru.error) falhas.push("#"+x.P.cot.numero);
+    }).eq("id", id).select("id");
+    if(rp.error || ru.error || !(ru.data||[]).length) falhas.push(x.P.cot.numero_pedido_loja || ("#"+x.P.cot.numero));
   }
   var t = "Planilha gerada: "+nome+" · "+pacote.length+" pedido(s), "+linhas.length+" linha(s).";
-  if(recusados.length) t += " Ficaram de fora: "+recusados.join(" · ")+".";
   if(falhas.length) t += " ATENÇÃO: o arquivo saiu, mas não consegui gravar o estado de "+falhas.join(", ")+" — confira antes de importar.";
   msg(t, falhas.length ? true : false);
+  CART.sel = {};
   telaCarteira();
 }
 
-/* Baixar de novo o MESMO arquivo: não recalcula nada, lê as parcelas gravadas. */
+/* Baixar de novo o MESMO arquivo: não recalcula parcelas, lê as gravadas. */
 async function baixarPlanilhaNovamente(cotacaoId){
   var P = await carregarPedido(cotacaoId);
   if(!P){ msg("Não consegui abrir o pedido.", true); return; }
@@ -3335,22 +3530,194 @@ async function baixarPlanilhaNovamente(cotacaoId){
   if(!parcelas.length){ msg("Esse pedido não tem parcelas gravadas.", true); return; }
   try{ gerarXlsxUpseller(linhasUpseller(P, parcelas), P.cot.arquivo_exportacao || ("upseller_"+P.cot.numero_pedido_loja+".xlsx")); }
   catch(e){ msg("Não consegui gerar: "+e.message, true); return; }
-  msg("Mesmo arquivo gerado de novo. Nada mudou no pedido.");
+  msg("Arquivo gerado de novo com as mesmas parcelas.");
+}
+
+/* ---------- ficha UpSeller ---------- */
+function inputFicha(f, v, so){
+  var id = "ups_"+f.c, dis = so ? " disabled" : "";
+  var st = 'style="width:100%;padding:8px 10px;font-size:14px;min-height:38px"';
+  if(f.t === "ro") return '<input id="'+id+'" '+st+' value="'+esc(v)+'" disabled>';
+  if(f.t === "area") return '<textarea id="'+id+'" rows="2" '+st+dis+' placeholder="Somado ao texto automático das parcelas">'+esc(v)+'</textarea>';
+  if(f.t === "sel"){
+    var ops = UPS_LISTA[f.l].map(function(o){ return Array.isArray(o) ? o : [o,o]; });
+    var temV = ops.some(function(o){ return o[0] === v; });
+    return '<select id="'+id+'" '+st+dis+'><option value="">—</option>'+
+      (v && !temV ? '<option value="'+esc(v)+'" selected>'+esc(v)+' (fora da lista!)</option>' : '')+
+      ops.map(function(o){ return '<option value="'+esc(o[0])+'"'+(o[0]===v?" selected":"")+'>'+esc(o[1])+'</option>'; }).join("")+
+      '</select>';
+  }
+  var ph = "";
+  if(f.c === "AC" || f.c === "AD") ph = ' placeholder="automático"';
+  return '<input id="'+id+'" '+st+dis+ph+(f.t==="num"?' inputmode="decimal"':'')+' value="'+esc(v)+'">';
+}
+async function abrirFichaUpseller(cotacaoId){
+  var alvo = $("ficha-"+cotacaoId);
+  if(!alvo) return;
+  if(alvo.innerHTML && CART.aberto === cotacaoId){ alvo.innerHTML = ""; CART.aberto = null; return; }
+  CART.aberto = cotacaoId;
+  /* uma ficha aberta por vez: os campos usam ids fixos (ups_B, ups_E…) */
+  Array.prototype.forEach.call(document.querySelectorAll('[id^="ficha-"]'), function(el){ if(el !== alvo) el.innerHTML = ""; });
+  alvo.innerHTML = '<div class="vazio">Carregando dados UpSeller…</div>';
+  var P = await carregarPedido(cotacaoId);
+  if(!P){ alvo.innerHTML = '<div class="vazio">Não consegui abrir.</div>'; return; }
+  if(P.fichaErro){ alvo.innerHTML = '<div class="card" style="--u:#C63A3A">Não consegui ler a ficha UpSeller: '+esc(P.fichaErro)+'</div>'; return; }
+  CART.fichaP = P;
+  var so = P.cot.status !== "pedido";
+  var pend = pendenciasPedido(P);
+  var pesoG = pesoCalculadoG(P);
+  var total = totalCobradoPedido(P);
+  var prev = calcularParcelas(P.cot.condicao_pagamento, total, P.cot.faturado_em || hojeISO());
+
+  var h = '<div style="margin-top:10px;border-top:1px solid var(--linha);padding-top:10px">';
+  h += '<div style="font-size:12.5px;color:var(--tinta2);margin-bottom:8px">'+
+    'Cada campo é uma coluna da planilha UpSeller (letra entre parênteses). Vazio = automático. '+
+    'O que você salvar aqui fica lembrado para os próximos pedidos'+(P.memCli && Object.keys(P.memCli).length ? ' — <b>já pré-preenchido com o último pedido deste cliente</b>' : '')+'.'+
+    (so ? '<br><b>Pedido já faturado: só leitura.</b> Para mudar, use "Reabrir".' : '')+'</div>';
+  h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">'+
+    ["S","N","R","O"].map(function(n){ return '<span class="tag" style="background:'+UPS_NIVEL[n].c+'">'+UPS_NIVEL[n].r+'</span>'; }).join("")+'</div>';
+
+  var grupos = [];
+  UPS_CAMPOS.forEach(function(f){ if(grupos.indexOf(f.g) < 0) grupos.push(f.g); });
+  grupos.forEach(function(g){
+    if(g === "Produto"){
+      h += '<div class="card" style="--u:#C63A3A;margin-bottom:8px;padding:12px"><h3 style="font-size:14px">Produtos (T, U, V) · obrigatórios</h3>';
+      h += itensVendaveis(P).map(function(it){
+        var s = skuItem(P, it), vig = P.sku[it.produto_acabado_id] || "";
+        return '<div style="display:grid;grid-template-columns:1fr 120px;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--linha)">'+
+          '<div style="font-size:13px"><b>'+esc(it.descricao||"item")+'</b><br><span style="color:var(--tinta2)">'+
+            inte(it.qtd)+' × R$ '+brl(precoLiquidoItem(it))+(vig ? ' · de-para: '+esc(vig) : ' · <span style="color:#C63A3A">sem código no de-para</span>')+'</span></div>'+
+          '<input data-sku="'+esc(it.produto_acabado_id||"")+'" data-vig="'+esc(vig)+'" placeholder="SKU UpSeller" value="'+esc(s)+'" '+(so?"disabled ":"")+
+            'style="padding:8px;font-size:14px;min-height:38px;'+(s?"":"border-color:#C63A3A")+'"></div>';
+      }).join("");
+      h += '<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;margin-top:8px"><input type="checkbox" id="ups_grava_depara" checked'+(so?" disabled":"")+'> '+
+           'Gravar no de-para o SKU digitado para produto que ainda não tem código (vale para os próximos pedidos)</label>';
+      var bonif = P.itens.filter(function(i){ return i.bonificado; });
+      if(bonif.length) h += '<div style="font-size:12.5px;color:#B8862B;margin-top:6px">'+bonif.length+' item(ns) bonificado(s) fora da planilha — bonificação sai em nota própria (CFOP 59xx).</div>';
+      h += '</div>';
+    }
+    var cs = UPS_CAMPOS.filter(function(f){ return f.g === g; });
+    var corG = cs.some(function(f){ return f.n==="S"; }) ? "#C63A3A" : cs.some(function(f){ return f.n==="N"; }) ? "#C97A1E" : cs.some(function(f){ return f.n==="R"; }) ? "#B8862B" : "#7A6A57";
+    h += '<div class="card" style="--u:'+corG+';margin-bottom:8px;padding:12px"><h3 style="font-size:14px">'+esc(g)+'</h3>'+
+      '<div style="display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">'+
+      cs.map(function(f){
+        var v = valorSugerido(P, f);
+        var nv = UPS_NIVEL[f.n];
+        var vazioObrig = !v && (f.n === "S" || f.n === "N") && !(f.c==="AC"||f.c==="AD");
+        return '<label style="display:block;font-size:12px'+(f.t==="area"?";grid-column:1/-1":"")+'">'+
+          '<span style="display:flex;justify-content:space-between;gap:6px;margin-bottom:3px">'+
+            '<b'+(vazioObrig?' style="color:#C63A3A"':'')+'>'+esc(f.r)+' <span style="color:var(--tinta2);font-weight:400">('+f.c+')</span></b>'+
+            '<span style="color:'+nv.c+';font-weight:800;white-space:nowrap">'+(f.n==="O"?"":nv.r)+'</span></span>'+
+          inputFicha(f, v, so)+
+          (f.c==="AC"||f.c==="AD" ? '<span style="color:var(--tinta2)">calculado: '+inte(pesoG)+' g (peso dos potes; sem tara de caixa)</span>' : '')+
+        '</label>';
+      }).join("")+'</div></div>';
+  });
+
+  h += '<div class="card" style="--u:#3E7C45;margin-bottom:8px;padding:12px"><h3 style="font-size:14px">Cobrança</h3>'+
+    '<div style="font-size:13px"><b>Total cobrado R$ '+brl(total)+'</b> · '+esc(P.cot.condicao_pagamento||"sem condição")+
+    (P.cot.faturado_em ? ' · vencimentos a partir de '+dataBR(P.cot.faturado_em) : ' · vencimentos calculados no comando Faturar')+'</div>'+
+    prev.map(function(p){
+      return '<div style="display:flex;justify-content:space-between;font-size:13px"><span>'+p.numero_parcela+'/'+p.total_parcelas+
+        ' · '+p.prazo_dias+' dias</span><span>R$ '+brl(p.valor)+' · '+dataBR(p.vencimento)+'</span></div>';
+    }).join("")+
+    '<div style="font-size:12px;color:var(--tinta2);margin-top:4px">Estas parcelas vão escritas na coluna Observação (D).</div></div>';
+
+  var r = resumoPendencias(pend);
+  h += '<div style="font-size:13px;margin:6px 0;color:'+(pend.S.length||pend.N.length?"#C63A3A":"#3E7C45")+'"><b>'+
+    (r ? "Falta: "+esc(r) : "Tudo preenchido — pronto para faturar.")+'</b>'+
+    (pend.S.length||pend.N.length ? '<div style="font-size:12px;color:var(--tinta2)">'+esc(pend.S.concat(pend.N).join(", "))+'. Não trava: você pode faturar assim, mas a UpSeller deve recusar o pedido.</div>' : '')+'</div>';
+
+  if(!so){
+    h += '<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;margin:6px 0"><input type="checkbox" id="ups_completa_cad" checked> '+
+         'Completar o cadastro do cliente com o que estiver vazio lá (nunca sobrescreve)</label>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+      '<button onclick="salvarFichaUpseller(\''+cotacaoId+'\')">💾 Salvar dados UpSeller</button>'+
+      '<button class="s" onclick="salvarFichaUpseller(\''+cotacaoId+'\',true)">💾 Salvar e faturar este</button></div>';
+  }
+  if(P.ficha && P.ficha.atualizado_em) h += '<div style="font-size:11.5px;color:var(--tinta2);margin-top:6px">Última gravação: '+
+    dataBR(P.ficha.atualizado_em)+' por '+esc(P.ficha.atualizado_por||"—")+'</div>';
+  alvo.innerHTML = h + '</div>';
+}
+
+async function salvarFichaUpseller(cotacaoId, faturarDepois){
+  var P = CART.fichaP;
+  if(!P || P.cot.id !== cotacaoId){ msg("Abra a ficha de novo.", true); return; }
+  var campos = {};
+  UPS_CAMPOS.forEach(function(f){
+    if(f.c === "C") return;
+    var el = $("ups_"+f.c); if(!el) return;
+    var v = String(el.value||"").trim();
+    if(f.c === "I" || f.c === "AI") v = digitos(v);
+    if(v !== "") campos[f.c] = v;
+  });
+  var itens = {}, novosDepara = [];
+  var gravaDepara = $("ups_grava_depara") && $("ups_grava_depara").checked;
+  Array.prototype.forEach.call(document.querySelectorAll("input[data-sku]"), function(el){
+    var pid = el.getAttribute("data-sku"), vig = el.getAttribute("data-vig"), v = String(el.value||"").trim();
+    if(!pid || !v) return;
+    if(v !== vig) itens[pid] = { T:v };
+    if(!vig && gravaDepara) novosDepara.push({ pid:pid, codigo:v });
+  });
+
+  var up = await sb.schema("crm").from("pedido_upseller").upsert({
+    cotacao_id: cotacaoId, cliente_id: P.cot.cliente_id, campos: campos, itens: itens,
+    atualizado_em: new Date().toISOString(), atualizado_por: ST.email
+  }, { onConflict:"cotacao_id" }).select("cotacao_id");
+  if(up.error){ msg("Não consegui salvar: "+up.error.message, true); return; }
+  if(!(up.data||[]).length){ msg("O banco não gravou a ficha (nenhuma linha). Confira o acesso.", true); return; }
+  var avisos = [];
+
+  /* completar o cadastro do cliente: só o que está vazio lá */
+  if($("ups_completa_cad") && $("ups_completa_cad").checked){
+    var c = P.cli || {}, patch = {};
+    UPS_CAMPOS.forEach(function(f){
+      if(f.o !== "cad" || !campos[f.c]) return;
+      if(c[f.k]) return;
+      var v = campos[f.c];
+      if(f.c === "M") v = ufSigla(v) || v;
+      patch[f.k] = v;
+    });
+    if(Object.keys(patch).length){
+      var rc = await sb.from("clientes").update(patch).eq("id", P.cot.cliente_id).select("id");
+      if(rc.error || !(rc.data||[]).length) avisos.push("cadastro do cliente não foi completado"+(rc.error?" ("+rc.error.message+")":""));
+      else avisos.push("cadastro do cliente completado ("+Object.keys(patch).length+" campo(s))");
+    }
+  }
+  /* de-para: SKU novo para produto sem código vigente */
+  for(var i=0;i<novosDepara.length;i++){
+    var d = novosDepara[i];
+    var ex = await sb.from("depara_sku").select("id,produto_acabado_id").eq("codigo", d.codigo).maybeSingle();
+    if(ex.error){ avisos.push("de-para "+d.codigo+": "+ex.error.message); continue; }
+    if(ex.data && ex.data.produto_acabado_id && ex.data.produto_acabado_id !== d.pid){
+      avisos.push("SKU "+d.codigo+" já é de outro produto no de-para — ficou só neste pedido"); continue;
+    }
+    var rd = ex.data
+      ? await sb.from("depara_sku").update({ vigente:true, produto_acabado_id:d.pid }).eq("id", ex.data.id).select("id")
+      : await sb.from("depara_sku").insert({ codigo:d.codigo, produto_acabado_id:d.pid, plataforma:"Varejo", vigente:true,
+          nome_anuncio:"via ficha UpSeller", criado_por:"FICHA_UPSELLER "+ST.email }).select("id");
+    if(rd.error || !(rd.data||[]).length) avisos.push("de-para "+d.codigo+" não gravou"+(rd.error?": "+rd.error.message:""));
+    else avisos.push("SKU "+d.codigo+" gravado no de-para");
+  }
+  msg("Dados UpSeller salvos."+(avisos.length ? " "+avisos.join(" · ")+"." : ""), avisos.some(function(a){ return /não|outro produto/.test(a); }));
+  if(faturarDepois){ await faturarPedidos([cotacaoId]); return; }
+  CART.aberto = cotacaoId;
+  await telaCarteira();
 }
 
 /* ---------- tela Carteira ---------- */
-var CART = { sel:{}, aberto:null };
+var CART = { sel:{}, aberto:null, filtroOrc:"abertos" };
 var STATUS_ORDEM = ["rascunho","enviada","aceita","pedido","exportado","faturado"];
 var STATUS_CART = {
-  rascunho:{r:"Rascunho", c:"#7A6A57"}, enviada:{r:"Proposta enviada", c:"#B8862B"},
-  aceita:{r:"Proposta aceita", c:"#B8862B"}, pedido:{r:"Pedido a faturar", c:"#C97A1E"},
+  rascunho:{r:"Rascunho", c:"#7A6A57"}, enviada:{r:"Orçamento enviado", c:"#B8862B"},
+  aceita:{r:"Orçamento aceito", c:"#B8862B"}, pedido:{r:"Pedido a faturar", c:"#C97A1E"},
   exportado:{r:"Faturado, sem NF", c:"#6B46C1"}, faturado:{r:"Faturado com NF", c:"#3E7C45"},
-  recusada:{r:"Recusada", c:"#C63A3A"}, expirada:{r:"Expirada", c:"#C63A3A"}
+  recusada:{r:"Recusado", c:"#C63A3A"}, expirada:{r:"Expirado", c:"#C63A3A"}
 };
 async function telaCarteira(){
   var r = await sb.schema("crm").from("cotacoes")
-    .select("id,numero,cliente_id,status,valor_total,data_cotacao,condicao_pagamento,numero_pedido_loja,faturado_em,faturado_por,arquivo_exportacao")
-    .in("status", STATUS_ORDEM).order("numero", {ascending:false}).limit(300);
+    .select("id,numero,cliente_id,oportunidade_id,status,valor_total,data_cotacao,validade,condicao_pagamento,numero_pedido_loja,pedido_gerado_em,faturado_em,faturado_por,arquivo_exportacao")
+    .order("numero", {ascending:false}).limit(400);
   if(r.error){ pinta('<div class="card" style="--u:#C63A3A">Não consegui carregar a carteira: '+esc(r.error.message)+'</div>'); return; }
   var L = r.data || [];
   var ids = L.map(function(x){ return x.cliente_id; }).filter(Boolean);
@@ -3359,17 +3726,50 @@ async function telaCarteira(){
     var rc = await sb.from("clientes").select("id,razao_social").in("id", ids);
     (rc.data||[]).forEach(function(c){ nomes[c.id] = c.razao_social; });
   }
-  CART.lista = L; CART.nomes = nomes;
+  /* situação da ficha de cada pedido a faturar (avisa, não trava) */
+  var pend = {};
+  var aFat = L.filter(function(x){ return x.status === "pedido"; });
+  for(var i=0;i<aFat.length;i++){
+    var P = await carregarPedido(aFat[i].id);
+    if(P) pend[aFat[i].id] = { p: pendenciasPedido(P), temFicha: !!P.ficha };
+  }
+  CART.lista = L; CART.nomes = nomes; CART.pend = pend;
   renderCarteira();
+  if(CART.aberto && $("ficha-"+CART.aberto)){
+    var alvo = CART.aberto; CART.aberto = null;
+    abrirFichaUpseller(alvo);
+    var el = $("ficha-"+alvo); if(el) el.scrollIntoView({behavior:"smooth", block:"center"});
+  }
+}
+function cartLinha(x, botoes, extra){
+  var nomes = CART.nomes || {};
+  var st = STATUS_CART[x.status] || {r:x.status, c:"#7A6A57"};
+  return '<div class="card" style="--u:'+(extra && extra.cor || st.c)+';margin-bottom:8px">'+
+    '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:flex-start">'+
+      (extra && extra.check || '')+
+      '<div style="flex:1;min-width:180px"><b>'+esc(x.numero_pedido_loja || ("Orçamento #"+inte(x.numero)))+'</b> · '+esc(nomes[x.cliente_id]||"cliente")+
+        '<span class="tag" style="background:'+st.c+';margin-left:6px">'+esc(st.r)+'</span>'+(extra && extra.tag || '')+
+        '<div style="font-size:12px;color:var(--tinta2);margin-top:3px">'+
+          (x.numero_pedido_loja ? 'orçamento #'+inte(x.numero)+' · ' : '')+dataBR(x.data_cotacao)+
+          (x.condicao_pagamento ? ' · '+esc(x.condicao_pagamento) : '')+
+          (x.faturado_em ? ' · faturado em '+dataBR(x.faturado_em)+' por '+esc(x.faturado_por||"—") : '')+
+        '</div>'+(extra && extra.sub || '')+'</div>'+
+      '<div style="font-weight:800;font-family:ui-monospace,Menlo,monospace">R$ '+brl(x.valor_total)+'</div>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'+botoes+'</div>'+
+    '<div id="ficha-'+x.id+'"></div>'+
+  '</div>';
 }
 function renderCarteira(){
-  var L = CART.lista || [], nomes = CART.nomes || {}, hj = hojeISO();
+  var L = CART.lista || [], hj = hojeISO();
   var tot = {};
   STATUS_ORDEM.forEach(function(s){ tot[s] = {n:0, v:0}; });
   L.forEach(function(x){ if(tot[x.status]){ tot[x.status].n++; tot[x.status].v += Number(x.valor_total)||0; } });
 
-  var h = '<div class="card" style="--u:#B8862B"><h3>Carteira</h3>'+
-    '<div style="display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">'+
+  var h = '<div class="card" style="--u:#B8862B"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">'+
+    '<h3 style="margin:0">Carteira · orçamento → pedido → faturamento UpSeller</h3>'+
+    '<button onclick="ir(\'tabelaspreco\')">➕ Gerar orçamento</button></div>'+
+    '<div style="display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-top:10px">'+
     STATUS_ORDEM.map(function(s){
       var t = tot[s], st = STATUS_CART[s];
       return '<div class="card" style="--u:'+st.c+';margin:0"><div style="font-size:12px;color:var(--tinta2)">'+esc(st.r)+'</div>'+
@@ -3377,46 +3777,71 @@ function renderCarteira(){
         '<div style="font-size:12px;color:var(--tinta2)">R$ '+brl(t.v)+'</div></div>';
     }).join("")+'</div></div>';
 
+  /* 1 · Orçamentos */
+  var fo = CART.filtroOrc;
+  var orc = L.filter(function(x){
+    if(fo === "abertos") return ["rascunho","enviada","aceita"].indexOf(x.status) >= 0;
+    return ["rascunho","enviada","aceita","recusada","expirada"].indexOf(x.status) >= 0;
+  });
+  h += '<div class="card" style="--u:#B8862B"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">'+
+    '<h3 style="margin:0">1 · Orçamentos ('+orc.length+')</h3>'+
+    '<div style="display:flex;gap:6px">'+
+      '<button class="s mini" style="'+(fo==="abertos"?"background:#F6F1E8;font-weight:900":"")+'" onclick="CART.filtroOrc=\'abertos\';renderCarteira()">Em aberto</button>'+
+      '<button class="s mini" style="'+(fo==="todos"?"background:#F6F1E8;font-weight:900":"")+'" onclick="CART.filtroOrc=\'todos\';renderCarteira()">Todos</button>'+
+    '</div></div><div style="margin-top:10px">'+
+    (orc.length ? orc.map(function(x){
+      var venc = x.validade ? diasAte(x.validade) : null;
+      var tag = (venc !== null && venc < 0 && x.status !== "recusada" && x.status !== "expirada")
+        ? '<span class="tag" style="background:#C63A3A;margin-left:6px">validade vencida há '+Math.abs(venc)+' d</span>' : '';
+      var b = '<button class="s mini" onclick="baixarPdfProposta(\''+x.id+'\')">📄 PDF</button>'+
+        (x.status==="rascunho" ? '<button class="s mini" onclick="editarDaCarteira(\''+x.id+'\')">✏️ Editar</button>' : '')+
+        (x.status==="rascunho" ? '<button class="s mini" onclick="marcarEnviadoCarteira(\''+x.id+'\')">📤 Marcar enviado</button>' : '')+
+        (["rascunho","enviada","aceita"].indexOf(x.status)>=0 ? '<button class="mini" onclick="gerarPedido(\''+x.id+'\')">🧾 Gerar pedido</button>' : '');
+      return cartLinha(x, b, { tag:tag });
+    }).join("") : '<div class="vazio">Nenhum orçamento em aberto. Use ➕ Gerar orçamento.</div>')+'</div></div>';
+
+  /* 2 · Pedidos a faturar */
   var aFaturar = L.filter(function(x){ return x.status === "pedido"; });
   var selN = aFaturar.filter(function(x){ return CART.sel[x.id]; }).length;
-  h += '<div class="card" style="--u:#C97A1E"><h3>A faturar hoje · '+dataBR(hj)+'</h3>'+
+  h += '<div class="card" style="--u:#C97A1E"><h3>2 · Pedidos a faturar ('+aFaturar.length+') · hoje '+dataBR(hj)+'</h3>'+
     (aFaturar.length ? aFaturar.map(function(x){
-      return '<label style="display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--linha)">'+
-        '<input type="checkbox" '+(CART.sel[x.id]?"checked":"")+' onchange="CART.sel[\''+x.id+'\']=this.checked;renderCarteira()">'+
-        '<span style="flex:1"><b>'+esc(x.numero_pedido_loja||("#"+x.numero))+'</b> · '+esc(nomes[x.cliente_id]||"cliente")+
-        '<br><small style="color:var(--tinta2)">'+esc(x.condicao_pagamento||"sem condição")+'</small></span>'+
-        '<span style="font-weight:800;font-family:ui-monospace,Menlo,monospace">R$ '+brl(x.valor_total)+'</span></label>';
-    }).join("") : '<div class="vazio">Nenhum pedido esperando faturamento.</div>')+
-    (aFaturar.length ? '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'+
-      '<button onclick="faturarSelecionados()">💰 Faturar e gerar planilha'+(selN?" ("+selN+")":"")+'</button>'+
-      '<button class="s" onclick="marcarTodosCarteira()">Selecionar todos</button></div>'+
-      '<div style="font-size:12px;color:var(--tinta2);margin-top:8px">Os vencimentos são calculados a partir de hoje. '+
-      'Itens bonificados não vão na planilha — a bonificação sai em nota própria.</div>' : '')+
-    '</div>';
+      var pe = (CART.pend||{})[x.id] || { p:{S:[],N:[],R:[]}, temFicha:false };
+      var grave = pe.p.S.length || pe.p.N.length;
+      var cor = grave ? "#C63A3A" : (pe.p.R.length ? "#B8862B" : "#3E7C45");
+      var resumo = resumoPendencias(pe.p);
+      var sub = '<div style="font-size:12.5px;margin-top:4px;color:'+cor+'"><b>'+
+        (resumo ? "Dados UpSeller: falta "+esc(resumo) : "Dados UpSeller completos")+'</b>'+
+        (!pe.temFicha ? ' <span style="color:var(--tinta2)">· ainda não conferido</span>' : '')+'</div>';
+      var chk = '<input type="checkbox" style="width:22px;height:22px;margin-top:2px" '+(CART.sel[x.id]?"checked":"")+
+        ' onchange="CART.sel[\''+x.id+'\']=this.checked;renderCarteira()">';
+      var b = '<button class="mini" onclick="abrirFichaUpseller(\''+x.id+'\')">📝 Dados UpSeller</button>'+
+        '<button class="s mini" onclick="faturarPedidos([\''+x.id+'\'])">💰 Faturar</button>'+
+        '<button class="s mini" onclick="baixarPdfProposta(\''+x.id+'\')">📄 PDF</button>'+
+        '<button class="s mini" onclick="voltarParaProposta(\''+x.id+'\')">↩️ Voltar a orçamento</button>';
+      return cartLinha(x, b, { cor:cor, sub:sub, check:chk });
+    }).join("") : '<div class="vazio">Nenhum pedido esperando faturamento. Gere um pedido a partir de um orçamento (seção 1).</div>')+
+    '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">'+
+      '<button '+(aFaturar.length?'':'disabled style="opacity:.5" ')+'onclick="faturarSelecionados()">💰 Faturar e gerar planilha UpSeller'+(selN?" ("+selN+")":"")+'</button>'+
+      (aFaturar.length ? '<button class="s" onclick="marcarTodosCarteira()">Selecionar todos</button>' : '')+
+    '</div>'+
+    '<div style="font-size:12px;color:var(--tinta2);margin-top:8px">Vários pedidos marcados saem num arquivo só — a UpSeller separa por Loja + Nº do Pedido. '+
+    'Os vencimentos são calculados a partir da data do faturamento. Itens bonificados não vão na planilha.</div></div>';
 
-  h += '<div class="card" style="--u:#6B46C1"><h3>Todos os pedidos e propostas</h3>'+
-    (L.length ? L.map(function(x){
-      var st = STATUS_CART[x.status] || {r:x.status, c:"#7A6A57"};
+  /* 3 · Faturados */
+  var fat = L.filter(function(x){ return x.status === "exportado" || x.status === "faturado"; });
+  h += '<div class="card" style="--u:#6B46C1"><h3>3 · Faturados ('+fat.length+')</h3>'+
+    (fat.length ? fat.map(function(x){
       var dias = x.faturado_em ? diasAte(x.faturado_em) : null;
-      var alerta = (x.status === "exportado" && dias !== null && dias <= -3)
-        ? '<span class="tag" style="background:#C63A3A;margin-left:6px">'+Math.abs(dias)+' dias sem NF</span>' : '';
-      return '<div class="card" style="--u:'+st.c+';margin-bottom:8px">'+
-        '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">'+
-          '<div><b>'+esc(x.numero_pedido_loja||("Proposta #"+inte(x.numero)))+'</b> · '+esc(nomes[x.cliente_id]||"cliente")+
-          '<span class="tag" style="background:'+st.c+';margin-left:6px">'+esc(st.r)+'</span>'+alerta+'</div>'+
-          '<div style="font-weight:800;font-family:ui-monospace,Menlo,monospace">R$ '+brl(x.valor_total)+'</div>'+
-        '</div>'+
-        (x.faturado_em ? '<div style="font-size:12px;color:var(--tinta2);margin-top:4px">faturado em '+dataBR(x.faturado_em)+
-           ' por '+esc(x.faturado_por||"—")+(x.arquivo_exportacao?' · '+esc(x.arquivo_exportacao):'')+'</div>' : '')+
-        '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'+
-          '<button class="s mini" onclick="abrirConferenciaPedido(\''+x.id+'\')">🔎 Conferir</button>'+
-          (x.status==="pedido" ? '<button class="s mini" onclick="faturarPedidos([\''+x.id+'\'])">💰 Faturar</button>' : '')+
-          (x.status==="pedido" ? '<button class="s mini" onclick="voltarParaProposta(\''+x.id+'\')">↩️ Voltar a proposta</button>' : '')+
-          (x.status==="exportado"||x.status==="faturado" ? '<button class="s mini" onclick="baixarPlanilhaNovamente(\''+x.id+'\')">⬇️ Baixar a planilha de novo</button>' : '')+
-        '</div>'+
-        '<div id="conf-'+x.id+'"></div>'+
-      '</div>';
-    }).join("") : '<div class="vazio">Nada na carteira ainda.</div>')+'</div>';
+      var atras = x.status === "exportado" && dias !== null && dias <= -3;
+      var tag = atras ? '<span class="tag" style="background:#C63A3A;margin-left:6px">'+Math.abs(dias)+' dias sem NF</span>' : '';
+      var b = '<button class="s mini" onclick="baixarPlanilhaNovamente(\''+x.id+'\')">⬇️ Baixar a planilha de novo</button>'+
+        '<button class="s mini" onclick="abrirFichaUpseller(\''+x.id+'\')">🔎 Ver dados</button>'+
+        (x.status==="exportado" ? '<button class="s mini" onclick="reabrirFaturamento(\''+x.id+'\')">↩️ Reabrir (UpSeller recusou)</button>' : '');
+      return cartLinha(x, b, { tag:tag, cor: atras ? "#C63A3A" : null,
+        sub: x.arquivo_exportacao ? '<div style="font-size:12px;color:var(--tinta2)">arquivo '+esc(x.arquivo_exportacao)+'</div>' : '' });
+    }).join("") : '<div class="vazio">Nada faturado ainda.</div>')+
+    '<div style="font-size:12px;color:var(--tinta2);margin-top:8px"><b>Como ler:</b> a cor não é o status — pedido faturado há 3 dias ou mais ainda sem NF fica vermelho. '+
+    'Pedido a faturar fica vermelho quando falta campo obrigatório da UpSeller, amarelo quando falta só recomendado.</div></div>';
   pinta(h);
 }
 function marcarTodosCarteira(){
@@ -3427,42 +3852,7 @@ function faturarSelecionados(){
   var ids = (CART.lista||[]).filter(function(x){ return x.status==="pedido" && CART.sel[x.id]; })
     .map(function(x){ return x.id; });
   if(!ids.length){ msg("Marque os pedidos que vão ser faturados.", true); return; }
-  CART.sel = {};
   faturarPedidos(ids);
-}
-async function abrirConferenciaPedido(cotacaoId){
-  var alvo = $("conf-"+cotacaoId);
-  if(!alvo) return;
-  if(alvo.innerHTML){ alvo.innerHTML = ""; return; }
-  alvo.innerHTML = '<div class="vazio">Conferindo…</div>';
-  var P = await carregarPedido(cotacaoId);
-  if(!P){ alvo.innerHTML = '<div class="vazio">Não consegui abrir.</div>'; return; }
-  var pend = pendenciasPedido(P);
-  var total = totalCobradoPedido(P);
-  var prev = calcularParcelas(P.cot.condicao_pagamento, total, P.cot.faturado_em || hojeISO());
-  var bonif = P.itens.filter(function(i){ return i.bonificado; });
-  var h = '<div style="margin-top:10px;border-top:1px solid var(--linha);padding-top:8px;font-size:13px">';
-  if(pend.cliente.length){
-    h += '<div style="color:#C63A3A"><b>Cadastro incompleto:</b> '+esc(pend.cliente.join(", "))+'</div>'+
-         '<div style="font-size:12px;color:var(--tinta2)">Com NF-e = SIM a UpSeller exige todos. Corrija na ficha do cliente.</div>';
-  }
-  if(pend.semSku.length){
-    h += '<div style="color:#C63A3A;margin-top:4px"><b>Sem código UpSeller:</b> '+
-         esc(pend.semSku.map(function(i){ return i.descricao||"item"; }).join(", "))+'</div>';
-  }
-  if(!pend.cliente.length && !pend.semSku.length) h += '<div style="color:#3E7C45"><b>Pronto para exportar.</b></div>';
-  h += '<div style="margin-top:6px"><b>Total cobrado R$ '+brl(total)+'</b>'+
-       '<div style="font-size:12px;color:var(--tinta2)">'+itensVendaveis(P).length+' item(ns) · '+
-       esc(P.cot.condicao_pagamento||"sem condição")+
-       (P.cot.faturado_em ? ' · vencimentos de '+dataBR(P.cot.faturado_em) : ' · vencimentos calculados no comando Faturar')+'</div></div>';
-  h += '<div style="margin-top:6px">'+prev.map(function(p){
-      return '<div style="display:flex;justify-content:space-between"><span>'+p.numero_parcela+'/'+p.total_parcelas+
-        ' · '+p.prazo_dias+' dias</span><span>R$ '+brl(p.valor)+' · '+dataBR(p.vencimento)+'</span></div>';
-    }).join("")+'</div>';
-  if(bonif.length) h += '<div style="margin-top:6px;color:#B8862B">'+bonif.length+
-    ' item(ns) bonificado(s) fora da planilha — lançar em nota própria.</div>';
-  h += '<div style="margin-top:6px;font-size:12px;color:var(--tinta2)">Peso bruto sai igual ao líquido (sem tara de caixa).</div>';
-  alvo.innerHTML = h + '</div>';
 }
 /* ===== fim pedido de venda → UpSeller ===== */
 
