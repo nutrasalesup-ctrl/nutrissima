@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="app-version" content="2026-11-17T19:40Z">
+<meta name="app-version" content="2026-11-17T21:30Z">
 <title>Nutríssima — Comercial</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -3097,6 +3097,8 @@ async function enviarProposta(cotacaoId){
   var opId = ST.cache.propOportunidadeId, cliId = ST.cache.propCliente.id, tit = ST.cache.propTitulo;
   abrirNovaProposta(opId, cliId, tit);
 }
+/* logo da Nutríssima (PNG transparente, 340x134) — topo do PDF */
+var LOGO_NUTRISSIMA = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAVQAAACGCAYAAACCE3IlAAAzkklEQVR42u19bUxc153+M1aV3CUIX6PIhitbnb04Ygz+gLldCQ/uEsZIloe0iYYqrca7Xm1psBLHGxXb9QdDqxVxpQg7UuW4K0hdad2FVaNC01UGK6oB0w2YD8yYD57xWPHMYpkZsGXB2PIyk345/w/rO/8B7jn3ZV54Oz/pKs4M986995zznOf3biOEgAuXrSKJRAKRSIQ8ePAAT548SX9eXFwMt9ttE0WRvyQuluVb/BVw2aySSqUQjUbJ9PQ0xsbG4Pf7EQwGkUqlNP/e4/GQgYEBG39zXKyKjTNULpsNRIPBIOnv78fY2BgikQgSiYTh82OxGCRJ4qDKhTNULltX/H4/+fzzz9Hf349oNJqVSUCSJP5CuXBA5bL1ZGhoiFy5cgUTExOmmCgLULlw4YDKZUup9YODg+Tjjz+G3+/nL4QLB1QuXKzIxMQEuXDhAoaGhkydJwgCqquroSgKFEUBAHzwwQdUBxUXLhxQuWxaicfj5NKlS/j4448NnyPLMpqamnDkyBG4XK5lIVETExOEgykXDqhcsBUdTv/wD/+AcDis+7eiKMLtdqO1tRW1tbXUuFKarZTHoXLhgMpl08rFixdJZ2enrmrucDjQ2tqKn/zkJ4aC82dnZzmgcuGAygVbxvF0/vx5oqfiy7KMc+fO4e233zaV5fT48WNNMC0qKuIxqFw4oHLBpkoPPXnyJOnv72eq9u+//z5Onz5tKV309u3bqz4rLS3lDJULB1Qum4uZ6oGp0+nEp59+iqqqKstscnp6WtNswIVLNrKNvwIu60k++OADKpgKgoCOjg4MDw/bsgHTUChEtLKpDh48yAeAC2eoXLBpHFC9vb1UFf/KlSvwer22HGRXaX5eW1vLB4ELB1Qu2BQppJ2dnVQw9fl8cDqdtlyYFP74xz+u+lySJNTU1PCB4MJVfi7Y8E6oU6dOaYZGiaKIvr6+nIApAAQCARIIBFZ9XldXx6tMceGAymXjy7lz5zRtmoIgoK+vD263O2dAd+HCBU3gbm1t5QPBhQMqF2z43PzPPvtM87uurq6cgunIyAjRsp/KsgyXy8XZKRcOqFw2tnR2dmqmgXo8Hrz//vu2XJoVfvazn2l+9+6770IQBD4YXDigctm4MjIyQkZGRqBlN+3u7s4pyJ07d45olfpzOBzwer18MLhwQOWCDR3Af+nSJc3vzp8/D1mWc8ZOe3t7qeFYnZ2d3BnFhQMql40twWBQk506HA785Cc/ySmYnjt3TvM7t9sNj8fDwZQLeBwqlw0tvb29mt72n/70pznJp0+lUvjkk0/I2bNnQSuqcvnyZW475QLe9ZTLhlf3KyoqSDwex8rg+mAwaMsWUBOJBM6dO0dV8wVBwMDAQE4jCLhw4QyVC9YqVGolmALAj370o6zZ6dDQEDl9+jS1GLUgCPjVr37FwZQLB1Qum0N8Pp8m0LW0tCCbgicXLlzA4OAgsxh1V1cX2traOJhy4YDKZXOo+2NjY6s+t9vtpsvxJRIJTExMkKtXr2JwcBB6rVE++ugjDqZcOKBywaZqtheJRFZ9/vd///eG1f1QKEQGBwfx+eefG2ojLUkSfve73/FsKC4cULlsLgmHw5qZUQ0NDVQWGo/HyfT0NMbGxvCXv/zFULM+VbxeL7q7u3msKRcOqFw2n4RCIbAyp+bn5xGNRvHw4UPcv38fMzMzWFhYoHYpBaPXVFdXFzwej42HRnEBD5vigg1mG02lUlhaWiKJRAKJRALz8/N48uQJHj9+jIcPH2J2dhbT09PQ8vDnSmRZxrvvvkvtfppKpbCwsEAALGvIp4IuB18unKFyyStILiwskMXFRTx69EhVwTE3N4fnz5/j+fPnmJ+fx9OnT7G4uKiCavrcQonaRtrr9VLV+1AoRE6dOpVpMiCCIOCll17CK6+8gpdffhmiKKZtucXFxSguLsaOHTuwc+dOFBcXp79Xj6KiIpsgCByIuXCGulUZZCqVwkqAfPr0KaLRKBKJBB49eoTFxUUsLCwUHBjNstGmpia8+eabcLlcTNU+kUigqamJGHFimREVTEtLS7Fjxw5s374dZWVlKC4uxp49e9JAXFZWhu3bt2PHjh0QBIEDMWeoXNY7YC4sLJC5uTk8evQIs7OzaVX7yZMnmJ+fx8LCAp49e7YmDDJX4FVdXY2GhgYcPnwYNTU1hp1N8XicBIPBvG1URmy8KoAWFRWhpKSElJaWoqysDK+++moafHfv3o1du3ahvLwcpaWl3P7LGSqXfABlKpXC/Px82i758OFDRKNRzMzMpMHSrONmPYqqbqtgY7fbceDAATidTlRVVVlOS43H4+Tv/u7v8mq/zce7KCsrgyRJ2Lt37zLQtdvtaZNDLmofcOGAuulAc2ZmBjMzM2kv9+zs7IZRv/WYmSRJ2LFjB3bt2oXdu3enwQFAwWyTFy9epBZL2YjvtLS0FCUlJZAkCWVlZZBlGfv27UNlZSVnuBxQsamb0C0tLZG5uTk8ePAA0WgUX3/9NWZnZxGNRjE/P79h2KXKhoqKiiAIwjK7YVlZGcrLy1FSUrJMdV1PLMrv95PR0VGodmQAaedaIpHIdMQBAJ49ewYAWFpaSo/lRmK4FRUV+Pa3v42qqirs2bMH+/fvR1lZGUpLSzmz5YC6/oEzHo+TmZkZhEIhfP3117h//z7i8TiePXuWZpnrdfGparYoiti9ezd27tyJ7du3pwFSZY8ZtsBN6VhRx0j9r+rIU22lKvA+efIEz549w9OnT/H48WM8efIk7eRTbdXrDYDV8co0Jbz22muoqqqCw+GAJEmc1XJALSxoLiwskHA4jNnZWdy7dw/hcDhtz1wvgPlCbUZJSQkynR8qSMqynAbPF2DKF1KeNJPMuNxoNJoOOZudnU1/roabrTUAS5KE8vJyKIqSBlq73Q5Jkjij5YCavV0zHA7j/v378Pv9WWXu5NNhodrP9uzZg1dffXUZUPLwnI2VEKE6HtVYX9XpuJaOR1V7sdvtqKmpQWVlJRRFQUVFBQdZDqjajHNmZmYZcIbD4TXxCGfGNapebtU2WVVVxUNq+Fwl8/PzuHPnTjrSQwXgQpuVBEGA3W5HbW0tDhw4kDYbbGX77JYC1FQqhXg8TsLhMG7duoVQKIRQKLQmTiFVtdq1axccDgcqKytXOXI4s+RiluWqcciZNvyZmRnE4/GCAK2qOVVVVaXD3VTbLAfUTeAgmp6eht/vx/T0dEFZZ6aTx263Y9++fZBlmYe0cFnT9aDa+2/fvl3QGGZZllFTU4ODBw+iqqoKNTU1m3INbApATaVSiEajafAMh8Np8Mz3rqzuyLW1tek4QBVE1QnDgZPLema2amTK7OxswUxemc4vRVFw6NAhyLK84QF2wwFqppc9EAjg1q1bea9glMk29+/fz72fXLaMU3Z6ehqhUCjNaFWnbD6IiiRJaRZbW1u7IcO41j2gplIpBINB4vf7MTY2hnv37iESieRNRVGDoSsrK9OGdhU4OdvkwkH2/+pF3Lt3L++mNFEUUVVVhf379+PIkSOoqamBLMs2DqgWdsVAIIDR0VEEAoG8gKeqqsuynPZSOhyOTaF2YAO3R6Exn/W+kLa6RKPRtLM3EAjkLQNQlmXU1dWhoaEBhw4dWnca4poDquo4Gh4exuTkZNojCR7egS1WyZ9873vfS6d8Zsr58+dx5swZDqjYmE6wUCiE0dHRnDPZzHWtAqzZRo8bGlBVA/j09DS+/PJL+P1+BIPBnNpjVqrs2VYp4lIYOXHiBOnt7V31udvtRl9fHx+/TWIyyHQe58NcsNYMNu+AupKBhkKhnKoBK8MxeD7yxmQzf/u3f0tWzgtZlvHnP/+Zq/tboMraxMQEbt++jcnJSUSj0ZySK0VRcOTIEdTV1eU9HjbngKrS/NHRUYyMjCAQCOSEgarZQw6HAzU1Naivr98QRmou+tLb20tOnDix7DOXy4VPP/2Ujy+2pj12cnISY2NjuHPnTs5ImFqg/OjRozh48KCpAuUFBdRQKES++uorfPnll5icnMwZhc9kn06nM+1t51Nuc7HTzNYkgiDgvffeQ2dnJ1fzuSxzVN+6dQsjIyM5A1g1TKuxsRFutzsn9lfTgKo+4OTkJL788kvcuHEjJxQ9k543NDSgrq6Os5MtIENDQ6SlpQWlpaV44403cO7cOT7uXHQ34UAgQCYmJnLq7FJ7lKnmASuZXIYBNR6Pk/7+fly/fj0nD6B66NxuNxRFST8AZyVbD1BTqVRB7FtcNjeDDQQCuH79ek4YrCRJcDgcOHr0KDwej+FNXhdQR0ZGyJUrVzA0NJSVLVRloA0NDaivr+cLiAsXLnljsBMTEyRXjnBBEOB2u3Hy5Em4XC6bJUCNx+Pk7NmzGBwctAykKoVuaGhIO5C4951P9ng8TtR5kDm3kskkvvnmm/Tf6bWGpqmCgUAAX3/99bLv1HThfDgiuKz/CnOqkysbE6UgCPB4POjq6qIyVk1AHRwcJK2traZRXZIk1NXV4eDBgzkz8nIpfLEMAOmCxxp1WrPaFOPxOPn+978P1QlFk46ODnR1ddmM9onq7e3FZ599pjtnBUFAbW0t/umf/glNTU2W7bVqQZE7d+6k+06pa8But3MHKtZ3EsnQ0BBu3bplyYkuiiKuXr0Kj8dj0wXUixcvks7OTsOsVHUiNTc3b6m6hxuZIf7mN78hapO658+fp3shPX36FIuLi+l2HCulqKgI5eXlqKysREtLC1wulyWb9+DgIGlpaWFO2P/5n//RvXYikUBXVxf57W9/a0mlkyQJP/3pT01lYY2MjJCrV6/i5s2b1CIhapdXh8OBY8eOwe12c98A1m+6czgchs/nw9jYmO5GnznGXV1dq+cOISR9dHd3EwDMQ5Ik4vF4SE9PD4lEIiTzfH4U5lhcXEQsFiORSISMj48Tn89Henp6SFdXF/F6vcTlchGHw0F6eno0x6erq0t3nI0coiiS7u5usri4aPoZZFmmXtftduvOq1gsRpxOZ9bP4HK5DM3hYDBI3G635ffU0dHBXC+RSIR4PB7S3t5Ouru7SV9fHxkeHibBYJDEYjGyuLiIZDKJZDLJ10Aej0gkQnp6eojH4yGSJOmObXd397IxTf9jYGCACILABNLu7m4Si8U4iOb5SCaTiMViZGpqivh8PtLd3U3a29uXgaUkSUQUReaYdXR0ENr1WYBm9lAUxfTm6vF4qNdrb28neu/H5XLl5N6NgPf4+LihxZUteHu9Xk0wFkWRyLJMFEUhbW1tZCWoqvOFr53cHrFYjHR3dzPHXhAEMjAwQJYBaiwWY57k9XotsRB+aLNLrYHLBEtRFHMCFl6vl7rIcsVS1cPhcJBgMGh4Ube3t1Ov1dXVxbyOniYliiJRFIV4vd70e6XNb4/HQ/SYaS7A1Ah4+3w+3efSesfJZBJOp5NIkkScTifxer2ko6OD9PT0rGK5fA1aW7Nam13muKgbGgghaGtrY1JarmZYZ5nj4+Okr68vzTA9Hs+qiR0MBnMKburhdDqJ1cWrKApxu93E4/EwAWklAzM6Vzo6OiwB6uLiIhwOBxO0pqamlt2HOhY9PT1kJTNnbTqEEENMWJIk4nA4iCzLTI1B77cikQjzd9ra2qjn9/T0MBe8JEmmxocfq9czayNXxwbBYJDKiPSYAj9Wv3CPx0MURaG+05U2FxUkWAvR6iFJEmExL9o9iqKoqVb6fD7CAjMAVLutGYZMM1UQQjA8PEw9T5ZlXcBYyTZYIDU+Pq6rAaxkjLFYjPT19Wnad1nPpZ7LUi3Hx8ctjaeRZ+WHsYM2b1XtYdvQ0JCmh9TlcvEalCu8gSMjI9QCyIIgoLGxESMjI/D7/VSvc2NjI7XFitXYOIfDke7N43A40l0FWM3XRFFEUVGRbvjUiuBm2/DwMBRFod7P73//e0MRIlZDrwKBAPW7t956S/e6L0JebF6vV/e3BgYGqN95vV5cvXrVtjI0UJIkm9frtfl8Plt3d/ey+9m+fbtu1AJNSktLYbfbmc9FG09Vnjx5klV0yMWLF8nQ0BCJRqOkUK2q15ucOXPG5nK5NN/P0NAQvnX9+nXNE7u6urZcu4+VLR7u3r2LQCCQTrX1eDzQepkZIWS28+fPk7Nnz1L/ZseOHZqfl5eXr4qHU2MaFxYWEA6HNc9zuVzw+Xw2raSM/v5+xONxIoqiTSMEyvaCFVPfg9Z5kiTZrl27RhRF0QTOQCCAeDxOssnH1wrZUmVubs70u9UC8ytXrtjm5+dJcXExdS5MTk5Sr9Ha2spcH6Io4syZMzZJkkhraytSqRRKSkosA2pJSQmKiopsrLnLem8v4i+zWh//9m//lg6KlySJ2O32dI+12tpalJWVQRTFTR06qYZLjYyMrPru+vXr//ditFSnrebNU1V1SZKodrBMbx7LDsayN9IcN6qtThAE0tbWRoaHh0ksFiPJZBJ9fX1MW6eWmru4uAi32018Ph+xYovUczCxvPQs1dSIY4nl5WfZ+/VslFpqMs2stbi4yIyEMOOAU9VE2lioB2uc9SIEpqamiJ7ZSBAEy1E6Pp9P9/qiKJK+vr4tgR1ac0OSJLJNa1dzOBybLpg9FAqR/v5+8uGHH65SVyRJsrW0tCAYDFJbT4uiaOi9yLJsq6mpoX4/Pz+v+fnevXshCAIGBgbQ09Njc7lcNrVQNkvVUwPxte738uXLmJ2dZdaXtcKWAODgwYOWz1UZF02eP39O/W7nzp1gFFpBPB43XD6tqqrK9uMf/5jGkplq7czMjCk10el0Qi+4n5WxU1ZWxjz30aNHuqaWVCqFmzdvWtLcLly4oHv9H//4x/B6vVvCTKiFBUtLS9hGe4Ebvc3C4OAgOX36NLl48SJpamoi9fX1OHbsmOoAWnWex+OxeTyevL1sVe7fv08Fivfeew9ut3vVhGQB6sLCAhYWFggN3N9++20bDVBZC1wPFPXU13zJnj17mPd86dIlmMyW0nw/L0wi1PP+9Kc/mVITu7u7dUGRZc7QO5e2ca4Un89n+p1fu3aNTExM6NbtOH36NKwWlB4aGiL56mScL5zRkm+VlpauWjxqp9GNli7X399Pzp49y9zpDx8+TJ30J0+eRH9/P/UFGh3wyspKMPLONT/ft28faMz2RVlDzQmnppCybHlWvtN71sz89ZXXZG0AqtBsl3py6NAhiKJIvb9f//rXeBGDastFeUlaIY3PPvsMbW1tRFEUQ7/jdDp1/46mvejNKQC4d+8ejDr1zKztUChE/vVf/1X375qamizbTmVZtv3jP/4jCQQCpLq6Ou1gVRQF5eXlWdePyFM9Vk3H4ba6ujrNE0ZGRtZPf+kMZwvre6/Xa/vRj34EPS8vTWpra22SJFEB1aiat3//ftNMwu1222iOHEEQqAwllUrh0aNHlt4ni/XoFYz44x//SPVGZ+uUYKn8sizbamtrmczh5MmTWc9fQRDAMt0kEgn87Gc/y6k2xwLU3bt3M8+lOS21TBWhUMjwu+ns7DRUPOTIkSNZPfv+/fuRSqXg9/vR29uLEydO4NChQ/jud7+L5uZmcvr0adLf378uMGlkZEST3NTV1WFbc3Oz5kl9fX1rvgtkqu7f+c53CI1drpgANlZYD2sB6C0io4UT7HY71QMcjUY12ZUoikyvMQ3ozah70IgsoMnTp0/BKm5CUwGbmpoMsR+rjEP1srLOTyQSaGlpQbYLsLW1VW9h4fz58zkJIXpR1pA5p6BjQzWqqmp5qGka3+DgoKG/Za0bGKsYRjPfYWRkBJOTk9Aif2shNGxsbm4GNe1UkqSC5u0vLi4iGAySnp4e8kKVWhWoLAiCoZxxlgdZL/CclcFjtJAGIQQ0T7/V98rybltNwGB5lWlB4Ky8dkEQDHu/WZlaRrz1rNTVzPsxmmhgJr8eJgP2jUaasKJDWHMmmUzCTLoyK4Mu836M1nuQJCmrDKypqSnd39CLkChkRBALL5mTJtvJaAZMjRa78Hq9uoPHSuHTW6wDAwM5mTi05xEEgUxNTZFcZWhYCReyAmpq6iZr4ZoBlmwBVQ0LMzJn2traLOexRyIRQ8DS3t6eFahEIhHqu9Wbd6wMK6vhU0Y2EitEw+pvrZfKdrQUX3XOMkHESCWeXCK/oiiGJoOReFDaIqDFbRpN4TPKLlmM0sj9m8nVtjqhWczA4XAsq3KlByput9sUaLFSSPUKlpidM+r9ZRODaRS4rYIqK47U4XCQbBmemTnIGhsr1cH07l2PXQuCsG4Ku9A2cfV9pnd7rYfKJhA4X9QfLwKI9XYsGqDpnasX0G1U9WABoFY+fzYApLfgrBbjMMNQzE54Vp68UUBVQdWoduNwOCwzHSO1gtV7t7L4WaCtR2xYphsaSNO0gFgspluvYeWRTTA/K0Ekc82uB0CNxWKa7zPz/rapDhG3261pFP7iiy8KZuxVFMWmdR9aBvx33nmHGdpDc0wlEgmmR1QvgN9o+t7evXup363sd2TUI09z9szPz1vyNmcbjiIIAjo6OjAwMGC6Iv3LL79MdSyZeRZJkmwDAwOG5k04HEZzc7MpL7cq77//vq29vR0GuhGgpaXFdEwly7Go5+GnhXY5HA689957zPApaKSXGo0YUOeAXkgXKyTLiNNrvcTFf/HFF5r34na702szHdh/7NgxZFPsIlfy5ptvGg1dwLlz54hevKLZAht6gfm3b9/OGgDv3LkDK11jacUvEokENbhfbzFYBVRZluH3+9HV1bXm7T1EUcTAwIAhwAuHw/je975nKqNKfVeXLl2ydXR0GJqbx44dMwWqjx8/hpVkBgC4e/cudYxoUTwzMzOqhrKsN9fFixfNbsrMaBEWSHZ2dmYVRI8CB/L//ve/1/xuGXbqqbq0orb5OoyUITOibrBy1fVUKJZjSs8Ga8R0wCqrZ7UOqNUxyqZyfzbl4ILBIFUdzcbJ0dPTQ4yUQrRipjBSF9Oq6YJlc9dzDtNMHu3t7YQ1DzNNTyzHMGuOOJ1OS3bj8fFxYqZk5Vp3JKDhkizLy+bRtsxdvqmpiVqWqlAiy7KtoqLC8N+fPHkSfr+faLGWqqoqS0HQLIY6NzdniA2ycvDj8bhphiSKImRZRi5yy2GgQpMgCOjp6UFbWxuVxfb29uL06dMkG5NBrqWtrc3m8/mY78qIhsO65zNnzth6enp0420HBwfR2dlJslX5WeYjVvxqZWUldV0DwOjoaPrfv/nNb4hWfKosy7h8+TJYAflWxtFIbYD1JLQyp6viro04PhRFKejuwNqtafenxTZYTILlnGDF9ekV+jX6HEavkSsWY9ZrmRnexeo3ZjTqwkyYkJE4SSMOTj32bSZuluZIMuKhNuLIpEUr6N0jK35V/V2axqUWEo/FYtTnGBgYICwHq5V5ZyUqYa3DpmjjMzw8vOy+tq3MN9ba2f1+vyVDvlUxm8bm9/tx7ty5VRkrTqeTeg6r1qXau51mSzFqA33ttdeo31mxo7JsaUZzuY2m4mamtHo8HtuvfvUr6t+dOnUK662whaIotj//+c9MbSOVSoH2XEbE7XbbBgYGmEw1lUrh9OnTumyMVhiltLSUef0XGhOzpoLL5dJ0Pr7ISSdnz57VHD+v1wuPx2NjZQiyshJp7+OXv/yl6bTwtZRQKES03oEsy6tqNGxbCSRvvfWW5kX/8z//s2APUFdXZ1qNuHbtGgYHB8nK8my0QdJLI2Wl0hkFL1bO+cOHDy05gmAhD9zqNTNB4Pjx49RqXPF4HJcuXSK5Uve/+eabnJmP/uM//oO5UP/yl79ktRm4XC5bX18f83nC4TCztkAikaAWh9YrLE0r21dUVJR+blEUqeTiX/7lX6DlaZdlGd3d3UilUtQKaYIgoKKiwmay4wLRMiG+KPq9Lh1TNOzT6hCxqnxfS0uL5uT4wx/+UDAWIkmSrbq62vTOd/LkyWVMWhRFKqhNT08zB4m187LYLQzmX1upns66ntWxYbXlyGyZoZagowHHJ598YlqL0WvZkSum+tFHHzE3IrP2bC2mqsd0WbUxFhYWqBEBkiQxNwSa7VWt0qT+/9GjR6nEQmsdXL58GZIk2RYWFgjN51BdXW2aVdJspy6XK+t6AMhTTRGtriaCIKClpWXV59u0iu5qgdnMzAwCgUDB1P6GhgZLD78yPpW2M4fDYaZzqbKykgoeoVDI0I4pSRKVIT948MD0rsuqDkUrumLgHmG0RJ8sy9R4z0QikZX6bLZYuJlzjh8/Tq0ilkgkckIUjh8/zoyFvXfvHnW8WdqFXh1Umra0cv42NjYa1vq8Xm+6Li/NpGCkpKAGeBOag1uvlmoymVwzdT8YDGpuJiv7iWkCqiiKmmo/Kw4rH8KqLOXxeKiq6sTExDLvLa2y/MLCAtMzXlFRwVyE0WjUkKefFmlgNFpAoy4qFfyWlpZIrmyoNLseLV5ZNbuYYXtWvfynTp0y/Tssdq8FdH6/n0xMTJj6DRYo0Dor6EVo6AEqjT2uXB8VFRWGtD6Hw4Hu7m5DG4EZ0pNKpfDzn/8clFqxcLlc67LS/7//+79rPv9bb72luXa20QALJjIF8iE1NTVg1Sa9fPkyM5xHtac6HA7NB9dzLukVSjaaTUK7BqsjKeueaG1LlpaWLI0Nq2ygVl3Suro65rj89re/NaruUxfQ//7v/0KvpufZs2dNPS/NLisIgqbZ49GjR6Z/Q88BRtvwWGX79ILmaVlS+/btWzXORgDw0qVLy+rZ0pIGAHY4FzRsp7SygSdPntRlobmyq8OkGZGWKUrDyG20XjtaNsR4PF6wwtOSJFF7M01PT8PlctnOnDnDZDGhUIhIkmSjscSxsTHLjimjGVMHDhygDpaZFD89gE6lUpYcUyxA1bLPSZJke/3115m2wkLY2vv7+w1nI0WjUU21jZXpk0gkMDExgQ8++MBwvVOrXUtZrU9oc1dvzLXmrl494ba2tlUteGh1byVJMtV7jmY7VRRFs+0P1kkhaa3NTlEUTXWfCqgAQKt8X8jC0zR1PR6PIxgMkvPnz9toNtJ4PI5Tp05BEARqBX29FFSWY8qoU4m1IGjsAhZqBGQDqKyUVuil2mkw96GhIUOb7ksvvZTV/BgcHERTUxPR86CfOnWKyjQdDscy542WtnP+/HlDz/PVV18xbdWsWgw02bVrF1gdLLTGSBAEza4JTqeTajKSZRm/+MUvDG/6K51esGg7bWtrS7+XtWChsOBIZHUF2cbwXGpOgJs3b2btFYXxkBTqd6OjoxAEAZ9++ilVBR0ZGcGHH35IaKrOzMwM81lYDDUUChliYna7nbqQWMwEFmJbM73yMO5ppxZIoTkjXC6XjcVOurq6DKnKr7zyiubnf/3rX2EmBvnw4cNobm4m/f39JBQKkXg8TkKhEOnt7SWKohBWpl9ra6smQ880d3z88cdobm4mLGeY3+9n9l5qbGy0tBGyVH7aeTTwZkW9qF79ldEHrCwsIzZwVtypLMs4fvy4zUhoVKHDpuLxONHqEEsrJKULqLTePfF43FIrWivCiiNV0+aqqqpsmUZ0LZsQrUeRntoty7KNxSqMOJVYDJDVO8mKV95KcL8gCNT0U1ojPkEQcsZSc7V4hoaGcOzYMdTX16O6uhr19fU4ceIEUwtQFAUej8dm5NmHhobUa5KJiQmiRgeEQiFy8eJF8v3vf59qCxUEAV6vl/qstPNe2MxtZtONWZudVvhUpld/pWnNrCnLaNwpALz77rtYT833NIgjtGLLab3fmIAqCAJ++MMfrqnazwpInp6eTrNLr9dra2tro6p8J06cYDJdKxlTemUAMxlgLlsusxxlVvL5aU4Z4P8cXTQW7vV6mRECv/zlL3UZPK1bq57DjmUqUIFO77dlWca1a9dMlRBMJBLo7e1FfX09ysvLSXl5OamuroZep93jx49TF+HS0hKhbVxlZWVMwKE5jFiA6nQ6l11zpVffqEmMlYW4ktBovUtZlldtMuspt5+GcT/84Q+ZY7KNddG3335bk6GNjIwUTO2nqUrxeHwZgPziF78wnQZnxI7KUvtv3bpl6DdoKqxeWTbaJsOKbUWOYz5p48yKSVVV8U8++YQ6RyKRCFWdTKVSeY15lmUZn332GdWxYMSel0qlDAGAoiirbJNGs6T0CrzQ2DcrPrSqqmpZOGBnZye1Sy3Lw2+kVTir3uk///M/Z90dN5/qvlZEgiiKePvtt5n3vE1v8WrZMVOpFLV/fT4AlbYjZD60JEm2a9eumc7cCIfDTDZTX19P/e4Pf/iD7qKKx+OEZovUWzBmTQhzc3Omd/lUKsXscMqyP3Z1dTHfd2dnJ/r7+zW95J9//jnzXq9cuaL5vSiKaG1ttfzu2tvb4ff7bYqiMBcGDeTMiNPpxH/9138xgWNmZoY6/1iFpVltzVnhTKIopruHer1eeL1em5ne8yqrNQKGFy5cYDLXw4cPkw8//JAMDQ2RaDRKWBW3Csle+/v7qdlcuviiV2WFVqnGah3EXNYB1aqbabRWJQw2zdPrRqlXbYfWXM9qnVm9Fi1mr6n3fA6Hg1k3lPW+BUEgkiQRt9tN+vr60tdRe0EpikKcTidxuVzE7XavOvTGpa+vj3g8HmZVKVEUiaIopLu729S7icVipKOjw1Rt3szn7ujoMFRvlVVBjNWridaV1Eh7oJ6eHiLLMvPvWBWojNR5NdIrauV9s/6+UF1Pk8kknE6n5V5wlhew1e6dueyKqNVrJplMmurYaAQUWS2LRVHUfNHJZBJ9fX3Usndmig+bAVSzDdMyS7MJgpCe2LIsE4fDkQYj1gQcHx8n4+PjZGpqigSDQRKLxUgsFiOLi4tYXFxEMplEvjffWCxGgsEgGR8fJ8PDw2R8fJwEg8GsexEtLi5CBW6Hw0FEUVw1purG4XQ6SXd3t+FiyCzQgk73V1qpzZUFj2mlE/XAgdXDzEhPNLNrEOukjTStWaKR92oIUFm7aC76kWfbP16rrqge64LJyvORSIRZXVwQBOL1eklPTw/p6+sjXV1dxOVyMc9ZWUcxF3VEVYA3s9Gp9zw8PEympqZIJBJZBoiFAMONciwuLiISiZDx8XHi8/nIwMAA8fl8ZHx8nMRiMVMaWzKZ1G1Qx2q+SFuTRhd+Nk0m9eYuqxuD1cPqejF7dHR0ZNWdIqsOlbIsF0TtZ/Udp4G6z+czPKhGuoaaNSXkq3WIOtFVNinLMlEUhbjdbtLW1kba29stF5vmR+GOZDKJYDBIpqamyPDwMOnr61vWttvpdBJZljWZGat9iBGVPxsSZeT6LHZqhugUGlCTySRV+zNaEL5gP5TtwbKj0kCdpaqb7fttxZSAHPSv12LrAwMDZGpqahmL5CC1+QBXNZmsZMnt7e3E5XIRRVE0tZVs2jrr9RrTs6mzesJ5PB4Si8XI+Pg46e7uJl6v13DL6kIAKsuMYnSNZU2FWXaeXB40cGTtmCwDs5UBywZUBUEgbW1thIMfP3INvLFYjExNTZGBgQHS0dGRtSnO5/MxCYEVZstqHRSLxYjP5yO0JoGFAlTa2jbzPnNirC1ER0LWILMM1ka9jUZfWjKZRE9PjynVRVEU4vP5OJjyY0PYiVnAxnKmsnwNbrdbd/7TSFshAJUWNWHW+Z6TcIJcqBjZhPfoebZZTi2rYWCLi4vo6ekhbrebOBwOIkkSEUWRSJJEZFkmbrebdHR0FCwSgh/8yJUmyCIgtBbfekBsBBBZIWT5BlQaRpjFBVM/SnPM6KkBuVJtaANmpCurnkc1mzCwxcVFxGKxtIc8F15WfvBjrSMZ+vr6SEdHB3G73USW5XR42EqNNJlMMsHQ4XAYAiWWOS3fvhpa918jIWKWATUWi2lSekEQCqL20wDdyO+zjOVm1BJ+8GOrHqqtMzNBIhgMMm2fZmKjWaQnn4CaS1zbBpNFn9cyFZVVAo1WWTszh5lVDlAURUSjUWb+ORcuW1kkSbK53W5bZg0ESZJsXV1d6OnpQUdHB1wu16qKaEaL9rBSwF9++eU1STU1XW8gV7YGRVHyzu6SySRoLFNRFF1VW2W4kiQRRVFIW1sb6enpIVNTU1xN5wc/crhOI5EI8fl8pL29PZ1BxsIHvWScfNlQk8kkFEXJmW8oZ86hQqWi0h7eiL1DTUs0m9XCD37wI/vQLtqa07PBGkkPz3WqqZat2MjxLSu0/4033iC9vb2aar+VEnpmhEX9L1y4AEmSCK2CjtPptHHFbW0kU6VaqV5Z6dYKg43/1Epl67WQ8VYQWksW/P9WNuTJkydwOByYn5/XVP39fn9B1f033njDUnlBGyHEUvMqrYZfkiQhEonY8jl59+3bRzILOzscDtTW1qKhoQH79++H3W5ft3UWNzoYLiwskEQigWQyiadPnyKVSiGRSOD58+d4/PgxvvnmGywtLeH58+fpbgSJRGJZ7dBvvvkm3dVUrRNLK81GK6FHK1+YOe/UItSvvPIKXn75ZQiCsOwoLi4GAOzcuTP9fUlJCXbv3p0uuv03f/M3arlEm3oel/yJWn83HA7j9u3bmJiYQCAQQCKRgMPhwK1bt2xmy3PqzeuKigrNurzDw8OWWltbAlQtYFPF5/PlrYthKBQix48fh6IoOHLkiNrSmIOnyUmrgqPazyiRSODJkyd49uwZ5ubm0p89evQo3U9+YWFhXVVULzTDEgQBpaWl2LFjB7Zv346ysjIUFxdjz5492LlzJ4qLiyGKInbt2oUdO3ZAEAQOxDmar4FAgPh8Phw+fDin2DI0NESam5uhVe/17t27ln7nW1Zv5gc/+AE+/PBDaLUOYFVyz9bLeOPGDeRyl9qME3BhYYHMz8+rTQjTIDk/P494PI6//vWv6QZ8hWj5vBkYusrGjYJvUVERSkpKSGlpKcrKyvDqq6+mwXfv3r0oKyuDJEkccKFfFNzlcjEjdJDjNic/+MEPLF/TMkMNhUKkvr5+1SQTRRF+v5/ZyIqL9UW9tLRE5ubm8ODBAzx58gT37t3DzMwMHjx4gLm5uS3NJLExQ5FQXl6OXbt2Yffu3XjttdcgSRLsdjvKyspQWlrKQTcPEo1GiaIomvg1Pj7ObI+TF4b6oivqqt4riUQCN27cAK1pHhcY6mkzMzODmZkZ3L17F9FoFDMzM2qnVcP9jLhsiLHWbPCXYWYgO3bsQGVlJcrKylBZWZn2Fahgy8W83LhxQ1Pj0OtqmjeGCgC9vb1Eq6OooiiYmpriDJXBNhcWFtJMMxqN4vbt21BBlNVBE+vMtqj+V3UUCYKAl156aZUzSDXTqM6gzH8XFRWl/1YVvU6xmZ1CU6lUuqme6hTDilbdmc4x1TGW6RRTHWAbabNS2W1lZSX27dsHWZZRWVmJ8vJyDrY68p3vfIdoRQ709PSgra1tbQA1Ho+TiooKzQkYDAYt0+bNBp7RaJSEw2GEQiHcvXsX9+7dW5fqudoAsKSkBKWlpekOq2VlZSgvL0dJSQmKi4vTAKl6wjNVUjV0ab2GK2mFby0tLREVSNUIBhWAnz9/vspZ98JOjWfPnjFbba/VJldaWory8nJ8+9vfRlVVFfbt24eamhpIkmTj/of/M1dWV1drvrtIJJKVozsrQAWAY8eOEa200/b2dly6dMm21ZxBMzMzuH//Pvx+P/x+PyKRyJotOJp3WgVISZLS/6+GB/EFZ37cl5aWSCKRWOb4y3QEPn36FIuLi2turhFFERUVFaisrMSBAwdQVVUFh8OB0tLSLTXup0+fJh9//PGqz71eL/r6+rLCrKwBlRV6kOu4sfVm55yenkYgEMDt27cRCoWoQcn5XiQvPMbYu3dv2pO8e/du2O32tKrNVcD14VBMJBKYmZnB7OwsHj9+jIcPH+L+/fuIx+NrNn9KS0vT8dwHDx5Mt4nejPMlkUjg4MGDeQv5zBpQWTc4MDAAj8dj2wzMMxwOIxAI4NatWwiHw4hGowVlmHa7PQ2YsizDbrdzx8Qmta2rtvRoNLoKcAvFcCVJgsPhgNPpxIEDB9Igu9EJ0uDgIGlpackbAfwWcrDDud1uaAFqX18fPB7PhgPQUChEJiYmcPv2bdy7d68garsaKmO323HgwAHIsoyysjLY7XauimNrpWhKkgSn06lpWiiUI1ONPlCjeF5oQqSqqgoHDhyAy+VCVVXVhpuXtNhTt9udk/j2rBkqkF8jbyFS3aanp+H3+zE5OYlQKJQ38FTVc1mWsXv3biiKwkNguOSU2d65cwf37t1La1H5NCMIgoDq6mooioKGhoZ17/gqhBM9J4AK0MMQuru7cebMGdt68rh/9dVXGBsbQyAQyNuEUx0AiqLgtdde27IOAC7rw1EaCATw9ddf59VRqhIGtbaGoiiorq5eN0ShEGGeOQNU1s3euHFjTUAkU30fHR3F9PR0zlWjTKO+w+FAfX09HA4HZFnmjJPLug/lGx8fRzgcRjgcxsLCQs6BVpIk1NTUoLGxEU6nc82KF6VSKRw6dCgvsad5AdRoNEq++93vrgIsQRAwPDxckNJ5qVQKwWCQjI6OYnR0FOFwGPF4PKdGfHWCHDx4MM06eXwfl81U6SkUCuHWrVs5JyAvbMRwOBxobGxEY2NjwRjsxMQEOXz48CoskCQJ//3f/52zVPmcASpAj0nNRXwXbRJEIhHi9/vxpz/9KacTQPWu19TUwOFw4PDhw2nmyZcfF2yhnPdwOIzh4WGEw2FMT0/nNCFFJShvvvkmFEVBRUVFXshJobApp4BKi0kVBAE+n89SfUFoGJZv3rwJn8+HQCCAmZmZnA1uZm1VRVHU4HcOoFy4ZKy/ubk5+P3+tB9CK8LHKomx2+2ora1Fc3MzXn/99Zysv5GREdLc3KyJE7kuN5pTQAXodVIlScKnn35q+uZVNWR0dBTXr19HMBjMCYCqqkdNTQ3q6+t5bVUuXLJMchkeHsb09HTa1JYLURQFR48eRWNjY9q8ZpbkvfPOO5r343A4cPv27ZyaHHIOqP39/eTYsWOgOXBOnz6N999/n0nr4/E4+eKLLzA2NoabN2/mZHBEUURtbS0aGxtRW1uLmpoaHqrEhQvyE8KlZhGOjo6mq+7nggS9/vrraGho0G1Rkkgk8Mknn5BLly5Rf7uvrw+0dknrBlBTqRRaW1sJq620mgzQ0NCA3bt3p1/A3bt3cf369Zz0j8l0HrlcLtTW1nLw5MJljUA2EAjkPNpGZa/79u1LB+XPzs5ibGwMQ0NDTBD3er24evVqzjEh54CqgmNTUxPJV2Mtmv2ltrYWR48ehdPptKQecOHCpTAmgnA4jImJCVy/fh2BQKCgBWPyGcqZF0BVX9o777yDoaEh5LNyTkNDAw4fPgyn08lDl7hwwcYM2ZqYmCDDw8MYGxvLa6q3y+XC7373u7yRrbwBqvqiurq6yK9//eucOZJUG8qhQ4d48DwXLps06UDNZsyVDwUA2tra8NFHH+WVeOUVUPH/e2qTn//855iYmDC186iOJKfTibfeemtdpbFx4cKlMAAbDAbJ559/vqyttBkMcTqdOH/+fEGSiwoCqJk7z+DgIK5fv65ZhETNpKirq0Nzc3M6lImDKBcuXFKpFOLxOJmcnITP58Pk5KRmJqQoiqiqqoLL5So4ESsYoNLsJrOzswD+r79QTU0Nb5vChQsXmKl0Nz09vZKRrpk/5f8Bt3HiFb0/nJAAAAAASUVORK5CYII=";
 async function baixarPdfProposta(cotacaoId, opts){
   opts = opts || {};
   if(typeof window.jspdf === "undefined"){ msg("Não consegui gerar o PDF.", true); return null; }
@@ -3122,6 +3124,7 @@ async function baixarPdfProposta(cotacaoId, opts){
   var totalBonif = bonificados.reduce(function(a,it){ return a + (Number(it.qtd)||0)*(Number(it.valor_unitario)||0)*(1-(Number(it.desconto_pct)||0)/100); }, 0);
 
   var doc = new window.jspdf.jsPDF();
+  try{ doc.addImage(LOGO_NUTRISSIMA, "PNG", 150, 7, 46, 18); }catch(eLogo){ /* sem logo, segue o PDF */ }
   doc.setFontSize(16); doc.text((opts.titulo || "Proposta comercial")+" #"+cot.numero, 14, 18);
   doc.setFontSize(10);
   doc.text("Cliente: "+clienteNome, 14, 28);
@@ -3160,8 +3163,6 @@ async function baixarPdfProposta(cotacaoId, opts){
   doc.setTextColor(0,0,0); doc.setFontSize(9.5);
   y += 8;
   var linhasCondicoes = [
-    ["Tabela aplicada", tabela ? tabela.nome : "—"],
-    ["Pedido mínimo da tabela", tabela ? "R$ "+brl(tabela.pedido_minimo) : "—"],
     ["Valor total do pedido", "R$ "+brl(cot.valor_total)],
     ["Condição de pagamento", cot.condicao_pagamento || "—"],
     ["Situação de crédito", CREDITO_ROTULO[cot.situacao_credito] || "Não necessário"],
@@ -3345,15 +3346,15 @@ async function carregarPedido(cotacaoId){
     .eq("cotacao_id", cot.id);
   var itens = rI.data || [];
   var ids = itens.map(function(i){ return i.produto_acabado_id; }).filter(Boolean);
-  var sku = {}, peso = {};
+  var sku = {}, peso = {}, linhaP = {}, nomeP = {};
   if(ids.length){
     /* vigente = o código de hoje na loja. Um produto tem vários códigos históricos
        (até 4) sob a mesma plataforma; filtrar por plataforma pegaria um qualquer. */
     var rS = await sb.from("depara_sku").select("codigo,produto_acabado_id")
       .eq("vigente", true).in("produto_acabado_id", ids);
     (rS.data||[]).forEach(function(s){ sku[s.produto_acabado_id] = s.codigo; });
-    var rP = await sb.from("produto_acabado").select("id,peso_pote_kg").in("id", ids);
-    (rP.data||[]).forEach(function(p){ peso[p.id] = Number(p.peso_pote_kg)||0; });
+    var rP = await sb.from("produto_acabado").select("id,peso_pote_kg,linha,nome").in("id", ids);
+    (rP.data||[]).forEach(function(p){ peso[p.id] = Number(p.peso_pote_kg)||0; linhaP[p.id] = p.linha||""; nomeP[p.id] = p.nome||""; });
   }
   var rCt = await sb.schema("crm").from("contatos").select("telefone")
     .eq("cliente_id", cot.cliente_id).eq("ativo", true).limit(1);
@@ -3367,7 +3368,7 @@ async function carregarPedido(cotacaoId){
   var rMg = await sb.schema("crm").from("pedido_upseller").select("campos")
     .neq("cotacao_id", cot.id).order("atualizado_em", {ascending:false}).limit(1);
 
-  return { cot:cot, cli:rCli.data||{}, itens:itens, sku:sku, peso:peso,
+  return { cot:cot, cli:rCli.data||{}, itens:itens, sku:sku, peso:peso, linhaP:linhaP, nomeP:nomeP,
            tel:((rCt.data||[])[0]||{}).telefone || "",
            ficha: rF.data || null,
            memCli: ((rMc.data||[])[0]||{}).campos || {},
@@ -3482,6 +3483,47 @@ function linhasUpseller(P, parcelas){
     L[colIdx("T")] = skuItem(P, it);
     L[colIdx("U")] = Number(it.qtd)||0;
     L[colIdx("V")] = precoLiquidoItem(it);
+    return L;
+  }).concat(linhasBonificacaoUpseller(P));
+}
+/* Bonificação (17/11/2026): sai como OUTRO pedido na mesma planilha (NUT-000123-B), para a
+   UpSeller emitir nota própria (CFOP 5.910/6.910, configurado lá). O pote vira um dos dois SKUs
+   genéricos de degustação (pastas / cremes); quantidade somada por SKU; valor = preço de tabela
+   (nunca zerado). Peso calculado só dos bonificados; volumes e medidas ficam no pedido de venda. */
+function linhasBonificacaoUpseller(P){
+  var bon = P.itens.filter(function(it){ return it.bonificado && (Number(it.qtd)||0) > 0; });
+  if(!bon.length) return [];
+  var ag = {}, ordem = [], pesoG = 0;
+  bon.forEach(function(it){
+    var pid = it.produto_acabado_id;
+    var sku = UPS_SKU_DEGUST[grupoDegustacao((P.linhaP||{})[pid], (P.nomeP||{})[pid] || it.descricao)];
+    if(!ag[sku]){ ag[sku] = { qtd:0, valor:0 }; ordem.push(sku); }
+    ag[sku].qtd += Number(it.qtd)||0;
+    ag[sku].valor += (Number(it.qtd)||0)*(Number(it.valor_unitario)||0);
+    pesoG += ((P.peso||{})[pid]||0)*(Number(it.qtd)||0)*1000;
+  });
+  var base = P.cot.numero_pedido_loja || numeroPedidoLoja(P.cot.numero);
+  var numped = base+"-B";
+  var obs = "MERCADORIA ENVIADA A TITULO DE BONIFICACAO. NAO GERA DIREITO A CREDITO/DEBITO FINANCEIRO. REF. PEDIDO "+base+".";
+  return ordem.map(function(sku, idx){
+    var L = []; for(var i=0;i<44;i++) L.push("");
+    UPS_CAMPOS.forEach(function(f){
+      if(f.um && idx > 0) return;
+      if(["AB","AE","AF","AG","AP","AQ","AR"].indexOf(f.c) >= 0) return;
+      var v;
+      if(f.c === "C") v = numped;
+      else if(f.c === "D") v = obs;
+      else if(f.c === "AO") v = "Outros";
+      else if(f.c === "AC" || f.c === "AD") v = pesoG > 0 ? String(Math.round(pesoG)) : "";
+      else v = valorFinal(P, f);
+      if(v === "" || v == null) return;
+      if(f.t === "num"){ var n = Number(String(v).replace(",", ".")); L[colIdx(f.c)] = isNaN(n) ? v : n; }
+      else L[colIdx(f.c)] = v;
+    });
+    var a = ag[sku];
+    L[colIdx("T")] = sku;
+    L[colIdx("U")] = a.qtd;
+    L[colIdx("V")] = Math.round(a.valor/a.qtd*100)/100;
     return L;
   });
 }
@@ -3684,7 +3726,7 @@ async function abrirFichaUpseller(cotacaoId){
       h += '<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;margin-top:8px"><input type="checkbox" id="ups_grava_depara" checked'+(so?" disabled":"")+'> '+
            'Gravar no de-para o SKU digitado para produto que ainda não tem código (vale para os próximos pedidos)</label>';
       var bonif = P.itens.filter(function(i){ return i.bonificado; });
-      if(bonif.length) h += '<div style="font-size:12.5px;color:#B8862B;margin-top:6px">'+bonif.length+' item(ns) bonificado(s) fora da planilha — bonificação sai em nota própria (CFOP 59xx).</div>';
+      if(bonif.length) h += '<div style="font-size:12.5px;color:#B8862B;margin-top:6px">'+bonif.length+' item(ns) bonificado(s) saem na mesma planilha como pedido separado (…-B), com SKU de degustação — nota própria de bonificação.</div>';
       h += '</div>';
     }
     var cs = UPS_CAMPOS.filter(function(f){ return f.g === g; });
@@ -3917,7 +3959,7 @@ function renderCarteira(){
       (aFaturar.length ? '<button class="s" onclick="marcarTodosCarteira()">Selecionar todos</button>' : '')+
     '</div>'+
     '<div style="font-size:12px;color:var(--tinta2);margin-top:8px">Vários pedidos marcados saem num arquivo só — a UpSeller separa por Loja + Nº do Pedido. '+
-    'Os vencimentos são calculados a partir da data do faturamento. Itens bonificados não vão na planilha.</div></div>';
+    'Os vencimentos são calculados a partir da data do faturamento. Itens bonificados saem como pedido separado (…-B) na mesma planilha.</div></div>';
 
   /* 3 · Faturados */
   var fat = L.filter(function(x){ return x.status === "exportado" || x.status === "faturado"; });
@@ -4600,7 +4642,13 @@ async function confirmarOportunidadeProposta(){
      exportado = planilha UpSeller gerada, aguardando a NF voltar
    Preço: faixa pelo valor do pedido (melhorTabelaProposta) — mesma regra da Nova proposta.
    Faturar, ficha UpSeller e planilha reaproveitam as funções da Carteira. */
-var PQ = { base:null, cli:null, itens:[], editando:null, cond:"", obs:"", numCompras:0, contato:null, rep:null, sel:{}, aberto:null };
+var PQ = { base:null, cli:null, itens:[], bonif:[], desc:0, transp:"", editando:null, cond:"", obs:"", numCompras:0, contato:null, rep:null, sel:{}, aberto:null };
+/* Bonificação na UpSeller: não vai com o código do pote, vai num de dois SKUs genéricos
+   de degustação. GO e Integral (e qualquer paçoca) = pastas; o resto (cremas) = cremes. */
+var UPS_SKU_DEGUST = { pastas:"S9SSN10212", cremes:"S9SSN10211" };
+function grupoDegustacao(linha, nome){
+  return (/^(go|integral)$/i.test(String(linha||"").trim()) || /pa[cç]oca/i.test(String(nome||""))) ? "pastas" : "cremes";
+}
 
 function semAcento(s){ return String(s==null?"":s).normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase(); }
 function rs(v){ return "R$ "+brl(v); }
@@ -4637,15 +4685,32 @@ async function carregarBasePedido(){
   var vig = {}; (rS.data||[]).forEach(function(s){ vig[s.produto_acabado_id] = s.codigo; });
   var prods = (rP.data||[]).filter(function(p){ return ids.indexOf(p.id) >= 0; }).map(function(p){
     var cod = vig[p.id] || codTabela[p.id] || "";
-    return { id:p.id, nome:p.nome, linha:p.linha||"", cod:cod, chave:semAcento(cod+" "+p.nome+" "+(p.linha||"")) };
+    return { id:p.id, nome:p.nome, linha:p.linha||"", cod:cod, grupo:grupoDegustacao(p.linha, p.nome), chave:semAcento(cod+" "+p.nome+" "+(p.linha||"")) };
   }).sort(function(a,b){ return a.nome.localeCompare(b.nome); });
   ST.cache.propTabelas = tabelas;
   ST.cache.propTabelaItens = tabelaItens;
+  var rBf = await sb.schema("crm").from("bonificacao_faixas").select("valor_minimo,qtd_potes").eq("ativa", true).order("valor_minimo", {ascending:true});
+  var rTr = await sb.schema("crm").from("transportadoras").select("id,razao_social,documento,tipo,ie,uf,municipio,endereco").eq("ativo", true).order("razao_social");
+  PQ.faixasBonif = rBf.data || [];
+  PQ.transps = rTr.data || [];
   PQ.base = { tabelas:tabelas, prods:prods };
   return PQ.base;
 }
 function pqProd(id){ return (PQ.base.prods||[]).filter(function(p){ return p.id === id; })[0] || null; }
 function pqTotalBruto(){ return PQ.itens.reduce(function(s,it){ return s + Math.round((Number(it.qtd)||0)*(Number(it.preco)||0)*100)/100; }, 0); }
+function pqDescAtivo(){ return /vista/i.test(PQ.cond||"") ? Math.min(100, Math.max(0, Number(PQ.desc)||0)) : 0; }
+/* mesma conta do banco: cotacao_itens.valor_total = round(qtd × preço × (1 − desc/100), 2) */
+function pqTotalLiquido(){
+  var d = pqDescAtivo();
+  return PQ.itens.reduce(function(s,it){ return s + Math.round((Number(it.qtd)||0)*(Number(it.preco)||0)*(1-d/100)*100)/100; }, 0);
+}
+function pqTotalBonif(){ return PQ.bonif.reduce(function(s,it){ return s + Math.round((Number(it.qtd)||0)*(Number(it.preco)||0)*100)/100; }, 0); }
+function pqPrecoTabela(pid){
+  var p = PQ.tabela ? precoNaTabelaProposta(PQ.tabela.id, pid) : null;
+  var tabs = (ST.cache.propTabelas||[]).slice().sort(function(a,b){ return a.pedido_minimo - b.pedido_minimo; });
+  for(var i=0;i<tabs.length && !p;i++) p = precoNaTabelaProposta(tabs[i].id, pid);
+  return p ? p.preco_unitario : 0;
+}
 /* a faixa depende do total, e o total depende da faixa: tenta da maior para a menor */
 function pqTabelaFinal(){
   var tabs = (ST.cache.propTabelas||[]).slice().sort(function(a,b){ return b.pedido_minimo - a.pedido_minimo; });
@@ -4669,6 +4734,7 @@ function pqAplicarPrecos(){
     it.preco = p ? p.preco_unitario : 0;
   });
   PQ.tabela = t;
+  PQ.bonif.forEach(function(it){ it.preco = pqPrecoTabela(it.pid); });
 }
 
 /* ---------- tela Pedidos (lista por ação) ---------- */
@@ -4817,7 +4883,8 @@ async function pqAprovar(id){
 
 /* ---------- formulário: novo / editar ---------- */
 async function pqNovo(){
-  PQ.cli = null; PQ.itens = []; PQ.editando = null; PQ.cond = ""; PQ.obs = ""; PQ.contato = null; PQ.rep = null; PQ.numCompras = 0;
+  PQ.cli = null; PQ.itens = []; PQ.bonif = []; PQ.desc = 0; PQ.transp = ""; PQ.editando = null; PQ.cond = ""; PQ.obs = "";
+  PQ.contato = null; PQ.rep = null; PQ.numCompras = 0;
   await pqAbrirForm();
 }
 async function pqAbrirForm(){
@@ -4834,11 +4901,15 @@ async function pqAbrirForm(){
     '<button class="bt" onclick="telaPedidos()">← Pedidos</button>'+
     '<div style="font-size:24px;font-weight:700;letter-spacing:-.02em;margin:10px 0">'+(PQ.editando ? "Editar pedido #"+inte(PQ.editando.numero) : "Novo pedido")+'</div>'+
     '<div class="g2">'+
-      '<div><div class="cd" id="pqCli"></div><div class="cd" style="margin-top:12px" id="pqItensCd"></div></div>'+
+      '<div><div class="cd" id="pqCli"></div>'+
+        '<div class="cd" style="margin-top:12px" id="pqItensCd"></div>'+
+        '<div class="cd" style="margin-top:12px" id="pqBonCd"></div>'+
+        '<div class="cd" style="margin-top:12px" id="pqTrCd"></div></div>'+
       '<div class="cd" id="pqResumo" style="align-self:start"></div>'+
     '</div></div>');
-  pqRenderCli(); pqRenderItensCd(); pqRenderResumo();
+  pqRenderCli(); pqRenderItensCd(); pqRenderBonCd(); pqRenderTransp(); pqRenderResumo();
 }
+
 function pqCadastroFalta(c){
   var f = [];
   if(!digitos(c.documento)) f.push("CNPJ/CPF");
@@ -4974,30 +5045,192 @@ function pqRenderItens(){
     '</div>';
   }).join("");
 }
+/* ---------- 3 bonificação ---------- */
+function pqSugestaoBonif(){
+  var tot = pqTotalLiquido(), f = null;
+  (PQ.faixasBonif||[]).forEach(function(x){ if(Number(x.valor_minimo) <= tot) f = x; });
+  return f;
+}
+function pqRenderBonCd(){
+  var alvo = $("pqBonCd"); if(!alvo) return;
+  alvo.innerHTML = '<div class="ttl"><span class="stp">3</span>Bonificação (degustação) <span class="lb" style="font-weight:400">· opcional</span></div>'+
+    '<div class="lb" id="pqBonSug" style="margin-top:4px"></div>'+
+    '<input id="pqBuscaBon" style="margin-top:8px" placeholder="Código ou nome do pote bonificado" oninput="pqFiltraBon()" onkeydown="if(event.key===\'Enter\'){event.preventDefault();if(PQ.achadosBon&&PQ.achadosBon.length)pqAddBon(PQ.achadosBon[0].id);}" autocomplete="off">'+
+    '<div id="pqBonLista"></div><div id="pqBonItens" style="margin-top:8px"></div>';
+  pqRenderBonItens();
+}
+function pqFiltraBon(){
+  var alvo = $("pqBonLista"); if(!alvo) return;
+  var q = semAcento(($("pqBuscaBon")||{}).value||"").trim();
+  if(!q){ alvo.innerHTML = ""; PQ.achadosBon = []; return; }
+  var partes = q.split(/\s+/);
+  var L = (PQ.base.prods||[]).filter(function(p){
+    if(/^\d+$/.test(q)) return p.cod.indexOf(q) === 0;
+    return partes.every(function(x){ return p.chave.indexOf(x) >= 0; });
+  }).slice(0, 8);
+  PQ.achadosBon = L;
+  alvo.innerHTML = L.length ? '<div style="margin-top:6px">'+L.map(function(p){
+    return '<button class="rw lnk" onclick="pqAddBon(\''+p.id+'\')"><span style="text-align:left"><span class="lb nm" style="display:inline">'+esc(p.cod)+'</span> '+esc(p.nome)+
+      ' <span class="lb" style="display:inline">· degustação '+p.grupo+'</span></span><span style="color:#007AFF;white-space:nowrap">+ Bonificar</span></button>';
+  }).join("")+'</div>' : '<p class="lb" style="margin-top:6px">Nenhum produto com esse código ou nome.</p>';
+}
+function pqAddBon(pid){
+  var it = PQ.bonif.filter(function(i){ return i.pid === pid; })[0];
+  if(it) it.qtd = (Number(it.qtd)||0) + 1;
+  else { var p = pqProd(pid); if(!p) return; PQ.bonif.push({ pid:pid, cod:p.cod, nome:p.nome, grupo:p.grupo, qtd:1, preco:0 }); }
+  var b = $("pqBuscaBon"); if(b) b.value = "";
+  pqFiltraBon(); pqRenderBonItens(); pqRenderResumo();
+}
+function pqQtdBon(pid, v){
+  var it = PQ.bonif.filter(function(i){ return i.pid === pid; })[0]; if(!it) return;
+  it.qtd = Math.max(0, Math.round(Number(String(v).replace(",", "."))||0));
+  pqRenderBonItens(); pqRenderResumo();
+}
+function pqRemoverBon(pid){ PQ.bonif = PQ.bonif.filter(function(i){ return i.pid !== pid; }); pqRenderBonItens(); pqRenderResumo(); }
+function pqRenderBonItens(){
+  pqAplicarPrecos();
+  var sug = $("pqBonSug");
+  if(sug){
+    var f = pqSugestaoBonif(), n = PQ.bonif.reduce(function(s,i){ return s + (Number(i.qtd)||0); }, 0);
+    sug.innerHTML = f ? 'A faixa do pedido sugere <b style="font-weight:600">'+inte(f.qtd_potes)+' pote'+(Number(f.qtd_potes)===1?'':'s')+'</b>'+(n ? ' · lançados: '+n : '')+'.' :
+      'Pedido abaixo da primeira faixa de bonificação.'+(n ? ' Lançados: '+n+'.' : '');
+  }
+  var alvo = $("pqBonItens"); if(!alvo) return;
+  if(!PQ.bonif.length){ alvo.innerHTML = '<p class="lb">Sai em nota própria de bonificação (pedido NUT-…-B na UpSeller), com o SKU de degustação de pastas ou de cremes.</p>'; return; }
+  alvo.innerHTML = PQ.bonif.map(function(it){
+    var tot = (Number(it.qtd)||0)*(Number(it.preco)||0);
+    return '<div class="rw">'+
+      '<div style="flex:1;min-width:0"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span class="lb nm" style="display:inline">'+esc(it.cod)+'</span> '+esc(it.nome)+'</div>'+
+        '<div class="lb nm">'+rs(it.preco)+' cada · UpSeller '+UPS_SKU_DEGUST[it.grupo||"cremes"]+' ('+(it.grupo||"cremes")+')</div></div>'+
+      '<input type="number" inputmode="numeric" min="0" step="1" value="'+(Number(it.qtd)||0)+'" style="width:76px;text-align:center;padding:8px" onchange="pqQtdBon(\''+it.pid+'\',this.value)">'+
+      '<div class="nm" style="width:96px;text-align:right;color:#8E8E93">'+rs(tot)+'</div>'+
+      '<button class="bt" style="padding:6px 10px" aria-label="Remover" onclick="pqRemoverBon(\''+it.pid+'\')">✕</button>'+
+    '</div>';
+  }).join("")+'<p class="lb" style="font-size:11.5px;margin-top:6px">Valor de tabela, não cobrado. Vai na nota de bonificação pelo valor real (nunca zerado).</p>';
+}
+
+/* ---------- 4 transportadora (pré-cadastrada) ---------- */
+function pqRenderTransp(modo){
+  var alvo = $("pqTrCd"); if(!alvo) return;
+  var L = PQ.transps || [];
+  var sel = L.filter(function(t){ return t.id === PQ.transp; })[0] || null;
+  var ed = modo === "editar" && sel ? sel : null;
+  var novo = modo === "novo" || !!ed;
+  var h = '<div class="ttl"><span class="stp">4</span>Transportadora</div>'+
+    '<select id="pqTransp" style="margin-top:10px" onchange="PQ.transp=this.value;pqRenderTransp()">'+
+      '<option value="">— a mesma do último pedido deste cliente (automática) —</option>'+
+      L.map(function(t){ return '<option value="'+t.id+'"'+(PQ.transp===t.id?' selected':'')+'>'+esc(t.razao_social)+(t.municipio?' — '+esc(t.municipio)+(t.uf?'/'+esc(t.uf):''):'')+'</option>'; }).join("")+
+    '</select>';
+  if(sel && !novo){
+    var falta = [];
+    if(!sel.uf) falta.push("UF"); if(!sel.municipio) falta.push("cidade"); if(!sel.endereco) falta.push("endereço"); if(!sel.ie) falta.push("IE");
+    h += '<div class="lb" style="margin-top:6px">CNPJ '+esc(sel.documento||"—")+(sel.municipio?' · '+esc(sel.municipio)+(sel.uf?'/'+esc(sel.uf):''):'')+
+      (falta.length ? ' · <span style="color:#D9772B">falta '+esc(falta.join(", "))+'</span>' : '')+'</div>';
+  }
+  if(!novo){
+    h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'+
+      (sel ? '<button class="bt" onclick="pqRenderTransp(\'editar\')">✏️ Completar dados</button>' : '')+
+      '<button class="bt" onclick="pqRenderTransp(\'novo\')">+ Cadastrar transportadora</button></div>';
+  } else {
+    var v = function(k){ return ed ? esc(ed[k]||"") : ""; };
+    h += '<div style="margin-top:10px;display:grid;gap:8px">'+
+      '<input id="trNome" placeholder="Razão social" value="'+v("razao_social")+'">'+
+      '<input id="trDoc" placeholder="CNPJ (só números)" inputmode="numeric" value="'+v("documento")+'"'+(ed?' disabled':'')+'>'+
+      '<input id="trIe" placeholder="IE (opcional)" value="'+v("ie")+'">'+
+      '<div style="display:flex;gap:8px"><input id="trUf" placeholder="UF" maxlength="2" style="width:80px" value="'+v("uf")+'"><input id="trCid" placeholder="Cidade" value="'+v("municipio")+'"></div>'+
+      '<input id="trEnd" placeholder="Endereço (rua, número, bairro)" value="'+v("endereco")+'">'+
+      '<div style="display:flex;gap:8px"><button class="bt pri" onclick="pqSalvarTransp('+(ed?'\''+ed.id+'\'':'')+')">Salvar transportadora</button><button class="bt" onclick="pqRenderTransp()">Cancelar</button></div>'+
+    '</div>';
+  }
+  alvo.innerHTML = h;
+}
+async function pqSalvarTransp(editId){
+  var nome = String(($("trNome")||{}).value||"").trim(), doc = digitos(($("trDoc")||{}).value);
+  var uf = ufSigla(($("trUf")||{}).value||"");
+  if(!nome){ msg("Informe a razão social.", true); return; }
+  if(doc.length !== 14 && doc.length !== 11){ msg("CNPJ com 14 dígitos (ou CPF com 11).", true); return; }
+  if(!uf){ msg("Informe a UF (ex.: SP).", true); return; }
+  if(editId){
+    var ru = await sb.schema("crm").from("transportadoras").update({
+      razao_social:nome, ie: String(($("trIe")||{}).value||"").trim() || null, uf:uf,
+      municipio: String(($("trCid")||{}).value||"").trim() || null,
+      endereco: String(($("trEnd")||{}).value||"").trim() || null,
+      atualizado_em:new Date().toISOString(), atualizado_por:ST.email
+    }).eq("id", editId).select("id,razao_social,documento,tipo,ie,uf,municipio,endereco");
+    if(ru.error || !(ru.data||[]).length){ msg("Não consegui salvar: "+(ru.error ? ru.error.message : "nenhuma linha alterada"), true); return; }
+    PQ.transps = (PQ.transps||[]).map(function(t){ return t.id === editId ? ru.data[0] : t; });
+    msg("Transportadora atualizada."); pqRenderTransp(); return;
+  }
+  if((PQ.transps||[]).some(function(t){ return digitos(t.documento) === doc; })){ msg("Essa transportadora já está cadastrada.", true); return; }
+  var r = await sb.schema("crm").from("transportadoras").insert({
+    razao_social:nome, documento:doc, tipo: doc.length === 11 ? "CPF" : "CNPJ",
+    ie: String(($("trIe")||{}).value||"").trim() || null, uf:uf,
+    municipio: String(($("trCid")||{}).value||"").trim() || null,
+    endereco: String(($("trEnd")||{}).value||"").trim() || null,
+    fonte:"tela Pedidos", ativo:true, atualizado_por:ST.email
+  }).select("id,razao_social,documento,tipo,ie,uf,municipio,endereco").single();
+  if(r.error || !r.data){ msg("Não consegui cadastrar: "+(r.error ? r.error.message : "sem retorno"), true); return; }
+  PQ.transps = (PQ.transps||[]).concat([r.data]).sort(function(a,b){ return a.razao_social.localeCompare(b.razao_social); });
+  PQ.transp = r.data.id;
+  msg("Transportadora cadastrada.");
+  pqRenderTransp();
+}
+/* grava a transportadora escolhida nas colunas AH–AN da ficha UpSeller do pedido */
+async function pqGravarTransp(id){
+  var rf = await sb.schema("crm").from("pedido_upseller").select("campos,itens").eq("cotacao_id", id).maybeSingle();
+  if(rf.error) return "ficha: "+rf.error.message;
+  var campos = (rf.data && rf.data.campos) || {};
+  ["AH","AI","AJ","AK","AL","AM","AN"].forEach(function(k){ delete campos[k]; });
+  var t = (PQ.transps||[]).filter(function(x){ return x.id === PQ.transp; })[0];
+  if(t){
+    var doc = digitos(t.documento);
+    campos.AH = doc.length === 11 ? "CPF" : "CNPJ"; campos.AI = doc; campos.AJ = t.razao_social;
+    if(t.ie) campos.AK = t.ie;
+    if(t.uf) campos.AL = ufExtenso(t.uf);
+    if(t.municipio) campos.AM = t.municipio;
+    if(t.endereco) campos.AN = t.endereco;
+  } else if(!rf.data) return "";
+  var u = await sb.schema("crm").from("pedido_upseller").upsert({
+    cotacao_id:id, cliente_id:PQ.cli.id, campos:campos, itens:(rf.data && rf.data.itens) || {},
+    atualizado_em:new Date().toISOString(), atualizado_por:ST.email
+  }).select("cotacao_id");
+  if(u.error) return "transportadora: "+u.error.message;
+  if(!(u.data||[]).length) return "transportadora: nenhuma linha gravada";
+  return "";
+}
+
 function pqRenderResumo(){
   var alvo = $("pqResumo"); if(!alvo) return;
   pqAplicarPrecos();
-  var tot = pqTotalBruto();
+  var bruto = pqTotalBruto(), d = pqDescAtivo(), tot = pqTotalLiquido(), bon = pqTotalBonif();
   var n = PQ.itens.reduce(function(s,i){ return s + (Number(i.qtd)||0); }, 0);
+  var nb = PQ.bonif.reduce(function(s,i){ return s + (Number(i.qtd)||0); }, 0);
   var tabs = (ST.cache.propTabelas||[]).slice().sort(function(a,b){ return a.pedido_minimo - b.pedido_minimo; });
   var minimo = tabs.length ? Number(tabs[0].pedido_minimo) : 0;
-  var prox = tabs.filter(function(t){ return Number(t.pedido_minimo) > tot && (!PQ.tabela || Number(t.pedido_minimo) > Number(PQ.tabela.pedido_minimo)); })[0];
+  var prox = tabs.filter(function(t){ return Number(t.pedido_minimo) > bruto && (!PQ.tabela || Number(t.pedido_minimo) > Number(PQ.tabela.pedido_minimo)); })[0];
   var conds = condicoesPagamentoDisponiveis(PQ.numCompras||0, tot);
   if(conds.indexOf(PQ.cond) < 0) PQ.cond = conds[0];
+  d = pqDescAtivo(); tot = pqTotalLiquido();
   var h = '<div class="lb">Total do pedido</div>'+
     '<div class="nm" style="font-size:30px;font-weight:600;letter-spacing:-.02em">'+rs(tot)+'</div>'+
     '<div class="lb">'+n+' pote'+(n===1?'':'s')+' · '+(PQ.tabela ? esc(PQ.tabela.nome) : 'abaixo da menor tabela')+'</div>';
+  if(d > 0) h += '<div class="lb nm" style="margin-top:4px">'+rs(bruto)+' − '+String(d).replace(".", ",")+'% à vista ('+rs(bruto - tot)+') = '+rs(tot)+'</div>';
+  if(nb) h += '<div class="lb nm" style="margin-top:2px">+ '+nb+' pote'+(nb===1?'':'s')+' bonificado'+(nb===1?'':'s')+' ('+rs(bon)+', não cobrado)</div>';
   if(tot > 0 && tot < minimo){
     h += '<div class="al bad" style="margin-top:10px"><b>Abaixo do pedido mínimo</b><span>Faltam '+rs(minimo - tot)+' para '+rs(minimo)+'. Dá para salvar como rascunho, mas não enviar ao cliente.</span></div>';
-  } else if(prox && tot > 0){
-    h += '<div class="al warn" style="margin-top:10px"><b>Faltam '+rs(Number(prox.pedido_minimo) - tot)+' para a '+esc(prox.nome)+'</b><span>'+rs(Number(prox.pedido_minimo))+' − '+rs(tot)+'. Na faixa de cima o preço unitário cai.</span></div>';
+  } else if(prox && bruto > 0){
+    h += '<div class="al warn" style="margin-top:10px"><b>Faltam '+rs(Number(prox.pedido_minimo) - bruto)+' para a '+esc(prox.nome)+'</b><span>'+rs(Number(prox.pedido_minimo))+' − '+rs(bruto)+'. Na faixa de cima o preço unitário cai.</span></div>';
   }
   h += '<label class="lb" style="margin:12px 0 4px;font-weight:400" for="pqCond">Condição de pagamento</label>'+
-    '<select id="pqCond" onchange="PQ.cond=this.value">'+conds.map(function(c){ return '<option'+(c===PQ.cond?' selected':'')+'>'+esc(c)+'</option>'; }).join("")+'</select>'+
-    '<div class="lb" style="font-size:11.5px;margin-top:3px">'+(PQ.cli ? PQ.numCompras+' compra'+(PQ.numCompras===1?'':'s')+' faturada'+(PQ.numCompras===1?'':'s')+' — boleto a partir da 3ª' : 'Escolha o cliente para ver as condições dele')+'</div>'+
-    '<label class="lb" style="margin:12px 0 4px;font-weight:400" for="pqObs">Observação (sai no PDF)</label>'+
+    '<select id="pqCond" onchange="PQ.cond=this.value;pqRenderResumo()">'+conds.map(function(c){ return '<option'+(c===PQ.cond?' selected':'')+'>'+esc(c)+'</option>'; }).join("")+'</select>'+
+    '<div class="lb" style="font-size:11.5px;margin-top:3px">'+(PQ.cli ? PQ.numCompras+' compra'+(PQ.numCompras===1?'':'s')+' faturada'+(PQ.numCompras===1?'':'s')+' — boleto a partir da 3ª' : 'Escolha o cliente para ver as condições dele')+'</div>';
+  if(/vista/i.test(PQ.cond||"")){
+    h += '<label class="lb" style="margin:12px 0 4px;font-weight:400" for="pqDesc">Desconto à vista (%)</label>'+
+      '<input id="pqDesc" type="number" inputmode="decimal" min="0" max="100" step="0.5" value="'+(Number(PQ.desc)||0)+'" onchange="PQ.desc=Math.min(100,Math.max(0,Number(String(this.value).replace(\',\',\'.\'))||0));pqRenderResumo();pqRenderBonItens()">';
+  }
+  h += '<label class="lb" style="margin:12px 0 4px;font-weight:400" for="pqObs">Observação (sai no PDF)</label>'+
     '<textarea id="pqObs" rows="2" oninput="PQ.obs=this.value">'+esc(PQ.obs||"")+'</textarea>'+
-    '<div class="ttl" style="margin:14px 0 8px"><span class="stp">3</span>Salvar e enviar</div>'+
+    '<div class="ttl" style="margin:14px 0 8px"><span class="stp">5</span>Salvar e enviar</div>'+
     '<button class="bt pri" style="width:100%;padding:13px;font-size:15px" onclick="pqSalvar()">'+(PQ.editando ? 'Salvar alterações' : 'Salvar pedido')+'</button>'+
     '<p class="lb" style="font-size:11.5px;margin-top:8px">Salvo, ele fica em "Aguardando aprovação" e você envia o PDF por WhatsApp ou e-mail. Quando o cliente responder, toque em ✅ Cliente aprovou.</p>';
   alvo.innerHTML = h;
@@ -5006,20 +5239,27 @@ async function pqEditar(id){
   var r = await sb.schema("crm").from("cotacoes").select("id,numero,cliente_id,status,condicao_pagamento,observacoes").eq("id", id).single();
   if(r.error || !r.data){ msg("Não consegui abrir o pedido.", true); return; }
   if(["rascunho","enviada"].indexOf(r.data.status) < 0){ msg("Só dá para editar antes da aprovação.", true); return; }
-  var ri = await sb.schema("crm").from("cotacao_itens").select("produto_acabado_id,descricao,qtd,bonificado").eq("cotacao_id", id);
+  var ri = await sb.schema("crm").from("cotacao_itens").select("produto_acabado_id,descricao,qtd,desconto_pct,bonificado").eq("cotacao_id", id);
   if(!PQ.base){ try{ await carregarBasePedido(); }catch(e){ msg(e.message, true); return; } }
-  var bonif = (ri.data||[]).filter(function(i){ return i.bonificado; });
-  if(bonif.length && !confirm("Este pedido tem "+bonif.length+" item(ns) bonificado(s), montado(s) na Nova proposta. Esta tela não edita bonificação: ao salvar, eles serão mantidos como estão. Continuar?")) return;
-  PQ.editando = { id:id, numero:r.data.numero, status:r.data.status, bonif:bonif };
-  PQ.itens = (ri.data||[]).filter(function(i){ return !i.bonificado && i.produto_acabado_id; }).map(function(i){
+  var todos = (ri.data||[]).filter(function(i){ return i.produto_acabado_id; });
+  var mapa = function(i){
     var p = pqProd(i.produto_acabado_id);
-    return { pid:i.produto_acabado_id, cod:p ? p.cod : "", nome:p ? p.nome : (i.descricao||""), qtd:Number(i.qtd)||0, preco:0 };
-  });
+    return { pid:i.produto_acabado_id, cod:p ? p.cod : "", nome:p ? p.nome : (i.descricao||""), grupo:p ? p.grupo : "cremes", qtd:Number(i.qtd)||0, preco:0 };
+  };
+  PQ.editando = { id:id, numero:r.data.numero, status:r.data.status };
+  PQ.itens = todos.filter(function(i){ return !i.bonificado; }).map(mapa);
+  PQ.bonif = todos.filter(function(i){ return i.bonificado; }).map(mapa);
+  var comDesc = todos.filter(function(i){ return !i.bonificado && Number(i.desconto_pct) > 0; })[0];
+  PQ.desc = comDesc ? Number(comDesc.desconto_pct) : 0;
   PQ.cond = r.data.condicao_pagamento || ""; PQ.obs = r.data.observacoes || "";
+  PQ.transp = "";
+  var rf = await sb.schema("crm").from("pedido_upseller").select("campos").eq("cotacao_id", id).maybeSingle();
+  var docT = rf.data && rf.data.campos ? digitos(rf.data.campos.AI) : "";
+  if(docT){ var t = (PQ.transps||[]).filter(function(x){ return digitos(x.documento) === docT; })[0]; if(t) PQ.transp = t.id; }
   PQ.cli = null;
   await pqAbrirForm();
   await pqEscolherCli(r.data.cliente_id);
-  pqRenderItens(); pqRenderResumo();
+  pqRenderItens(); pqRenderBonItens(); pqRenderTransp(); pqRenderResumo();
 }
 
 /* ---------- salvar ---------- */
@@ -5028,10 +5268,12 @@ async function pqSalvar(){
   var itens = PQ.itens.filter(function(i){ return (Number(i.qtd)||0) > 0; });
   if(!itens.length){ msg("Adicione ao menos um item com quantidade (passo 2).", true); return; }
   pqAplicarPrecos();
-  var semPreco = itens.filter(function(i){ return !(Number(i.preco) > 0); });
+  var bonif = PQ.bonif.filter(function(i){ return (Number(i.qtd)||0) > 0; });
+  var semPreco = itens.concat(bonif).filter(function(i){ return !(Number(i.preco) > 0); });
   if(semPreco.length){ msg("Sem preço na tabela: "+semPreco.map(function(i){ return i.cod||i.nome; }).join(", "), true); return; }
+  var d = pqDescAtivo();
   /* mesma conta do banco: cada item arredondado em centavos (cotacao_itens.valor_total) */
-  var tot = itens.reduce(function(s,i){ return s + Math.round(i.qtd*i.preco*100)/100; }, 0);
+  var tot = itens.reduce(function(s,i){ return s + Math.round(i.qtd*i.preco*(1-d/100)*100)/100; }, 0);
   var tabs = (ST.cache.propTabelas||[]).slice().sort(function(a,b){ return a.pedido_minimo - b.pedido_minimo; });
   var minimo = tabs.length ? Number(tabs[0].pedido_minimo) : 0;
   var agora = new Date().toISOString();
@@ -5056,21 +5298,24 @@ async function pqSalvar(){
     var u = await sb.schema("crm").from("cotacoes").update(dados).eq("id", id).in("status", ["rascunho","enviada"]).select("id");
     if(u.error){ msg("Não consegui salvar: "+u.error.message, true); return; }
     if(!(u.data||[]).length){ msg("O banco não aceitou a mudança (nenhuma linha alterada). Ele pode já ter sido aprovado.", true); return; }
-    var d = await sb.schema("crm").from("cotacao_itens").delete().eq("cotacao_id", id).eq("bonificado", false).select("id");
-    if(d.error){ msg("Não consegui trocar os itens: "+d.error.message, true); return; }
+    var dl = await sb.schema("crm").from("cotacao_itens").delete().eq("cotacao_id", id).select("id");
+    if(dl.error){ msg("Não consegui trocar os itens: "+dl.error.message, true); return; }
   } else {
     var c = await sb.schema("crm").from("cotacoes").insert(dados).select("id,numero").single();
     if(c.error || !c.data){ msg("Não consegui salvar: "+(c.error ? c.error.message : "sem retorno"), true); return; }
     id = c.data.id;
   }
   var linhas = itens.map(function(i){
-    return { cotacao_id:id, produto_acabado_id:i.pid, descricao:i.nome, qtd:i.qtd, valor_unitario:i.preco, desconto_pct:0, bonificado:false };
-  });
+    return { cotacao_id:id, produto_acabado_id:i.pid, descricao:i.nome, qtd:i.qtd, valor_unitario:i.preco, desconto_pct:d, bonificado:false };
+  }).concat(bonif.map(function(i){
+    return { cotacao_id:id, produto_acabado_id:i.pid, descricao:i.nome, qtd:i.qtd, valor_unitario:i.preco, desconto_pct:0, bonificado:true };
+  }));
   var ri = await sb.schema("crm").from("cotacao_itens").insert(linhas).select("id");
   if(ri.error || (ri.data||[]).length !== linhas.length){
     msg("O pedido foi salvo, mas os itens não gravaram inteiros"+(ri.error ? ": "+ri.error.message : "")+". Abra e salve de novo.", true);
     telaPedidos(); return;
   }
+  var avT = await pqGravarTransp(id);
   var enviado = false, aviso = "";
   if(tot >= minimo){
     var e = await sb.schema("crm").from("cotacoes").update({ status:"enviada", atualizado_em:new Date().toISOString() }).eq("id", id).select("id");
@@ -5078,6 +5323,7 @@ async function pqSalvar(){
     else if(!(e.data||[]).length) aviso = "nenhuma linha alterada";
     else enviado = true;
   }
+  if(avT) msg("Pedido salvo, mas a "+avT+". Escolha de novo em Editar.", true);
   PQ.editando = null;
   pqTelaSalvo(id, enviado, tot, minimo, aviso);
 }
