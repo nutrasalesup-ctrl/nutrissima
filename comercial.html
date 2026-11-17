@@ -5482,6 +5482,17 @@ async function telaPainelCom(){
     var rn = await sb.from("nf_venda").select("pedido_numero").in("pedido_numero", exp.slice(j, j+300));
     (rn.data||[]).forEach(function(n){ comNF[n.pedido_numero] = true; });
   }
+  /* carteira LBR (pedidos digitados na LBR, importados pela planilha do Varejo) — 17/11/2026 */
+  var lbr = [], lbrErro = null;
+  for(var pg=0; pg<20; pg++){
+    var rv = await sb.from("vendas_pedidos")
+      .select("id,pedido_numero,cliente,cidade,emissao,entrega,qtd,qtd_separada,valor_unitario,status,baixado_em,produto_nome,produto_acabado_id,produto_acabado(nome,saldo_potes)")
+      .eq("canal","Varejo").in("status",["aberto","baixado"]).order("id").range(pg*1000, pg*1000+999);
+    if(rv.error){ lbrErro = rv.error.message; break; }
+    lbr = lbr.concat(rv.data||[]);
+    if((rv.data||[]).length < 1000) break;
+  }
+  PN.lbr = lbr; PN.lbrErro = lbrErro;
   PN.L = L; PN.nomes = nomes; PN.reps = reps; PN.comNF = comNF; PN.calc = new Date();
   renderPainelCom();
 }
@@ -5587,6 +5598,8 @@ function renderPainelCom(){
     }).join("") : '<p class="lb" style="margin-top:6px">Nenhum pedido enviado neste intervalo.</p>')+
   '</article>';
 
+  h += lbrBloco();
+
   /* listas */
   var porCli = {};
   criados.forEach(function(x){ var k = x.cliente_id; if(!porCli[k]) porCli[k] = { id:k, v:0, n:0 }; porCli[k].v += Number(x.valor_total)||0; porCli[k].n++; });
@@ -5603,9 +5616,82 @@ function renderPainelCom(){
   '<p class="rod">Enviado = pedido mandado ao cliente, pela data de criação (rascunho fica fora). Aprovado = cliente confirmou, pela data da aprovação. '+
     'Faturado = planilha UpSeller gerada, pela data do faturamento; "com NF" quando o XML importado traz o nº NUT-… no pedido. '+
     'Os alertas mostram o estado de agora, não o período. Valores sem bonificação. '+
-    'Fonte: crm.cotacoes e nf_venda · calculado no app em '+dataBR(gerIsoData(PN.calc||new Date()))+' às '+String((PN.calc||new Date()).toTimeString()).slice(0,5)+'.</p>'+
+    'Carteira LBR = pedidos digitados na LBR (planilha do Varejo), à parte dos KPIs para não somar em dobro; "saiu da carteira" inclui faturado e cancelado. '+
+    'Fonte: crm.cotacoes, nf_venda e vendas_pedidos · calculado no app em '+dataBR(gerIsoData(PN.calc||new Date()))+' às '+String((PN.calc||new Date()).toTimeString()).slice(0,5)+'.</p>'+
   '</div>';
   pinta(h);
+}
+/* ===== Carteira LBR no Painel comercial ===== */
+function lbrPedidos(){
+  var hoje = hojeISO(), L = PN.lbr || [];
+  var ab = L.filter(function(x){ return x.status === "aberto"; });
+  /* estoque servido na ordem da entrega: quem entrega antes consome o saldo primeiro (mesma regra da Carteira da fábrica) */
+  var saldo = {};
+  ab.forEach(function(x){ if(x.produto_acabado_id && saldo[x.produto_acabado_id] == null) saldo[x.produto_acabado_id] = Number((x.produto_acabado||{}).saldo_potes)||0; });
+  var ord = ab.slice().sort(function(a,b){ return String(a.entrega||"9999").localeCompare(String(b.entrega||"9999")) || String(a.pedido_numero).localeCompare(String(b.pedido_numero)); });
+  var P = {};
+  ord.forEach(function(x){
+    var k = x.pedido_numero;
+    if(!P[k]) P[k] = { num:k, cliente:x.cliente, cidade:x.cidade, entrega:x.entrega, emissao:x.emissao, v:0, potes:0, falta:0, semSku:0, sep:0, itens:[] };
+    var q = Number(x.qtd)||0, sp = Math.min(Number(x.qtd_separada)||0, q), resto = q - sp, f = 0;
+    if(!x.produto_acabado_id){ f = resto; P[k].semSku += resto; }
+    else { var usa = Math.min(resto, Math.max(saldo[x.produto_acabado_id], 0)); saldo[x.produto_acabado_id] -= usa; f = resto - usa; }
+    P[k].v += q*(Number(x.valor_unitario)||0); P[k].potes += q; P[k].falta += f; P[k].sep += sp;
+    if(x.entrega && (!P[k].entrega || x.entrega < P[k].entrega)) P[k].entrega = x.entrega;
+    P[k].itens.push({ nome:(x.produto_acabado||{}).nome || x.produto_nome || "sem SKU", q:q, sp:sp, falta:f, v:q*(Number(x.valor_unitario)||0), semSku:!x.produto_acabado_id });
+  });
+  var lista = Object.keys(P).map(function(k){
+    var p = P[k];
+    p.dias = p.entrega ? Math.round((new Date(p.entrega+"T12:00:00") - new Date(hoje+"T12:00:00"))/864e5) : null;
+    p.vencido = p.dias != null && p.dias < 0;
+    p.separado = p.sep >= p.potes && p.potes > 0;
+    /* urgência calculada: prazo × cobertura do estoque, não o status da planilha */
+    p.cor = p.separado ? "#3E7C45" : (p.falta > 0 && (p.vencido || (p.dias != null && p.dias <= 2))) ? "#C63A3A" : (p.falta > 0 || p.vencido || p.dias == null) ? "#B8862B" : "#3E7C45";
+    return p;
+  }).sort(function(a,b){ return String(a.entrega||"9999").localeCompare(String(b.entrega||"9999")); });
+  PN.lbrP = P;
+  return lista;
+}
+function lbrBloco(){
+  if(PN.lbrErro) return '<article class="cd" style="margin-bottom:12px;border-left:5px solid #C63A3A"><div class="ttl">Carteira LBR</div><p class="lb">Não consegui ler a carteira: '+esc(PN.lbrErro)+'</p></article>';
+  var lista = lbrPedidos();
+  var soma = function(a,c){ return a.reduce(function(s,x){ return s+(Number(x[c])||0); },0); };
+  var vAb = soma(lista,"v"), venc = lista.filter(function(p){ return p.vencido && !p.separado; }), semEst = lista.filter(function(p){ return p.falta > 0; });
+  /* saiu da carteira no período (faturado ou cancelado pela LBR) */
+  var sai = (PN.lbr||[]).filter(function(x){ return x.status === "baixado" && pnNoPeriodo(String(x.baixado_em||"").slice(0,10)); });
+  var vSai = sai.reduce(function(s,x){ return s+(Number(x.qtd)||0)*(Number(x.valor_unitario)||0); },0);
+  var nSai = Object.keys(sai.reduce(function(o,x){ o[x.pedido_numero]=1; return o; },{})).length;
+  var corTopo = venc.length ? "#C63A3A" : semEst.length ? "#B8862B" : "#3E7C45";
+  var h = '<article class="cd" style="margin-bottom:12px;border-left:5px solid '+corTopo+'">'+
+    '<div class="ttl" style="display:flex;justify-content:space-between;gap:8px">Carteira LBR em aberto (agora)<span class="nm">'+rs(vAb)+'</span></div>'+
+    '<div class="lb" style="margin-top:2px">'+lista.length+' pedido'+(lista.length===1?'':'s')+' · '+inte(soma(lista,"potes"))+' potes · '+
+      (venc.length ? '<b style="color:#C63A3A">'+venc.length+' com entrega vencida</b>' : 'nenhum vencido')+' · '+
+      (semEst.length ? '<b style="color:#B8862B">'+semEst.length+' dependem de envase</b>' : 'estoque cobre todos')+'</div>'+
+    '<div class="lb" style="margin-top:2px">Saiu da carteira no período: <b class="nm">'+rs(vSai)+'</b> · '+nSai+' pedido'+(nSai===1?'':'s')+'</div>'+
+    '<div style="max-height:360px;overflow-y:auto;margin-top:8px">'+
+    (lista.length ? lista.map(function(p){
+      var pr = p.separado ? 'separado, aguardando faturar' : p.dias == null ? 'sem data de entrega' : p.vencido ? 'vencido há '+(-p.dias)+' dia'+(-p.dias>1?'s':'') : p.dias===0 ? 'entrega hoje' : 'entrega em '+p.dias+' dia'+(p.dias>1?'s':'');
+      var es = p.separado ? '' : p.semSku > 0 ? ' · código sem de-para na planilha' : p.falta > 0 ? ' · falta '+inte(p.falta)+' pote'+(p.falta>1?'s':'') : ' · estoque cobre';
+      return '<button class="rw lnk" style="border-left:4px solid '+p.cor+';padding-left:8px" onclick="lbrGaveta(\''+jsAttr(p.num)+'\')"><span style="text-align:left;min-width:0">'+esc(p.cliente||"cliente")+
+        '<span class="lb" style="display:block">'+esc(p.num)+' · '+(p.entrega?dataBR(p.entrega).slice(0,5)+' · ':'')+esc(pr)+esc(es)+'</span></span>'+
+        '<span class="nm" style="white-space:nowrap">'+rs(p.v)+'</span></button>';
+    }).join("") : '<p class="lb" style="margin-top:6px">Nenhum pedido da LBR em aberto.</p>')+
+    '</div></article>';
+  return h;
+}
+function lbrGaveta(num){
+  var p = (PN.lbrP||{})[num]; if(!p) return;
+  pnAbrirGaveta('<div class="lb">Pedido LBR '+esc(p.num)+(p.cidade?' · '+esc(p.cidade):'')+'</div>'+
+    '<div class="ttl" style="margin-top:2px">'+esc(p.cliente||"")+'</div>'+
+    '<div class="nm" style="font-size:30px;font-weight:600;margin:4px 0 2px">'+rs(p.v)+'</div>'+
+    '<div class="lb" style="margin-bottom:10px">Emissão '+(p.emissao?dataBR(p.emissao):'—')+' · Entrega '+(p.entrega?dataBR(p.entrega):'sem data')+' · '+inte(p.potes)+' potes</div>'+
+    p.itens.map(function(i){
+      return '<div class="rw"><span>'+esc(i.nome)+'<span class="lb" style="display:block">'+inte(i.q)+' un pedida'+(i.q>1?'s':'')+
+        (i.sp ? ' · '+inte(i.sp)+' separado'+(i.sp>1?'s':'') : '')+
+        (i.semSku ? ' · <b style="color:#B8862B">código sem de-para</b>' : i.falta ? ' · <b style="color:#C63A3A">falta '+inte(i.falta)+'</b>' : (i.q>i.sp ? ' · estoque cobre' : ''))+'</span></span>'+
+        '<span class="nm">'+rs(i.v)+'</span></div>';
+    }).join("")+
+    '<p class="lb" style="margin-top:10px">"Falta" = o saldo de potes de agora não cobre, depois de servir os pedidos com entrega mais próxima. Produção programada não entra.</p>');
 }
 function pnCurto(v){ return v >= 1000 ? (Math.round(v/100)/10).toLocaleString("pt-BR")+" mil" : Math.round(v).toLocaleString("pt-BR"); }
 function pnKpi(tit, v, sub, tom){
