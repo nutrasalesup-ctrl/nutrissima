@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="app-version" content="2026-11-17T21:30Z">
+<meta name="app-version" content="2026-11-17T22:10Z">
 <title>Nutríssima — Comercial</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -4760,6 +4760,16 @@ async function telaPedidos(){
     var rn = await sb.from("nf_venda").select("pedido_numero").in("pedido_numero", numsExp);
     (rn.data||[]).forEach(function(n){ comNF[n.pedido_numero] = true; });
   }
+  /* volumes da NF (colunas AB quantidade e X espécie da planilha) já gravados na ficha UpSeller */
+  var idsAf = L.filter(function(x){ return x.status === "pedido"; }).map(function(x){ return x.id; });
+  var fichas = {};
+  if(idsAf.length){
+    var rf = await sb.schema("crm").from("pedido_upseller").select("cotacao_id,campos").in("cotacao_id", idsAf);
+    (rf.data||[]).forEach(function(f){ fichas[f.cotacao_id] = f.campos || {}; });
+  }
+  var rm = await sb.schema("crm").from("pedido_upseller").select("campos").order("atualizado_em", {ascending:false}).limit(20);
+  PQ.espPadrao = ((rm.data||[]).map(function(f){ return (f.campos||{}).X; }).filter(Boolean)[0]) || "Caixa(s)";
+  PQ.fichas = fichas;
   PQ.lista = L; PQ.nomes = nomes; PQ.comNF = comNF;
   renderPedidos();
 }
@@ -4818,7 +4828,8 @@ function renderPedidos(){
       '</div>'+
       afat.map(function(x){
         return pqLinha(x, pqChipDias(diasDesde(x.pedido_gerado_em), 1, 3, "aprovado hoje", "aprovado"),
-          '<button class="bt pri" onclick="faturarPedidos([\''+x.id+'\'])">💰 Faturar</button>'+
+          pqCampoVolumes(x)+
+          '<button class="bt pri" onclick="pqFaturar([\''+x.id+'\'])">💰 Faturar</button>'+
           '<button class="bt" onclick="abrirFichaUpseller(\''+x.id+'\')">📝 Mais dados UpSeller</button>'+
           '<button class="bt" onclick="pqEnviar(\''+x.id+'\',\'pdf\')">📄 PDF</button>'+
           '<button class="bt" onclick="voltarParaProposta(\''+x.id+'\')">↩️ Voltar p/ aguardando</button>',
@@ -4860,6 +4871,40 @@ function pqMarcarTodos(){
 function pqFaturarSel(){
   var ids = Object.keys(PQ.sel).filter(function(k){ return PQ.sel[k]; });
   if(!ids.length){ msg("Marque os pedidos que vão ser faturados.", true); return; }
+  pqFaturar(ids);
+}
+/* Volumes da NF-e: "Quantidade de Pacote" (col. AB → qVol) e "Tipo de Pacote" (col. X → espécie).
+   Ficam no pedido de venda; o pedido -B de bonificação vai no mesmo volume e não repete. */
+function pqCampoVolumes(x){
+  var f = (PQ.fichas||{})[x.id] || {};
+  var esp = f.X || PQ.espPadrao || "Caixa(s)";
+  var ops = (UPS_LISTA.pacote||["Caixa(s)"]);
+  return '<span style="display:inline-flex;align-items:center;gap:6px;background:#EFEFF4;border-radius:999px;padding:2px 4px 2px 12px">'+
+    '<span class="lb" style="color:#1C1C1E">Volumes</span>'+
+    '<input id="vol-'+x.id+'" type="number" inputmode="numeric" min="1" step="1" value="'+esc(f.AB||"")+'" placeholder="qtd" style="width:64px;padding:5px 8px;font-size:14px;border-radius:999px">'+
+    '<select id="esp-'+x.id+'" style="width:auto;padding:5px 8px;font-size:14px;border-radius:999px">'+
+      ops.map(function(o){ return '<option'+(o===esp?' selected':'')+'>'+esc(o)+'</option>'; }).join("")+'</select></span>';
+}
+async function pqFaturar(ids){
+  var sem = [], grava = [];
+  ids.forEach(function(id){
+    var x = (PQ.lista||[]).filter(function(c){ return c.id === id; })[0]; if(!x) return;
+    var v = Math.round(Number(($("vol-"+id)||{}).value)||0), esp = ($("esp-"+id)||{}).value || PQ.espPadrao || "Caixa(s)";
+    if(v > 0) grava.push({ x:x, v:v, esp:esp }); else sem.push(x.numero_pedido_loja || ("#"+x.numero));
+  });
+  if(sem.length && !confirm("Sem quantidade de volumes: "+sem.join(", ")+".\n\nA nota sai sem volume. Faturar assim mesmo?")) return;
+  for(var i=0;i<grava.length;i++){
+    var g = grava[i];
+    var rf = await sb.schema("crm").from("pedido_upseller").select("campos,itens").eq("cotacao_id", g.x.id).maybeSingle();
+    if(rf.error){ msg("Não consegui ler os dados UpSeller: "+rf.error.message, true); return; }
+    var campos = (rf.data && rf.data.campos) || {};
+    campos.AB = String(g.v); campos.X = g.esp;
+    var u = await sb.schema("crm").from("pedido_upseller").upsert({
+      cotacao_id:g.x.id, cliente_id:g.x.cliente_id, campos:campos, itens:(rf.data && rf.data.itens) || {},
+      atualizado_em:new Date().toISOString(), atualizado_por:ST.email
+    }).select("cotacao_id");
+    if(u.error || !(u.data||[]).length){ msg("Não consegui gravar os volumes de "+(g.x.numero_pedido_loja||"")+(u.error ? ": "+u.error.message : "")+". Nada foi faturado.", true); return; }
+  }
   PQ.sel = {};
   faturarPedidos(ids);
 }
