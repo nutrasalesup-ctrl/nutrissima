@@ -4698,6 +4698,8 @@ async function carregarBasePedido(){
 }
 function pqProd(id){ return (PQ.base.prods||[]).filter(function(p){ return p.id === id; })[0] || null; }
 function pqTotalBruto(){ return PQ.itens.reduce(function(s,it){ return s + Math.round((Number(it.qtd)||0)*(Number(it.preco)||0)*100)/100; }, 0); }
+/* bruto a preço de tabela: a faixa (R$ 1.000/1.500/3.000) é escolhida por ele, mesmo com preço manual */
+function pqTotalBrutoTabela(){ return PQ.itens.reduce(function(s,it){ return s + Math.round((Number(it.qtd)||0)*(Number(it.precoTab)||0)*100)/100; }, 0); }
 function pqDescAtivo(){ return /vista/i.test(PQ.cond||"") ? Math.min(100, Math.max(0, Number(PQ.desc)||0)) : 0; }
 /* mesma conta do banco: cotacao_itens.valor_total = round(qtd × preço × (1 − desc/100), 2) */
 function pqTotalLiquido(){
@@ -4731,7 +4733,9 @@ function pqAplicarPrecos(){
   PQ.itens.forEach(function(it){
     var p = t ? precoNaTabelaProposta(t.id, it.pid) : null;
     if(!p){ for(var i=0;i<tabs.length && !p;i++) p = precoNaTabelaProposta(tabs[i].id, it.pid); }
-    it.preco = p ? p.preco_unitario : 0;
+    it.precoTab = p ? p.preco_unitario : 0;
+    /* preço manual (condição especial, 18/11/2026): a tabela não sobrescreve */
+    it.preco = it.manual ? (Number(it.precoMan)||0) : it.precoTab;
   });
   PQ.tabela = t;
   PQ.bonif.forEach(function(it){ it.preco = pqPrecoTabela(it.pid); });
@@ -5080,15 +5084,55 @@ function pqRenderItens(){
   if(!PQ.itens.length){ alvo.innerHTML = '<p class="lb">Busque acima e toque em "+ Adicionar". Enter adiciona o primeiro da lista.</p>'; return; }
   alvo.innerHTML = PQ.itens.map(function(it){
     var tot = (Number(it.qtd)||0)*(Number(it.preco)||0);
+    var linhaPreco = it.manual
+      ? '<span style="color:#B8862B;font-weight:600">'+rs(it.preco)+' cada · preço manual</span> · tabela '+rs(it.precoTab)+
+        (it.motivo ? ' · <i>'+esc(it.motivo)+'</i>' : ' · <b style="color:#C63A3A">falta o motivo</b>')
+      : rs(it.preco)+' cada'+(it.preco ? '' : ' — sem preço na tabela');
+    var editor = !it.editPreco ? '' :
+      '<div class="rw" style="flex-wrap:wrap;gap:8px;background:#FFF8EC;border-radius:10px;padding:10px;margin:-4px 0 8px">'+
+        '<label class="lb" style="flex:0 0 120px;font-weight:400">Preço (R$)<input id="pqPM_'+it.pid+'" type="text" inputmode="decimal" value="'+(it.manual ? String(Number(it.precoMan)||'').replace('.', ',') : '')+'" placeholder="'+String(Number(it.precoTab)||0).replace('.', ',')+'" style="width:100%;padding:8px"></label>'+
+        '<label class="lb" style="flex:1 1 200px;font-weight:400">Motivo (obrigatório)<input id="pqMM_'+it.pid+'" type="text" value="'+esc(it.motivo||'')+'" placeholder="ex.: condição negociada com o cliente" style="width:100%;padding:8px"></label>'+
+        '<div style="display:flex;gap:6px;align-items:flex-end">'+
+          '<button class="bt pri" style="padding:8px 12px" onclick="pqPrecoAplicar(\''+it.pid+'\')">Aplicar</button>'+
+          (it.manual ? '<button class="bt" style="padding:8px 12px" onclick="pqPrecoTabelaVolta(\''+it.pid+'\')">Voltar à tabela</button>' : '')+
+          '<button class="bt" style="padding:8px 12px" onclick="pqPrecoFechar(\''+it.pid+'\')">Cancelar</button>'+
+        '</div></div>';
     return '<div class="rw">'+
       '<div style="flex:1;min-width:0"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span class="lb nm" style="display:inline">'+esc(it.cod)+'</span> '+esc(it.nome)+'</div>'+
-        '<div class="lb nm">'+rs(it.preco)+' cada'+(it.preco ? '' : ' — sem preço na tabela')+'</div></div>'+
+        '<div class="lb nm">'+linhaPreco+
+        ' <a href="#" style="white-space:nowrap" onclick="pqPrecoAbrir(\''+it.pid+'\');return false">✏️ preço</a></div></div>'+
       '<input type="number" inputmode="numeric" min="0" step="1" data-pid="'+it.pid+'" value="'+(Number(it.qtd)||0)+'" '+
         'style="width:76px;text-align:center;padding:8px" onchange="pqQtd(\''+it.pid+'\',this.value)">'+
       '<div class="nm" style="width:96px;text-align:right;font-weight:600">'+rs(tot)+'</div>'+
       '<button class="bt" style="padding:6px 10px" aria-label="Remover" onclick="pqRemover(\''+it.pid+'\')">✕</button>'+
-    '</div>';
+    '</div>'+editor;
   }).join("");
+}
+/* ---------- preço manual por item (condição especial do cliente, 18/11/2026) ---------- */
+function pqItem(pid){ return PQ.itens.filter(function(i){ return i.pid === pid; })[0] || null; }
+function pqPrecoAbrir(pid){
+  var it = pqItem(pid); if(!it) return;
+  it.editPreco = true; pqRenderItens();
+  setTimeout(function(){ var el = $("pqPM_"+pid); if(el){ el.focus(); el.select(); } }, 30);
+}
+function pqPrecoFechar(pid){ var it = pqItem(pid); if(it){ it.editPreco = false; pqRenderItens(); } }
+function pqPrecoAplicar(pid){
+  var it = pqItem(pid); if(!it) return;
+  var raw = String(($("pqPM_"+pid)||{}).value||"").trim();
+  /* aceita 24,89 · 1.234,50 · 24.89 */
+  var v = parseFloat(raw.indexOf(",") >= 0 ? raw.replace(/\./g, "").replace(",", ".") : raw);
+  var mot = String(($("pqMM_"+pid)||{}).value||"").trim();
+  if(!(v > 0)){ msg("Digite o preço (maior que zero).", true); return; }
+  v = Math.round(v*100)/100;
+  if(!mot){ msg("O motivo do preço manual é obrigatório.", true); return; }
+  if(Math.abs(v - (Number(it.precoTab)||0)) < 0.005){ pqPrecoTabelaVolta(pid); return; }
+  it.manual = true; it.precoMan = v; it.motivo = mot; it.editPreco = false;
+  pqRenderItens(); pqRenderResumo();
+}
+function pqPrecoTabelaVolta(pid){
+  var it = pqItem(pid); if(!it) return;
+  it.manual = false; it.precoMan = null; it.motivo = ""; it.editPreco = false;
+  pqRenderItens(); pqRenderResumo();
 }
 /* ---------- 3 bonificação ---------- */
 function pqSugestaoBonif(){
@@ -5252,7 +5296,9 @@ function pqRenderResumo(){
   var nb = PQ.bonif.reduce(function(s,i){ return s + (Number(i.qtd)||0); }, 0);
   var tabs = (ST.cache.propTabelas||[]).slice().sort(function(a,b){ return a.pedido_minimo - b.pedido_minimo; });
   var minimo = tabs.length ? Number(tabs[0].pedido_minimo) : 0;
-  var prox = tabs.filter(function(t){ return Number(t.pedido_minimo) > bruto && (!PQ.tabela || Number(t.pedido_minimo) > Number(PQ.tabela.pedido_minimo)); })[0];
+  var brutoTab = pqTotalBrutoTabela();
+  var prox = tabs.filter(function(t){ return Number(t.pedido_minimo) > brutoTab && (!PQ.tabela || Number(t.pedido_minimo) > Number(PQ.tabela.pedido_minimo)); })[0];
+  var manuais = PQ.itens.filter(function(i){ return i.manual && (Number(i.qtd)||0) > 0; });
   var conds = condicoesPagamentoDisponiveis(PQ.numCompras||0, tot);
   if(conds.indexOf(PQ.cond) < 0) PQ.cond = conds[0];
   d = pqDescAtivo(); tot = pqTotalLiquido();
@@ -5263,8 +5309,13 @@ function pqRenderResumo(){
   if(nb) h += '<div class="lb nm" style="margin-top:2px">+ '+nb+' pote'+(nb===1?'':'s')+' bonificado'+(nb===1?'':'s')+' ('+rs(bon)+', não cobrado)</div>';
   if(tot > 0 && tot < minimo){
     h += '<div class="al bad" style="margin-top:10px"><b>Abaixo do pedido mínimo</b><span>Faltam '+rs(minimo - tot)+' para '+rs(minimo)+'. Dá para salvar como rascunho, mas não enviar ao cliente.</span></div>';
-  } else if(prox && bruto > 0){
-    h += '<div class="al warn" style="margin-top:10px"><b>Faltam '+rs(Number(prox.pedido_minimo) - bruto)+' para a '+esc(prox.nome)+'</b><span>'+rs(Number(prox.pedido_minimo))+' − '+rs(bruto)+'. Na faixa de cima o preço unitário cai.</span></div>';
+  } else if(prox && brutoTab > 0){
+    h += '<div class="al warn" style="margin-top:10px"><b>Faltam '+rs(Number(prox.pedido_minimo) - brutoTab)+' para a '+esc(prox.nome)+'</b><span>'+rs(Number(prox.pedido_minimo))+' − '+rs(brutoTab)+' (a preço de tabela). Na faixa de cima o preço unitário cai.</span></div>';
+  }
+  if(manuais.length){
+    var difM = manuais.reduce(function(s,i){ return s + Math.round((Number(i.qtd)||0)*((Number(i.preco)||0)-(Number(i.precoTab)||0))*100)/100; }, 0);
+    h += '<div class="al warn" style="margin-top:10px"><b>'+manuais.length+' item'+(manuais.length===1?'':'s')+' com preço manual</b><span>'+
+      (difM < 0 ? rs(-difM)+' abaixo' : rs(difM)+' acima')+' da tabela ('+rs(pqTotalBruto())+' − '+rs(brutoTab)+', antes do desconto à vista).</span></div>';
   }
   h += '<label class="lb" style="margin:12px 0 4px;font-weight:400" for="pqCond">Condição de pagamento</label>'+
     '<select id="pqCond" onchange="PQ.cond=this.value;pqRenderResumo()">'+conds.map(function(c){ return '<option'+(c===PQ.cond?' selected':'')+'>'+esc(c)+'</option>'; }).join("")+'</select>'+
@@ -5284,12 +5335,14 @@ async function pqEditar(id){
   var r = await sb.schema("crm").from("cotacoes").select("id,numero,cliente_id,status,condicao_pagamento,observacoes").eq("id", id).single();
   if(r.error || !r.data){ msg("Não consegui abrir o pedido.", true); return; }
   if(["rascunho","enviada"].indexOf(r.data.status) < 0){ msg("Só dá para editar antes da aprovação.", true); return; }
-  var ri = await sb.schema("crm").from("cotacao_itens").select("produto_acabado_id,descricao,qtd,desconto_pct,bonificado").eq("cotacao_id", id);
+  var ri = await sb.schema("crm").from("cotacao_itens").select("produto_acabado_id,descricao,qtd,desconto_pct,bonificado,valor_unitario,preco_manual,motivo_preco").eq("cotacao_id", id);
   if(!PQ.base){ try{ await carregarBasePedido(); }catch(e){ msg(e.message, true); return; } }
   var todos = (ri.data||[]).filter(function(i){ return i.produto_acabado_id; });
   var mapa = function(i){
     var p = pqProd(i.produto_acabado_id);
-    return { pid:i.produto_acabado_id, cod:p ? p.cod : "", nome:p ? p.nome : (i.descricao||""), grupo:p ? p.grupo : "cremes", qtd:Number(i.qtd)||0, preco:0 };
+    var man = !!i.preco_manual && !i.bonificado;
+    return { pid:i.produto_acabado_id, cod:p ? p.cod : "", nome:p ? p.nome : (i.descricao||""), grupo:p ? p.grupo : "cremes", qtd:Number(i.qtd)||0, preco:0,
+             manual:man, precoMan:man ? Number(i.valor_unitario)||0 : null, motivo:man ? (i.motivo_preco||"") : "" };
   };
   PQ.editando = { id:id, numero:r.data.numero, status:r.data.status };
   PQ.itens = todos.filter(function(i){ return !i.bonificado; }).map(mapa);
@@ -5316,6 +5369,8 @@ async function pqSalvar(){
   var bonif = PQ.bonif.filter(function(i){ return (Number(i.qtd)||0) > 0; });
   var semPreco = itens.concat(bonif).filter(function(i){ return !(Number(i.preco) > 0); });
   if(semPreco.length){ msg("Sem preço na tabela: "+semPreco.map(function(i){ return i.cod||i.nome; }).join(", "), true); return; }
+  var semMotivo = itens.filter(function(i){ return i.manual && !String(i.motivo||"").trim(); });
+  if(semMotivo.length){ msg("Falta o motivo do preço manual: "+semMotivo.map(function(i){ return i.cod||i.nome; }).join(", "), true); return; }
   var d = pqDescAtivo();
   /* mesma conta do banco: cada item arredondado em centavos (cotacao_itens.valor_total) */
   var tot = itens.reduce(function(s,i){ return s + Math.round(i.qtd*i.preco*(1-d/100)*100)/100; }, 0);
@@ -5351,9 +5406,11 @@ async function pqSalvar(){
     id = c.data.id;
   }
   var linhas = itens.map(function(i){
-    return { cotacao_id:id, produto_acabado_id:i.pid, descricao:i.nome, qtd:i.qtd, valor_unitario:i.preco, desconto_pct:d, bonificado:false };
+    return { cotacao_id:id, produto_acabado_id:i.pid, descricao:i.nome, qtd:i.qtd, valor_unitario:i.preco, desconto_pct:d, bonificado:false,
+             preco_manual:!!i.manual, preco_tabela:Number(i.precoTab)||null, motivo_preco:i.manual ? String(i.motivo).trim() : null };
   }).concat(bonif.map(function(i){
-    return { cotacao_id:id, produto_acabado_id:i.pid, descricao:i.nome, qtd:i.qtd, valor_unitario:i.preco, desconto_pct:0, bonificado:true };
+    return { cotacao_id:id, produto_acabado_id:i.pid, descricao:i.nome, qtd:i.qtd, valor_unitario:i.preco, desconto_pct:0, bonificado:true,
+             preco_manual:false, preco_tabela:Number(i.preco)||null, motivo_preco:null };
   }));
   var ri = await sb.schema("crm").from("cotacao_itens").insert(linhas).select("id");
   if(ri.error || (ri.data||[]).length !== linhas.length){
