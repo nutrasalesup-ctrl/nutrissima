@@ -3213,7 +3213,9 @@ async function baixarPdfProposta(cotacaoId, opts){
   var cf = condicaoEForma(cot.condicao_pagamento);
   var valorCheio = itens.filter(function(it){ return !it.bonificado; }).reduce(function(a,it){
     return a + Math.round((Number(it.qtd)||0)*(Number(it.valor_unitario)||0)*100)/100; }, 0);
-  var valorPix = (cot.condicao_pagamento === COND_PIX && Number(cot.valor_total) > 0) ? Number(cot.valor_total) : Math.round(valorCheio*(1-PIX_DESCONTO_PCT/100)*100)/100;
+  var valorPix = Math.round(valorCheio*(1-PIX_DESCONTO_PCT/100)*100)/100;
+  /* pedido já em PIX e gravado com desconto (tela de Pedidos): vale o total gravado */
+  if(cot.condicao_pagamento === COND_PIX && Number(cot.valor_total) > 0 && Number(cot.valor_total) < valorCheio) valorPix = Number(cot.valor_total);
   var linhasCondicoes = [
     ["Valor total do pedido", "R$ "+brl(valorCheio)+" (cartão ou boleto)"],
     ["Valor total à vista no PIX", "R$ "+brl(valorPix)+" ("+PIX_DESCONTO_PCT+"% de desconto)"],
