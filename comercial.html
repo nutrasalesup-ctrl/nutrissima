@@ -2688,15 +2688,32 @@ function precoNaTabelaProposta(tabelaId, produtoId){
   var m = ST.cache.propTabelaItens && ST.cache.propTabelaItens[tabelaId];
   return m ? m[produtoId] : null;
 }
+/* PIX à vista leva 5% de desconto no pedido (dono, 19/11/2026). */
+var PIX_DESCONTO_PCT = 5;
+var COND_PIX = "PIX à vista ("+PIX_DESCONTO_PCT+"% de desconto)";
 function condicoesPagamentoDisponiveis(numCompras, valorPedido){
-  var opcoes = ["À vista", "Cartão em até 3x sem juros"];
+  var opcoes = [COND_PIX, "Cartão em até 3x sem juros"];
   if(numCompras >= 3){
-    var prazos = [14, 21];
-    if(valorPedido > 1000) prazos = prazos.concat([28, 35]);
-    if(valorPedido > 3000) prazos = prazos.concat([42]);
-    prazos.forEach(function(d){ opcoes.push("Boleto "+d+" dias (mediante crédito aprovado)"); });
+    /* prazo único e parcelado (14/21/28, 21/28/35, 28/35/42) juntos, dono 19/11/2026.
+       O parcelado segue o mesmo limite do maior prazo dele: 28 e 35 dias acima de R$ 1.000, 42 acima de R$ 3.000. */
+    var liberado = function(d){ return d <= 21 || (d <= 35 && valorPedido > 1000) || valorPedido > 3000; };
+    [14, 21, 28, 35, 42].filter(liberado).forEach(function(d){ opcoes.push("Boleto "+d+" dias (mediante crédito aprovado)"); });
+    [[14,21,28],[21,28,35],[28,35,42]].filter(function(g){ return liberado(g[2]); }).forEach(function(g){
+      opcoes.push("Boleto "+g.join("/")+" dias (mediante crédito aprovado)");
+    });
   }
   return opcoes;
+}
+/* Leitura da condição gravada (texto) para o PDF: condição e forma de pagamento. */
+function condicaoEForma(cond){
+  var t = String(cond||"");
+  if(/cart/i.test(t)) return { condicao:"Cartão", forma:"Cartão em até 3x sem juros" };
+  if(/boleto/i.test(t)){
+    var dias = (t.split("(")[0].match(/\d+/g)||[]).join("/");
+    return { condicao:"Boleto", forma: dias ? dias+" dias" : "Boleto" };
+  }
+  if(/pix|vista/i.test(t)) return { condicao:"À vista", forma:"PIX" };
+  return { condicao: t || "—", forma: "—" };
 }
 function adicionarItemProposta(){
   ST.cache.propItensAtual.push({ produto_acabado_id:"", descricao:"", qtd:1, valor_unitario:0, desconto_pct:0, bonificado:false });
@@ -3192,9 +3209,16 @@ async function baixarPdfProposta(cotacaoId, opts){
   doc.text("Tabela e Condições Comerciais", 16, y);
   doc.setTextColor(0,0,0); doc.setFontSize(9.5);
   y += 8;
+  /* Valor cheio (cartão/boleto) = itens vendidos sem o desconto à vista; PIX = 5% a menos (ou o total gravado, se já é PIX). */
+  var cf = condicaoEForma(cot.condicao_pagamento);
+  var valorCheio = itens.filter(function(it){ return !it.bonificado; }).reduce(function(a,it){
+    return a + Math.round((Number(it.qtd)||0)*(Number(it.valor_unitario)||0)*100)/100; }, 0);
+  var valorPix = (cot.condicao_pagamento === COND_PIX && Number(cot.valor_total) > 0) ? Number(cot.valor_total) : Math.round(valorCheio*(1-PIX_DESCONTO_PCT/100)*100)/100;
   var linhasCondicoes = [
-    ["Valor total do pedido", "R$ "+brl(cot.valor_total)],
-    ["Condição de pagamento", cot.condicao_pagamento || "—"],
+    ["Valor total do pedido", "R$ "+brl(valorCheio)+" (cartão ou boleto)"],
+    ["Valor total à vista no PIX", "R$ "+brl(valorPix)+" ("+PIX_DESCONTO_PCT+"% de desconto)"],
+    ["Condição de pagamento", cf.condicao],
+    ["Forma de pagamento", cf.forma],
     ["Situação de crédito", CREDITO_ROTULO[cot.situacao_credito] || "Não necessário"],
     ["Frete", cot.frete || "CIF"],
     ["Prazo de faturamento", "até "+(cot.prazo_faturamento_dias!=null?cot.prazo_faturamento_dias:7)+" dias após confirmação e liberação financeira"],
@@ -3346,7 +3370,9 @@ function precoLiquidoItem(it){
 function calcularParcelas(cond, total, dataBase){
   var txt = String(cond||"");
   var cartao = /cart/i.test(txt);
-  var prazos = cartao ? [0] : (txt.match(/\d+/g)||[]).map(Number).filter(function(n){ return n > 0; });
+  /* PIX/à vista: 1 lançamento na emissão (o "5%" do texto não é prazo). Só conta número antes do parêntese. */
+  var aVista = /pix|vista/i.test(txt);
+  var prazos = (cartao || aVista) ? [0] : (txt.split("(")[0].match(/\d+/g)||[]).map(Number).filter(function(n){ return n > 0; });
   if(!prazos.length) prazos = [0];
   var n = prazos.length;
   var cent = Math.round((Number(total)||0)*100);
@@ -4446,7 +4472,7 @@ async function telaNovaProposta(){
     '</div>'+
     '<details style="margin-top:8px;font-size:12.5px;color:var(--tinta2)"><summary style="cursor:pointer">Condição de pagamento por histórico de compras</summary>'+
       '<div class="tw" style="margin-top:6px"><table><tbody>'+
-        '<tr><td>1ª–3ª compra</td><td>À vista ou cartão 3x sem juros</td></tr>'+
+        '<tr><td>1ª–3ª compra</td><td>PIX à vista (5% de desconto) ou cartão 3x sem juros</td></tr>'+
         '<tr><td>4ª+, até R$ 1.000</td><td>Boleto 14/21 dias (crédito aprovado)</td></tr>'+
         '<tr><td>4ª+, R$ 1.000,01–3.000</td><td>Boleto 14/21/28/35 dias</td></tr>'+
         '<tr><td>4ª+, acima de R$ 3.000</td><td>Boleto 14/21/28/35/42 dias</td></tr>'+
@@ -5473,6 +5499,8 @@ function pqRenderResumo(){
   var manuais = PQ.itens.filter(function(i){ return i.manual && (Number(i.qtd)||0) > 0; });
   var conds = condicoesPagamentoDisponiveis(PQ.numCompras||0, tot);
   if(conds.indexOf(PQ.cond) < 0) PQ.cond = conds[0];
+  /* PIX: desconto padrão de 5% (pode ser mudado no campo abaixo) */
+  if(PQ.cond === COND_PIX && !(Number(PQ.desc) > 0)) PQ.desc = PIX_DESCONTO_PCT;
   d = pqDescAtivo(); tot = pqTotalLiquido();
   var h = '<div class="lb">Total do pedido</div>'+
     '<div class="nm" style="font-size:30px;font-weight:600;letter-spacing:-.02em">'+rs(tot)+'</div>'+
