@@ -3107,7 +3107,13 @@ async function baixarPdfProposta(cotacaoId, opts){
     .eq("id", cotacaoId).single();
   if(rC.error || !rC.data){ msg("Não consegui carregar a proposta.", true); return null; }
   var cot = rC.data;
-  var rCli = await sb.from("clientes").select("razao_social").eq("id", cot.cliente_id).single();
+  var rCli = await sb.from("clientes")
+    .select("razao_social,nome_fantasia,documento,tipo_doc,ie,cep,logradouro,numero,complemento,bairro,municipio,uf")
+    .eq("id", cot.cliente_id).single();
+  /* contato do cliente no PDF (19/11/2026): decisor primeiro, depois quem tem telefone/e-mail */
+  var rCt = await sb.schema("crm").from("contatos").select("nome,telefone,email,decisor").eq("cliente_id", cot.cliente_id).eq("ativo", true);
+  var contatoPdf = (rCt.data||[]).filter(function(c){ return c.telefone || c.email; })
+    .sort(function(a,b){ return (b.decisor?1:0) - (a.decisor?1:0); })[0] || null;
   var rI = await sb.schema("crm").from("cotacao_itens")
     .select("descricao,qtd,valor_unitario,desconto_pct,bonificado").eq("cotacao_id", cotacaoId);
   var itens = rI.data || [];
@@ -3127,8 +3133,32 @@ async function baixarPdfProposta(cotacaoId, opts){
   try{ doc.addImage(LOGO_NUTRISSIMA, "PNG", 150, 7, 46, 18); }catch(eLogo){ /* sem logo, segue o PDF */ }
   doc.setFontSize(16); doc.text((opts.titulo || "Proposta comercial")+" #"+cot.numero, 14, 18);
   doc.setFontSize(10);
-  doc.text("Cliente: "+clienteNome, 14, 28);
-  doc.text("Data: "+dataBR(cot.data_cotacao)+(cot.validade?"   Válida até: "+dataBR(cot.validade):""), 14, 34);
+  /* bloco do cliente: CNPJ, endereço e contato (pedido do dono, 19/11/2026) */
+  var cli = rCli.data || {};
+  var dd = digitos(cli.documento);
+  var docFmt = dd.length === 14 ? dd.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")
+             : dd.length === 11 ? dd.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4") : (cli.documento || "");
+  var cepD = digitos(cli.cep), cepFmt = cepD.length === 8 ? cepD.replace(/^(\d{5})(\d{3})$/, "$1-$2") : (cli.cep || "");
+  var end = [
+    [cli.logradouro, cli.numero].filter(Boolean).join(", "),
+    cli.complemento, cli.bairro,
+    [cli.municipio, cli.uf].filter(Boolean).join("/"),
+    cepFmt ? "CEP "+cepFmt : ""
+  ].filter(function(x){ return x && String(x).trim(); }).join(" – ");
+  var linhasCli = [];
+  linhasCli.push("Cliente: "+clienteNome+(cli.nome_fantasia && cli.nome_fantasia !== clienteNome ? " ("+cli.nome_fantasia+")" : ""));
+  linhasCli.push((dd.length === 11 ? "CPF: " : "CNPJ: ")+(docFmt || "—")+(cli.ie ? "   IE: "+cli.ie : ""));
+  linhasCli.push("Endereço: "+(end || "—"));
+  linhasCli.push("Contato: "+(contatoPdf
+    ? [contatoPdf.nome, contatoPdf.telefone, contatoPdf.email].filter(Boolean).join(" · ")
+    : "—"));
+  var yCli = 30;
+  linhasCli.forEach(function(t){
+    var partes = doc.splitTextToSize(t, 182);
+    doc.text(partes, 14, yCli);
+    yCli += 5 * partes.length;
+  });
+  doc.text("Data: "+dataBR(cot.data_cotacao)+(cot.validade?"   Válida até: "+dataBR(cot.validade):""), 14, yCli + 1);
 
   var linhas = vendidos.map(function(it){
     var vu = Number(it.valor_unitario)||0, qtd = Number(it.qtd)||0, desc = Number(it.desconto_pct)||0;
@@ -3136,7 +3166,7 @@ async function baixarPdfProposta(cotacaoId, opts){
     return [it.descricao||"—", String(qtd), "R$ "+brl(vu), (desc||0)+"%", "R$ "+brl(tot)];
   });
   doc.autoTable({
-    startY: 42, head: [["Produto","Qtd","V. unit.","Desc.","Total"]], body: linhas,
+    startY: yCli + 8, head: [["Produto","Qtd","V. unit.","Desc.","Total"]], body: linhas,
     styles: { fontSize: 9 }, headStyles: { fillColor: [34,48,58] }
   });
   var y = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 60) + 8;
