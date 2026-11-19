@@ -3103,7 +3103,7 @@ async function baixarPdfProposta(cotacaoId, opts){
   opts = opts || {};
   if(typeof window.jspdf === "undefined"){ msg("Não consegui gerar o PDF.", true); return null; }
   var rC = await sb.schema("crm").from("cotacoes")
-    .select("id,numero,cliente_id,data_cotacao,validade,condicao_pagamento,frete,prazo_faturamento_dias,situacao_credito,tabela_preco_id,representante_id,comissao_pct_aplicada,valor_total,observacoes")
+    .select("id,numero,status,cliente_id,data_cotacao,validade,condicao_pagamento,frete,prazo_faturamento_dias,situacao_credito,tabela_preco_id,representante_id,comissao_pct_aplicada,valor_total,observacoes")
     .eq("id", cotacaoId).single();
   if(rC.error || !rC.data){ msg("Não consegui carregar a proposta.", true); return null; }
   var cot = rC.data;
@@ -3202,6 +3202,13 @@ async function baixarPdfProposta(cotacaoId, opts){
     ["Bonificação (degustação)", bonificados.length ? "R$ "+brl(totalBonif) : "nenhuma"],
     ["Validade da proposta", cot.validade ? dataBR(cot.validade) : "—"]
   ];
+  /* Pedido (já virou pedido, ou PDF "Pedido para aprovação"): sem situação de crédito, prazo de faturamento e validade
+     (pedido do dono, 19/11/2026). Orçamento/proposta mantém as três linhas. */
+  var ehPedido = Boolean(opts.titulo) || ["rascunho","enviada","aceita","recusada","expirada"].indexOf(cot.status) < 0;
+  if(ehPedido){
+    var foraDoPedido = ["Situação de crédito","Prazo de faturamento","Validade da proposta"];
+    linhasCondicoes = linhasCondicoes.filter(function(l){ return foraDoPedido.indexOf(l[0]) < 0; });
+  }
   doc.autoTable({
     startY: y, body: linhasCondicoes, theme: "plain",
     styles: { fontSize: 9.5, cellPadding: 1.5 },
