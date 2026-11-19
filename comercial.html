@@ -4772,7 +4772,8 @@ async function telaPedidos(){
     (rf.data||[]).forEach(function(f){ fichas[f.cotacao_id] = f.campos || {}; });
   }
   var rm = await sb.schema("crm").from("pedido_upseller").select("campos").order("atualizado_em", {ascending:false}).limit(20);
-  PQ.espPadrao = ((rm.data||[]).map(function(f){ return (f.campos||{}).X; }).filter(Boolean)[0]) || "Caixa(s)";
+  /* tipo de pacote da UpSeller é sempre "Volume(s)" (dono, 19/11/2026) */
+  PQ.espPadrao = "Volume(s)";
   PQ.fichas = fichas;
   PQ.lista = L; PQ.nomes = nomes; PQ.comNF = comNF;
   renderPedidos();
@@ -4881,7 +4882,7 @@ function pqFaturarSel(){
    Ficam no pedido de venda; o pedido -B de bonificação vai no mesmo volume e não repete. */
 function pqCampoVolumes(x){
   var f = (PQ.fichas||{})[x.id] || {};
-  var esp = f.X || PQ.espPadrao || "Caixa(s)";
+  var esp = f.X || PQ.espPadrao || "Volume(s)";
   var ops = (UPS_LISTA.pacote||["Caixa(s)"]);
   return '<span style="display:inline-flex;align-items:center;gap:6px;background:#EFEFF4;border-radius:999px;padding:2px 4px 2px 12px">'+
     '<span class="lb" style="color:#1C1C1E">Volumes</span>'+
@@ -4893,7 +4894,7 @@ async function pqFaturar(ids){
   var sem = [], grava = [];
   ids.forEach(function(id){
     var x = (PQ.lista||[]).filter(function(c){ return c.id === id; })[0]; if(!x) return;
-    var v = Math.round(Number(($("vol-"+id)||{}).value)||0), esp = ($("esp-"+id)||{}).value || PQ.espPadrao || "Caixa(s)";
+    var v = Math.round(Number(($("vol-"+id)||{}).value)||0), esp = ($("esp-"+id)||{}).value || PQ.espPadrao || "Volume(s)";
     if(v > 0) grava.push({ x:x, v:v, esp:esp }); else sem.push(x.numero_pedido_loja || ("#"+x.numero));
   });
   if(sem.length && !confirm("Sem quantidade de volumes: "+sem.join(", ")+".\n\nA nota sai sem volume. Faturar assim mesmo?")) return;
@@ -4933,7 +4934,7 @@ async function pqAprovar(id){
 /* ---------- formulário: novo / editar ---------- */
 async function pqNovo(){
   PQ.cli = null; PQ.itens = []; PQ.bonif = []; PQ.desc = 0; PQ.transp = ""; PQ.editando = null; PQ.cond = ""; PQ.obs = "";
-  PQ.contato = null; PQ.rep = null; PQ.numCompras = 0;
+  PQ.contato = null; PQ.rep = null; PQ.numCompras = 0; PQ.vol = ""; PQ.cliForm = null;
   await pqAbrirForm();
 }
 async function pqAbrirForm(){
@@ -4971,9 +4972,11 @@ function pqCadastroFalta(c){
 function pqRenderCli(){
   var alvo = $("pqCli"); if(!alvo) return;
   var h = '<div class="ttl"><span class="stp">1</span>Cliente</div>';
+  if(PQ.cliForm){ alvo.innerHTML = h + pqCliFormHtml(); return; }
   if(!PQ.cli){
     h += '<input id="pqBuscaCli" style="margin-top:10px" placeholder="Nome, cidade ou CNPJ" oninput="pqFiltraCli()" autocomplete="off">'+
-         '<div id="pqCliLista" style="margin-top:6px"></div>';
+         '<div id="pqCliLista" style="margin-top:6px"></div>'+
+         '<button class="bt" style="margin-top:8px" onclick="pqCliAbrirForm(\'novo\')">+ Cadastrar cliente novo</button>';
     alvo.innerHTML = h;
     pqFiltraCli();
     setTimeout(function(){ var el = $("pqBuscaCli"); if(el) el.focus(); }, 30);
@@ -4990,9 +4993,100 @@ function pqRenderCli(){
       (PQ.contato ? '<div class="lb" style="margin-top:2px">Contato: '+esc(PQ.contato.nome||"")+(PQ.contato.telefone?' · '+esc(PQ.contato.telefone):'')+(PQ.contato.email?' · '+esc(PQ.contato.email):'')+'</div>'
                   : '<div class="lb" style="margin-top:2px">Sem contato com telefone/e-mail cadastrado.</div>')+
       '</div>'+
-      (PQ.editando ? '' : '<button class="bt" onclick="PQ.cli=null;pqRenderCli();pqRenderResumo()">Trocar</button>')+
+      '<div style="display:flex;flex-direction:column;gap:6px">'+
+        '<button class="bt" onclick="pqCliAbrirForm(\'editar\')">✏️ Alterar cadastro</button>'+
+        (PQ.editando ? '' : '<button class="bt" onclick="PQ.cli=null;pqRenderCli();pqRenderResumo()">Trocar</button>')+
+      '</div>'+
     '</div>';
   alvo.innerHTML = h;
+}
+/* ---------- cadastro de cliente dentro do pedido (19/11/2026) ---------- */
+function pqCliAbrirForm(modo){
+  var busca = String(($("pqBuscaCli")||{}).value||"").trim();
+  PQ.cliForm = { modo:modo, busca: modo === "novo" ? busca : "" };
+  pqRenderCli();
+  setTimeout(function(){ var el = $(modo === "novo" ? "pcDoc" : "pcRazao"); if(el) el.focus(); }, 30);
+}
+function pqCliFecharForm(){ PQ.cliForm = null; pqRenderCli(); }
+function pqCliFormHtml(){
+  var ed = PQ.cliForm.modo === "editar" ? (PQ.cli || {}) : null;
+  var b = PQ.cliForm.busca || "", bDig = digitos(b);
+  var v = function(k){ return ed ? esc(ed[k]||"") : ""; };
+  var docIni = ed ? v("documento") : (bDig.length >= 11 ? esc(bDig) : "");
+  var razIni = ed ? v("razao_social") : (bDig.length >= 11 ? "" : esc(b));
+  var cpf = ed ? ed.tipo_doc === "CPF" : bDig.length === 11;
+  var campo = function(id, rot, val, extra){ return '<label class="lb" style="display:block;font-weight:400">'+rot+'<input id="'+id+'" value="'+val+'" '+(extra||"")+' style="width:100%"></label>'; };
+  return '<div style="margin-top:10px;display:grid;gap:8px">'+
+    '<div class="lb" style="font-weight:600;color:#1C1C1E">'+(ed ? 'Alterar cadastro do cliente' : 'Cadastrar cliente novo')+'</div>'+
+    '<div style="display:flex;gap:8px">'+
+      '<label class="lb" style="flex:0 0 96px;font-weight:400">Tipo<select id="pcTipo" style="width:100%"><option'+(cpf?'':' selected')+'>CNPJ</option><option'+(cpf?' selected':'')+'>CPF</option></select></label>'+
+      '<div style="flex:1">'+campo("pcDoc", "Documento (só números)", docIni, 'inputmode="numeric"')+'</div></div>'+
+    campo("pcRazao", "Razão social", razIni)+
+    '<div style="display:flex;gap:8px"><div style="flex:1">'+campo("pcFant", "Nome fantasia (opcional)", v("nome_fantasia"))+'</div>'+
+      '<div style="flex:0 0 150px">'+campo("pcIe", "IE (opcional)", v("ie"))+'</div></div>'+
+    '<div style="display:flex;gap:8px"><div style="flex:0 0 120px">'+campo("pcCep", "CEP", v("cep"), 'inputmode="numeric"')+'</div>'+
+      '<div style="flex:1">'+campo("pcLog", "Endereço (rua)", v("logradouro"))+'</div>'+
+      '<div style="flex:0 0 90px">'+campo("pcNum", "Número", v("numero"))+'</div></div>'+
+    '<div style="display:flex;gap:8px"><div style="flex:1">'+campo("pcComp", "Complemento", v("complemento"))+'</div>'+
+      '<div style="flex:1">'+campo("pcBairro", "Bairro", v("bairro"))+'</div></div>'+
+    '<div style="display:flex;gap:8px"><div style="flex:1">'+campo("pcCid", "Cidade", v("municipio"))+'</div>'+
+      '<div style="flex:0 0 80px">'+campo("pcUf", "UF", v("uf"), 'maxlength="2" style="text-transform:uppercase"')+'</div></div>'+
+    (ed ? '' :
+      '<div class="lb" style="margin-top:4px">Contato para enviar o pedido (opcional)</div>'+
+      '<div style="display:flex;gap:8px;flex-wrap:wrap"><div style="flex:1 1 140px">'+campo("pcCtNome", "Nome", "")+'</div>'+
+        '<div style="flex:1 1 140px">'+campo("pcCtTel", "Telefone / WhatsApp", "", 'inputmode="tel"')+'</div>'+
+        '<div style="flex:1 1 180px">'+campo("pcCtEmail", "E-mail", "", 'inputmode="email"')+'</div></div>')+
+    '<div style="display:flex;gap:8px;margin-top:4px"><button class="bt pri" onclick="pqCliSalvar()">'+(ed ? 'Salvar cadastro' : 'Cadastrar e usar no pedido')+'</button>'+
+      '<button class="bt" onclick="pqCliFecharForm()">Cancelar</button></div>'+
+  '</div>';
+}
+async function pqCliSalvar(){
+  var ed = PQ.cliForm && PQ.cliForm.modo === "editar" ? PQ.cli : null;
+  var val = function(id){ return String(($(id)||{}).value||"").trim(); };
+  var tipo = val("pcTipo") || "CNPJ", doc = digitos(val("pcDoc")), razao = val("pcRazao");
+  if(!razao){ msg("Informe a razão social.", true); return; }
+  if((tipo === "CNPJ" && doc.length !== 14) || (tipo === "CPF" && doc.length !== 11)){ msg(tipo+" com "+(tipo==="CNPJ"?14:11)+" dígitos.", true); return; }
+  var ufTxt = val("pcUf"), uf = ufTxt ? ufSigla(ufTxt) : null;
+  if(ufTxt && !uf){ msg("UF inválida (ex.: SP).", true); return; }
+  var dados = {
+    tipo_doc:tipo, documento:doc, razao_social:razao,
+    nome_fantasia: val("pcFant") || null, ie: val("pcIe") || null,
+    cep: digitos(val("pcCep")) || null, logradouro: val("pcLog") || null, numero: val("pcNum") || null,
+    complemento: val("pcComp") || null, bairro: val("pcBairro") || null,
+    municipio: val("pcCid") || null, uf: uf
+  };
+  var ctNome = val("pcCtNome"), ctTel = val("pcCtTel"), ctEmail = val("pcCtEmail");
+  if(!ed && (ctTel || ctEmail) && !ctNome){ msg("Informe o nome do contato.", true); return; }
+  var id;
+  if(ed){
+    var ru = await sb.from("clientes").update(dados).eq("id", ed.id).select("id");
+    if(ru.error || !(ru.data||[]).length){ msg("Não consegui salvar o cadastro: "+(ru.error ? ru.error.message : "nenhuma linha alterada"), true); return; }
+    id = ed.id;
+  } else {
+    var rd = await sb.from("clientes").select("id,razao_social").eq("documento", doc).limit(1);
+    if(rd.data && rd.data.length){
+      if(!confirm('Já existe um cliente com esse documento: "'+rd.data[0].razao_social+'". Usar esse cadastro no pedido?')) return;
+      PQ.cliForm = null; await pqEscolherCli(rd.data[0].id); pqRenderResumo(); return;
+    }
+    dados.criado_por = ST.email;
+    var ri = await sb.from("clientes").insert(dados).select("id").single();
+    if(ri.error || !ri.data){ msg("Não consegui cadastrar: "+(ri.error ? ri.error.message : "sem retorno"), true); return; }
+    id = ri.data.id;
+    if(ctNome){
+      var rc = await sb.schema("crm").from("contatos").insert({ cliente_id:id, nome:ctNome, telefone:ctTel || null, email:ctEmail || null, decisor:true, criado_por:ST.email }).select("id");
+      if(rc.error || !(rc.data||[]).length) msg("Cliente cadastrado, mas o contato não gravou"+(rc.error ? ": "+rc.error.message : "")+". Cadastre em Clientes.", true);
+    }
+  }
+  /* atualiza a busca do passo 1 sem recarregar a tela */
+  var linha = { id:id, razao_social:razao, nome_fantasia:dados.nome_fantasia, municipio:dados.municipio, uf:dados.uf, documento:doc };
+  linha.chave = semAcento([linha.razao_social, linha.nome_fantasia, linha.municipio, linha.uf].join(" "))+" "+doc;
+  ST.cache.pqClientes = (ST.cache.pqClientes||[]).filter(function(c){ return c.id !== id; }).concat([linha])
+    .sort(function(a,b){ return String(a.razao_social).localeCompare(String(b.razao_social)); });
+  ST.cache.clientes = null;
+  PQ.cliForm = null;
+  msg(ed ? "Cadastro do cliente atualizado." : "Cliente cadastrado.");
+  await pqEscolherCli(id);
+  pqRenderResumo();
 }
 function pqFiltraCli(){
   var alvo = $("pqCliLista"); if(!alvo) return;
@@ -5007,12 +5101,12 @@ function pqFiltraCli(){
   alvo.innerHTML = L.length ? L.map(function(c){
     return '<button class="rw lnk" onclick="pqEscolherCli(\''+c.id+'\')"><span style="text-align:left">'+esc(c.razao_social)+
       '<span class="lb" style="display:block">'+esc(c.municipio||"")+(c.uf?'/'+esc(c.uf):'')+(c.documento?' · '+esc(c.documento):'')+'</span></span><span style="color:#007AFF">Escolher</span></button>';
-  }).join("") : '<p class="lb">Nenhum cliente encontrado. Cadastre em Clientes.</p>';
+  }).join("") : '<p class="lb">Nenhum cliente encontrado — use "+ Cadastrar cliente novo" abaixo.</p>';
 }
 async function pqEscolherCli(id){
   var alvo = $("pqCli"); if(alvo) alvo.innerHTML = '<div class="lb">Carregando cliente…</div>';
   var r = await sb.from("clientes")
-    .select("id,razao_social,documento,tipo_doc,cep,uf,municipio,bairro,logradouro,numero,representante_id,situacao_credito").eq("id", id).single();
+    .select("id,razao_social,nome_fantasia,documento,tipo_doc,ie,cep,uf,municipio,bairro,logradouro,numero,complemento,representante_id,situacao_credito").eq("id", id).single();
   if(r.error || !r.data){ msg("Não consegui abrir o cliente.", true); PQ.cli = null; pqRenderCli(); return; }
   PQ.cli = r.data;
   PQ.rep = null;
@@ -5219,7 +5313,13 @@ function pqRenderTransp(modo){
   if(!novo){
     h += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'+
       (sel ? '<button class="bt" onclick="pqRenderTransp(\'editar\')">✏️ Completar dados</button>' : '')+
-      '<button class="bt" onclick="pqRenderTransp(\'novo\')">+ Cadastrar transportadora</button></div>';
+      '<button class="bt" onclick="pqRenderTransp(\'novo\')">+ Cadastrar transportadora</button></div>'+
+      /* volumes da NF-e: coluna AB "Quantidade de Pacote"; tipo (coluna X) sempre Volume(s) */
+      '<label class="lb" style="display:block;margin:12px 0 4px;font-weight:400" for="pqVol">Quantidade de volumes</label>'+
+      '<div style="display:flex;gap:8px;align-items:center">'+
+        '<input id="pqVol" type="number" inputmode="numeric" min="1" step="1" placeholder="qtd" style="width:96px" value="'+esc(PQ.vol||"")+'" '+
+          'oninput="PQ.vol=String(Math.max(0,Math.round(Number(this.value)||0))||\'\')">'+
+        '<span class="lb">Volume(s) · vai em "Quantidade de Pacote" na planilha UpSeller</span></div>';
   } else {
     var v = function(k){ return ed ? esc(ed[k]||"") : ""; };
     h += '<div style="margin-top:10px;display:grid;gap:8px">'+
@@ -5271,6 +5371,8 @@ async function pqGravarTransp(id){
   var campos = (rf.data && rf.data.campos) || {};
   ["AH","AI","AJ","AK","AL","AM","AN"].forEach(function(k){ delete campos[k]; });
   var t = (PQ.transps||[]).filter(function(x){ return x.id === PQ.transp; })[0];
+  var vol = Math.round(Number(PQ.vol)||0);
+  if(vol > 0){ campos.AB = String(vol); campos.X = "Volume(s)"; } else { delete campos.AB; }
   if(t){
     var doc = digitos(t.documento);
     campos.AH = doc.length === 11 ? "CPF" : "CNPJ"; campos.AI = doc; campos.AJ = t.razao_social;
@@ -5278,7 +5380,7 @@ async function pqGravarTransp(id){
     if(t.uf) campos.AL = ufExtenso(t.uf);
     if(t.municipio) campos.AM = t.municipio;
     if(t.endereco) campos.AN = t.endereco;
-  } else if(!rf.data) return "";
+  } else if(!rf.data && !(vol > 0)) return "";
   var u = await sb.schema("crm").from("pedido_upseller").upsert({
     cotacao_id:id, cliente_id:PQ.cli.id, campos:campos, itens:(rf.data && rf.data.itens) || {},
     atualizado_em:new Date().toISOString(), atualizado_por:ST.email
@@ -5353,6 +5455,8 @@ async function pqEditar(id){
   PQ.transp = "";
   var rf = await sb.schema("crm").from("pedido_upseller").select("campos").eq("cotacao_id", id).maybeSingle();
   var docT = rf.data && rf.data.campos ? digitos(rf.data.campos.AI) : "";
+  PQ.vol = rf.data && rf.data.campos && rf.data.campos.AB ? String(rf.data.campos.AB) : "";
+  PQ.cliForm = null;
   if(docT){ var t = (PQ.transps||[]).filter(function(x){ return digitos(x.documento) === docT; })[0]; if(t) PQ.transp = t.id; }
   PQ.cli = null;
   await pqAbrirForm();
