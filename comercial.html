@@ -4893,7 +4893,8 @@ function renderPedidos(){
         '<button class="bt ok" onclick="pqAprovar(\''+x.id+'\')">✅ Cliente aprovou</button>'+
         '<button class="bt" onclick="pqEnviar(\''+x.id+'\',\'whats\')">📱 Reenviar</button>'+
         '<button class="bt" onclick="pqEnviar(\''+x.id+'\',\'pdf\')">📄 PDF</button>'+
-        '<button class="bt" onclick="pqEditar(\''+x.id+'\')">✏️ Editar</button>');
+        '<button class="bt" onclick="pqEditar(\''+x.id+'\')">✏️ Editar</button>'+
+        '<button class="bt" style="color:#C63A3A" onclick="pqCancelar(\''+x.id+'\')">✖️ Cancelar</button>');
     }).join("") : '<p class="lb" style="margin-top:8px">Nenhum pedido esperando o cliente.</p>')+
   '</div>';
 
@@ -4909,7 +4910,8 @@ function renderPedidos(){
           '<button class="bt pri" onclick="pqFaturar([\''+x.id+'\'])">💰 Faturar</button>'+
           '<button class="bt" onclick="abrirFichaUpseller(\''+x.id+'\')">📝 Mais dados UpSeller</button>'+
           '<button class="bt" onclick="pqEnviar(\''+x.id+'\',\'pdf\')">📄 PDF</button>'+
-          '<button class="bt" onclick="voltarParaProposta(\''+x.id+'\')">↩️ Voltar p/ aguardando</button>',
+          '<button class="bt" onclick="voltarParaProposta(\''+x.id+'\')">↩️ Voltar p/ aguardando</button>'+
+          '<button class="bt" style="color:#C63A3A" onclick="pqCancelar(\''+x.id+'\')">✖️ Cancelar pedido</button>',
           { check:'<input type="checkbox" style="width:22px;height:22px;margin-right:4px" '+(PQ.sel[x.id]?'checked ':'')+'onchange="PQ.sel[\''+x.id+'\']=this.checked;renderPedidos()">',
             depois:'<div id="ficha-'+x.id+'" style="flex-basis:100%"></div>' });
       }).join("")
@@ -4928,7 +4930,8 @@ function renderPedidos(){
     h += '<details class="cd" style="margin-top:12px"><summary class="ttl" style="cursor:pointer">Rascunhos ('+rasc.length+') — abaixo do pedido mínimo ou não enviados</summary>'+
       rasc.map(function(x){
         return pqLinha(x, pqChipDias(diasDesde(x.criado_em), 30, 60, "criado hoje", "criado"),
-          '<button class="bt" onclick="pqEditar(\''+x.id+'\')">✏️ Abrir</button>');
+          '<button class="bt" onclick="pqEditar(\''+x.id+'\')">✏️ Abrir</button>'+
+          '<button class="bt" style="color:#C63A3A" onclick="pqExcluir(\''+x.id+'\')">🗑️ Excluir</button>');
       }).join("")+'</details>';
   }
   h += '<p class="rod">Aguardando = enviado ao cliente; a cor sobe com os dias sem resposta (3 laranja, 7 vermelho). '+
@@ -5011,6 +5014,43 @@ async function pqAprovar(id){
   if(u.error){ msg("Não deu para aprovar: "+u.error.message, true); return; }
   if(!(u.data||[]).length){ msg("O banco não aceitou a mudança (nenhuma linha alterada). Recarregue a tela.", true); return; }
   msg("Aprovado: "+num+" está na fila de faturar.");
+  telaPedidos();
+}
+
+/* Cancelar (aguardando ou aprovado) = status "recusada": some da tela, fica no histórico.
+   Aprovado cancelado sai da Separar pedidos da Fábrica (gatilho trg_cotacao_fabrica);
+   se a Fábrica já separou, o banco recusa com a mensagem. */
+async function pqCancelar(id){
+  var x = (PQ.lista||[]).filter(function(c){ return c.id === id; })[0];
+  if(!x) return;
+  var aprovado = x.status === "pedido";
+  var rot = aprovado ? numeroPedidoLoja(x.numero) : "o pedido nº "+x.numero;
+  if(!confirm("Cancelar "+rot+" de "+((PQ.nomes||{})[x.cliente_id]||"")+" ("+rs(x.valor_total)+")?\n\n"+
+    "Ele sai desta tela"+(aprovado ? " e da lista Separar pedidos da Fábrica" : "")+". Fica guardado no histórico como cancelado.")) return;
+  var motivo = prompt("Motivo do cancelamento (opcional):", "") ;
+  if(motivo === null) return;
+  var agora = new Date().toISOString();
+  var obs = "Cancelado em "+dataBR(hojeISO())+" por "+(ST.email||"comercial")+(motivo.trim() ? ": "+motivo.trim() : "")+".";
+  var r0 = await sb.schema("crm").from("cotacoes").select("observacoes").eq("id", id).single();
+  var obsAtual = (r0.data && r0.data.observacoes) ? r0.data.observacoes+"\n" : "";
+  var u = await sb.schema("crm").from("cotacoes").update({
+    status:"recusada", atualizado_em:agora, observacoes: obsAtual+obs
+  }).eq("id", id).in("status", ["enviada","pedido"]).select("id");
+  if(u.error){ msg("Não deu para cancelar: "+u.error.message, true); return; }
+  if(!(u.data||[]).length){ msg("O banco não aceitou a mudança (nenhuma linha alterada). Recarregue a tela.", true); return; }
+  msg((aprovado ? numeroPedidoLoja(x.numero) : "Pedido nº "+x.numero)+" cancelado.");
+  telaPedidos();
+}
+/* Excluir rascunho = apaga de vez (itens, ficha UpSeller e parcelas vão junto, ON DELETE CASCADE). */
+async function pqExcluir(id){
+  var x = (PQ.lista||[]).filter(function(c){ return c.id === id; })[0];
+  if(!x) return;
+  if(x.status !== "rascunho"){ msg("Só rascunho pode ser excluído. Use Cancelar.", true); return; }
+  if(!confirm("Excluir de vez o rascunho nº "+x.numero+" de "+((PQ.nomes||{})[x.cliente_id]||"")+" ("+rs(x.valor_total)+")?\n\nNão dá para desfazer.")) return;
+  var d = await sb.schema("crm").from("cotacoes").delete().eq("id", id).eq("status", "rascunho").select("id");
+  if(d.error){ msg("Não deu para excluir: "+d.error.message, true); return; }
+  if(!(d.data||[]).length){ msg("O banco não aceitou a exclusão (nenhuma linha). Recarregue a tela.", true); return; }
+  msg("Rascunho nº "+x.numero+" excluído.");
   telaPedidos();
 }
 
