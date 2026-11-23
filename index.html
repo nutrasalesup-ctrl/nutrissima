@@ -371,7 +371,7 @@ const SUPA_URL='https://nfzospymzvlwzlcpgolm.supabase.co';
 let sb=null, EST={operador:localStorage.getItem('nf_operador')||'', cache:{}};
 
 function el(html){const d=document.createElement('div');d.innerHTML=html.trim();return d.firstChild}
-const APP_VERSAO='2026-09-18 · Painel: 3ª tela de atendimento por produto';
+const APP_VERSAO='2026-11-23 · Import UpSeller abre kits em produtos';
 function fmt(n,dec=1){return Number(n).toLocaleString('pt-BR',{maximumFractionDigits:dec})}
 /* Parser de número no padrão pt-BR: ponto = separador de milhar (remove), vírgula = decimal (vira ponto).
    Ex.: "2.600" -> 2600 | "1.300" -> 1300 | "103,1" -> 103.1 | "2.600,50" -> 2600.5
@@ -3592,7 +3592,14 @@ async function importarUpSeller(files){
   }catch(e){return msg('Erro ao ler o arquivo: '+e.message,true);}
   const {data:dep}=await sb.from('depara_sku').select('codigo,produto_acabado_id');
   const mapa={};(dep||[]).forEach(d=>{if(d.produto_acabado_id)mapa[String(d.codigo).trim()]=d.produto_acabado_id;});
-  const agg={},nao={};let ign=0;
+  /* Kit: um código de anúncio vira N produtos × qtd (tabela kit_composicao). Tem precedência sobre o de-para. */
+  const {data:kc,error:ekc}=await sb.from('kit_composicao').select('codigo_kit,produto_acabado_id,qtd');
+  if(ekc)return msg('Não consegui ler a composição dos kits: '+ekc.message,true);
+  const kits={};(kc||[]).forEach(k=>{const c=String(k.codigo_kit).trim();(kits[c]=kits[c]||[]).push({pid:k.produto_acabado_id,q:Number(k.qtd)||0});});
+  const agg={},nao={};let ign=0,nKits=0;
+  const soma=(pid,prazo,prazoTs,plat,q)=>{const k=pid+'|'+(prazoTs||prazo||'')+'|'+plat;
+    agg[k]=agg[k]||{produto_acabado_id:pid,data_despacho:prazo,prazo_envio:prazoTs,plataforma:plat,qtd_potes:0};
+    agg[k].qtd_potes+=q;};
   for(const r of linhas){
     const enviado=String(r['Enviado']||'').trim();
     const canc=String(r['Pós-venda/Cancelado/Devolvido']||'').toLowerCase();
@@ -3602,18 +3609,17 @@ async function importarUpSeller(files){
     const q=Number(r['Qtd. do Produto'])||0;if(!q)continue;
     const plat=String(r['Plataformas']||'').trim();
     const pz=upPrazo(r['Prazo de Envio']);const prazo=pz.d, prazoTs=pz.ts;
+    if(kits[cod]){nKits+=q;kits[cod].forEach(c=>soma(c.pid,prazo,prazoTs,plat,q*c.q));continue;}
     let pid=mapa[cod];
     if(!pid){pid='14de9ebe-09df-483d-8c03-9bb6eef186d6';nao[cod]=nao[cod]||{codigo:cod,plataforma:plat,nome:String(r['Nome do Anúncio']||''),qtd:0};nao[cod].qtd+=q;}
-    const k=pid+'|'+(prazoTs||prazo||'')+'|'+plat;
-    agg[k]=agg[k]||{produto_acabado_id:pid,data_despacho:prazo,prazo_envio:prazoTs,plataforma:plat,qtd_potes:0};
-    agg[k].qtd_potes+=q;
+    soma(pid,prazo,prazoTs,plat,q);
   }
   await sb.from('demanda_vendas').delete().eq('origem','import_upseller').eq('status','aberto');
   const rows=Object.values(agg).map(a=>({produto_acabado_id:a.produto_acabado_id,data_despacho:a.data_despacho,prazo_envio:a.prazo_envio,plataforma:a.plataforma,qtd_potes:a.qtd_potes,status:'aberto',origem:'import_upseller',criado_por:EST.operador}));
   if(rows.length){const {error}=await sb.from('demanda_vendas').insert(rows);if(error)return msg(error.message,true);}
   await sb.from('atividades').insert({tipo:'compra',descricao:'Demanda de vendas importada — '+arq.length+(arq.length>1?' planilhas, ':' planilha, ')+rows.length+' linhas, '+Object.keys(nao).length+' a mapear',responsavel:EST.operador});
   EST.cache.naoMapeados=Object.values(nao);
-  msg('✅ '+rows.length+' linhas importadas de '+arq.length+(arq.length>1?' planilhas':' planilha')+(Object.keys(nao).length?' · '+Object.keys(nao).length+' a mapear':''));
+  msg('✅ '+rows.length+' linhas importadas de '+arq.length+(arq.length>1?' planilhas':' planilha')+(nKits?' · '+nKits+' kits abertos em produtos':'')+(Object.keys(nao).length?' · '+Object.keys(nao).length+' a mapear':''));
   tela('vendas');
 }
 async function importarSimplificada(files){
