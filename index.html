@@ -3261,6 +3261,82 @@ async function calcCobertura(){
   });
   return {pa,todos,basesPa,baseInfo,ALOC,DIA};
 }
+/* ===== Kanban de pedidos do Varejo (Vendas / Despacho, filtro Varejo) =====
+   Um cartão = um pedido aberto da carteira (vendas_pedidos, canal Varejo).
+   Colunas = urgência do prazo de despacho (mesma escala das faixas da tela).
+   Estoque: o pote pronto é consumido na ordem das datas, a mesma fila da cobertura.
+   Vermelho = falta pote pronto pra esse pedido · laranja = cobre, mas sobra pouco · verde = cobre com folga.
+   O nome do cliente não aparece aqui (fica atrás do PIN do gestor, como no Relatório comercial). */
+const KB_SOBRA_BAIXA=5;
+const KB_COLS=[['Atrasado','#8E1F1F'],['Hoje','#C63A3A'],['Amanhã','#D9772B'],['Até 3 dias','#B8862B'],['Depois','#3E7C45'],['Sem prazo','#8A6B3D']];
+function kbMonta(rows,hj){
+  const pedidos={};
+  rows.forEach(r=>{
+    if(!r.pedido_numero)return;
+    const p=pedidos[r.pedido_numero]||(pedidos[r.pedido_numero]={num:r.pedido_numero,entrega:null,linhas:[]});
+    if(r.entrega&&(!p.entrega||r.entrega<p.entrega))p.entrega=r.entrega;
+    p.linhas.push(r);
+  });
+  const lista=Object.values(pedidos).sort((a,b)=>{const ea=a.entrega||'9999-12-31',eb=b.entrega||'9999-12-31';return ea<eb?-1:(ea>eb?1:(a.num<b.num?-1:1))});
+  const resto={};
+  lista.forEach(p=>p.linhas.forEach(r=>{const pid=r.produto_acabado_id;if(pid&&resto[pid]===undefined)resto[pid]=Math.max(0,Number((r.produto_acabado||{}).saldo_potes)||0);}));
+  lista.forEach(p=>{
+    const itens=p.linhas.map(r=>{
+      const pid=r.produto_acabado_id, need=Math.max(0,(Number(r.qtd)||0)-(Number(r.qtd_separada)||0));
+      const ok=Math.min(need,resto[pid]||0), falta=need-ok;
+      if(pid)resto[pid]=(resto[pid]||0)-ok;
+      return {nome:(r.produto_acabado||{}).nome||'—',need,falta,sobra:pid?(resto[pid]||0):0};
+    }).filter(i=>i.need>0);
+    p.itens=itens;
+    p.potes=itens.reduce((s,i)=>s+i.need,0);
+    p.status=!itens.length?'sep':itens.some(i=>i.falta>0)?'falta':itens.some(i=>i.sobra<=KB_SOBRA_BAIXA)?'baixo':'ok';
+    p.dias=p.entrega?Math.round((new Date(p.entrega+'T12:00')-new Date(hj+'T12:00'))/86400000):null;
+    p.col=p.dias===null?5:p.dias<0?0:p.dias===0?1:p.dias===1?2:p.dias<=3?3:4;
+  });
+  return lista;
+}
+async function kanbanVarejoBloco(hj){
+  const [vp,soma]=await Promise.all([
+    sb.from('vendas_pedidos').select('canal,pedido_numero,entrega,qtd,qtd_separada,produto_acabado_id,produto_acabado(nome,saldo_potes)').eq('status','aberto').eq('canal','Varejo'),
+    sepVpCarregar()
+  ]);
+  if(vp.error)return `<div class="card"><small style="color:#C63A3A">Não consegui carregar os pedidos do varejo para o kanban.</small></div>`;
+  const km=kbMonta(vpAplicaSep(vp.data||[],soma),hj);
+  const nFalta=km.filter(p=>p.status==='falta').length, nBaixo=km.filter(p=>p.status==='baixo').length, nOk=km.filter(p=>p.status==='ok'||p.status==='sep').length;
+  const fmtD=d=>d?new Date(d+'T12:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}):'sem prazo';
+  const STAT={falta:['#C63A3A','⚠️ FALTA POTE'],baixo:['#D9772B','🟠 ESTOQUE BAIXO'],ok:['#3E7C45','✅ POTE PRONTO'],sep:['#2F6DA8','✓ JÁ SEPARADO']};
+  const cartao=p=>{
+    const [cor,tag]=STAT[p.status];
+    const linhas=p.itens.slice(0,4).map(i=>{
+      const c=i.falta>0?'#C63A3A':(i.sobra<=KB_SOBRA_BAIXA?'#D9772B':'#3E7C45');
+      const direita=i.falta>0?`<b style="color:#C63A3A">falta ${fmt(i.falta,0)}</b>`:`sobra <b style="color:${c}">${fmt(i.sobra,0)}</b>`;
+      return `<div style="display:flex;justify-content:space-between;gap:6px;font-size:11px;padding:3px 0;border-top:1px dashed var(--linha)"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${c};margin-right:5px"></span>${escFicha(i.nome)}</span><span class="mono" style="white-space:nowrap">pede ${fmt(i.need,0)} · ${direita}</span></div>`;
+    }).join('');
+    const venceu=p.dias!==null&&p.dias<0;
+    return `<div style="background:#fff;border:1px solid var(--linha);border-left:6px solid ${cor};border-radius:10px;padding:8px 10px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px"><b class="mono" style="font-size:13px">${escFicha(p.num)}</b><span style="font-size:11px;font-weight:800;color:${venceu?'#8E1F1F':'#7A6A57'}">${venceu?'⏰ venceu '+fmtD(p.entrega):'despacha '+fmtD(p.entrega)}</span></div>
+      <div style="display:flex;justify-content:space-between;gap:6px;align-items:center;margin-top:4px"><span style="background:${cor};color:#fff;font-size:9.5px;font-weight:900;border-radius:20px;padding:2px 8px;white-space:nowrap">${tag}</span><span class="mono" style="font-size:11.5px;color:#7A6A57">${fmt(p.potes,0)} potes</span></div>
+      ${linhas?`<div style="margin-top:4px">${linhas}${p.itens.length>4?`<div style="font-size:10.5px;color:#9A8A77;padding-top:3px">+${p.itens.length-4} produto(s)</div>`:''}</div>`:''}
+    </div>`;
+  };
+  const colHtml=(nome,cor,ped)=>`<div style="flex:0 0 232px;min-width:232px;scroll-snap-align:start;background:#F6F1E9;border-radius:14px;padding:8px;border-top:4px solid ${cor}">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:4px 4px 8px"><b style="font-size:12px;color:${cor};letter-spacing:.03em">${nome.toUpperCase()}</b><span class="mono" style="font-size:11px;color:#7A6A57">${ped.length} · ${fmt(ped.reduce((s,p)=>s+p.potes,0),0)} potes</span></div>
+    ${ped.length?ped.map(cartao).join(''):'<div style="font-size:11.5px;color:#9A8A77;text-align:center;padding:14px 0">nenhum pedido</div>'}
+  </div>`;
+  const colunas=KB_COLS.map((c,i)=>colHtml(c[0],c[1],km.filter(p=>p.col===i))).join('');
+  return `<div class="card" style="padding:12px 14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <b style="font-size:14px">🗂️ Pedidos do varejo por prazo de despacho</b>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <span style="background:#C63A3A;color:#fff;border-radius:20px;padding:4px 11px;font-weight:800;font-size:11.5px">⚠️ ${nFalta} sem pote</span>
+        <span style="background:#D9772B;color:#fff;border-radius:20px;padding:4px 11px;font-weight:800;font-size:11.5px">🟠 ${nBaixo} estoque baixo</span>
+        <span style="background:#3E7C45;color:#fff;border-radius:20px;padding:4px 11px;font-weight:800;font-size:11.5px">✅ ${nOk} ok</span>
+      </div>
+    </div>
+    ${km.length?`<div style="display:flex;gap:10px;overflow-x:auto;padding:10px 2px 4px;margin-top:6px;scroll-snap-type:x proximity">${colunas}</div>`:`<div class="center" style="padding:14px 0">Nenhum pedido aberto no varejo.</div>`}
+    <small style="color:#7A6A57;display:block;margin-top:6px"><b>Como ler.</b> Cada cartão é um pedido da carteira, na coluna da urgência do despacho. A borda mostra o pote pronto: <b style="color:#C63A3A">vermelho</b> falta pote para o pedido · <b style="color:#D9772B">laranja</b> cobre, mas sobram até ${KB_SOBRA_BAIXA} potes do produto · <b style="color:#3E7C45">verde</b> cobre com folga. O estoque é consumido na ordem das datas de despacho; pedido já separado não conta como falta. <br><b>Procedência.</b> vendas_pedidos (Varejo, em aberto), produto_acabado.saldo_potes e separação por canal, lidos agora.</small>
+  </div>`;
+}
 async function tVendas(){
   document.getElementById('app').innerHTML=topo('Vendas / Despacho','carregando demanda…')+'<main><div class="center">Carregando…</div></main>';
   const {pa,todos,basesPa,baseInfo,ALOC,DIA}=await calcCobertura();
@@ -3503,6 +3579,7 @@ async function tVendas(){
       </div>
     </div>`;
   }).join('');
+  const kbHtml=fv==='varejo'?await kanbanVarejoBloco(hojeLocal()):'';
   document.getElementById('app').innerHTML=`
   ${topo('Vendas / Despacho','demanda e-commerce + varejo × estoque de potes')}
   <main>
@@ -3527,6 +3604,7 @@ async function tVendas(){
       </div>
       ${ocultos?`<small style="color:#7A6A57;display:block;margin-top:7px">⚠️ ${fmt(ocultos,0)} potes do outro canal estão fora desta conta</small>`:''}
     </div>
+    ${kbHtml}
     ${canais.length?`<div class="card" style="padding:12px 14px"><small style="color:#7A6A57;font-weight:700;letter-spacing:.02em">NECESSIDADE POR CANAL</small>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${canais.map(([nome,q])=>{const[bg,fg]=corCanal(nome);return `<span style="background:${bg};color:${fg};border-radius:20px;padding:5px 14px;font-weight:800;font-size:13px">${nome} · ${fmt(q,0)}</span>`}).join('')}</div>
     </div>`:''}
