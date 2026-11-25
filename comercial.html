@@ -3218,7 +3218,7 @@ async function baixarPdfProposta(cotacaoId, opts){
   /* pedido já em PIX e gravado com desconto (tela de Pedidos): vale o total gravado */
   if(cot.condicao_pagamento === COND_PIX && Number(cot.valor_total) > 0 && Number(cot.valor_total) < valorCheio) valorPix = Number(cot.valor_total);
   var linhasCondicoes = [
-    ["Valor total do pedido", "R$ "+brl(valorCheio)+" (cartão ou boleto)"],
+    ["Valor total do pedido", "R$ "+brl(valorCheio)+(cf.condicao === "Cartão" ? "" : " (cartão ou boleto)")],
     ["Valor total à vista no PIX", "R$ "+brl(valorPix)+" ("+PIX_DESCONTO_PCT+"% de desconto)"],
     ["Condição de pagamento", cf.condicao],
     ["Forma de pagamento", cf.forma],
